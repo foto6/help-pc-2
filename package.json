@@ -9,7 +9,14 @@
     "test:journal": "node --test test/conformance/journal-contracts.test.js test/executor-journal-recovery.test.js",
     "test:preflight": "node --test test/conformance/preflight-contracts.test.js test/preflight-admission.test.js",
     "test:e2e": "node --test test/conformance/sensor-reconciliation.test.js test/e2e-readiness.test.js",
-    "test:soak": "node --test test/control-state-machine-soak.test.js"
+    "test:soak": "node --test test/control-state-machine-soak.test.js",
+    "test:gateway": "node --test test/mcp-gateway.test.js test/executor-jsonl-client.test.js",
+    "gateway:mcp": "node src/mcp-gateway-cli.js"
   },
-  "engines": {"node": ">=20"}
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "pc-control-mcp": "./src/mcp-gateway-cli.js"
+  }
 }
