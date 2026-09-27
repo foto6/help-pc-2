@@ -5,16 +5,40 @@
   "scenarios": [
     {
       "name": "completed",
-      "status": "pending",
-      "executionAttempts": 0,
-      "verificationAttempts": 0,
-      "reconciliationAttempts": 0,
+      "status": "succeeded",
+      "executionAttempts": 1,
+      "verificationAttempts": 1,
+      "reconciliationAttempts": 1,
       "sideEffectProviderCalls": 0,
-      "journalReads": 0,
-      "observationCalls": 0,
-      "transitionHash": "pending",
-      "evidenceHash": "pending"
+      "journalReads": 1,
+      "observationCalls": 1,
+      "transitionHash": "a73a29971845da954944ea7c29488bcacb867d84a33c5ea74813ad9ad4ebcdcf",
+      "evidenceHash": "fda62242fabd3b85f6f64eacfde736e34549a8a1d486f31c7dccc26e65acd73f"
+    },
+    {
+      "name": "unknown",
+      "status": "succeeded",
+      "executionAttempts": 1,
+      "verificationAttempts": 1,
+      "reconciliationAttempts": 1,
+      "sideEffectProviderCalls": 0,
+      "journalReads": 1,
+      "observationCalls": 1,
+      "transitionHash": "a73a29971845da954944ea7c29488bcacb867d84a33c5ea74813ad9ad4ebcdcf",
+      "evidenceHash": "fda62242fabd3b85f6f64eacfde736e34549a8a1d486f31c7dccc26e65acd73f"
+    },
+    {
+      "name": "truncated",
+      "status": "succeeded",
+      "executionAttempts": 1,
+      "verificationAttempts": 3,
+      "reconciliationAttempts": 3,
+      "sideEffectProviderCalls": 0,
+      "journalReads": 3,
+      "observationCalls": 3,
+      "transitionHash": "ba155a09a07b25cbda8fe4b8f4efc589961883446be7464fc3af506bfc42c1da",
+      "evidenceHash": "5119f2cd8b999e1b310484551c41d83361819c8e8c0b07a1228eed4fc294e4c5"
     }
   ],
-  "aggregateTransitionEvidenceHash": "pending"
+  "aggregateTransitionEvidenceHash": "30196b30d17ad372da8a3f16a7a5c8dc3adde527378b6261735b5810da7144cb"
 }
