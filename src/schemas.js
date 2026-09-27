@@ -1,13 +1,19 @@
 export const ACTION_STATUSES = Object.freeze([
   "awaiting_confirmation",
   "queued",
-  "running",
+  "leased",
+  "executing",
+  "verifying",
   "succeeded",
-  "failed",
+  "retry_wait",
+  "blocked",
   "cancelled",
+  "failed",
+  // legacy snapshot compatibility only
+  "running",
 ]);
 
-export const TERMINAL_ACTION_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
+export const TERMINAL_ACTION_STATUSES = new Set(["succeeded", "blocked", "cancelled", "failed"]);
 
 const FORBIDDEN_ACTION_PATTERNS = [/(^|[._-])captcha([._-]|$)/i, /(^|[._-])credentials?([._-]|$)/i];
 
@@ -25,16 +31,25 @@ export function assertSafeActionType(type) {
   }
 }
 
+function validateVerification(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) throw new ValidationError("verification must be an object.");
+  if (typeof value.provider !== "string" || !value.provider.trim()) throw new ValidationError("verification.provider is required.");
+  if (typeof value.type !== "string" || !value.type.trim()) throw new ValidationError("verification.type is required.");
+  if (value.input !== undefined && (value.input === null || typeof value.input !== "object" || Array.isArray(value.input))) {
+    throw new ValidationError("verification.input must be an object when supplied.");
+  }
+  return {
+    provider: value.provider.trim(),
+    type: value.type.trim(),
+    input: value.input ? structuredClone(value.input) : {},
+  };
+}
+
 export function validateActionSpec(spec) {
-  if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
-    throw new ValidationError("Action spec must be an object.");
-  }
-  if (typeof spec.provider !== "string" || !spec.provider.trim()) {
-    throw new ValidationError("Action provider is required.");
-  }
-  if (typeof spec.type !== "string" || !spec.type.trim()) {
-    throw new ValidationError("Action type is required.");
-  }
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) throw new ValidationError("Action spec must be an object.");
+  if (typeof spec.provider !== "string" || !spec.provider.trim()) throw new ValidationError("Action provider is required.");
+  if (typeof spec.type !== "string" || !spec.type.trim()) throw new ValidationError("Action type is required.");
   assertSafeActionType(spec.type);
   if (spec.input !== undefined && (spec.input === null || typeof spec.input !== "object" || Array.isArray(spec.input))) {
     throw new ValidationError("Action input must be an object when supplied.");
@@ -48,18 +63,20 @@ export function validateActionSpec(spec) {
   if (spec.idempotencyKey !== undefined && (typeof spec.idempotencyKey !== "string" || !spec.idempotencyKey.trim())) {
     throw new ValidationError("idempotencyKey must be a non-empty string when supplied.");
   }
+  if (spec.correlationId !== undefined && (typeof spec.correlationId !== "string" || !spec.correlationId.trim())) {
+    throw new ValidationError("correlationId must be a non-empty string when supplied.");
+  }
   if (spec.maxAttempts !== undefined && (!Number.isInteger(spec.maxAttempts) || spec.maxAttempts < 1 || spec.maxAttempts > 10)) {
     throw new ValidationError("maxAttempts must be an integer from 1 to 10.");
+  }
+  if (spec.retryDelayMs !== undefined && (!Number.isInteger(spec.retryDelayMs) || spec.retryDelayMs < 0 || spec.retryDelayMs > 300000)) {
+    throw new ValidationError("retryDelayMs must be an integer from 0 to 300000.");
   }
   if (spec.confirmation !== undefined && !["none", "required"].includes(spec.confirmation)) {
     throw new ValidationError("confirmation must be 'none' or 'required'.");
   }
-  if (spec.destructive !== undefined && typeof spec.destructive !== "boolean") {
-    throw new ValidationError("destructive must be boolean when supplied.");
-  }
-  if (spec.requiresDesktop !== undefined && typeof spec.requiresDesktop !== "boolean") {
-    throw new ValidationError("requiresDesktop must be boolean when supplied.");
-  }
+  if (spec.destructive !== undefined && typeof spec.destructive !== "boolean") throw new ValidationError("destructive must be boolean when supplied.");
+  if (spec.requiresDesktop !== undefined && typeof spec.requiresDesktop !== "boolean") throw new ValidationError("requiresDesktop must be boolean when supplied.");
   return {
     provider: spec.provider.trim(),
     type: spec.type.trim(),
@@ -67,10 +84,13 @@ export function validateActionSpec(spec) {
     resource: spec.resource?.trim() || null,
     permission: spec.permission?.trim() || "desktop.control",
     idempotencyKey: spec.idempotencyKey?.trim() || null,
+    correlationId: spec.correlationId?.trim() || null,
     maxAttempts: spec.maxAttempts ?? 3,
+    retryDelayMs: spec.retryDelayMs ?? 0,
     confirmation: spec.confirmation ?? "none",
     destructive: spec.destructive ?? false,
     requiresDesktop: spec.requiresDesktop ?? true,
+    verification: validateVerification(spec.verification),
     metadata: spec.metadata && typeof spec.metadata === "object" ? structuredClone(spec.metadata) : {},
   };
 }
@@ -81,15 +101,21 @@ export const actionSpecSchema = Object.freeze({
   additionalProperties: false,
   properties: {
     provider: { type: "string", minLength: 1 },
-    type: { type: "string", minLength: 1, description: "Provider-neutral action/tool identifier." },
+    type: { type: "string", minLength: 1 },
     input: { type: "object" },
     resource: { type: ["string", "null"] },
     permission: { type: "string", default: "desktop.control" },
     idempotencyKey: { type: ["string", "null"] },
+    correlationId: { type: ["string", "null"] },
     maxAttempts: { type: "integer", minimum: 1, maximum: 10, default: 3 },
+    retryDelayMs: { type: "integer", minimum: 0, maximum: 300000, default: 0 },
     confirmation: { enum: ["none", "required"], default: "none" },
     destructive: { type: "boolean", default: false },
     requiresDesktop: { type: "boolean", default: true },
+    verification: {
+      type: ["object", "null"],
+      properties: { provider: { type: "string" }, type: { type: "string" }, input: { type: "object" } },
+    },
     metadata: { type: "object" },
   },
 });
