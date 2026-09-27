@@ -269,6 +269,7 @@ function createRuntime(model, snapshot = null, { recoverOnStart = true } = {}) {
 
 function assertLaneInvariants(snapshot) {
   const lockMap = new Map(snapshot.resourceLocks);
+  const actionById = new Map(snapshot.actions.map((action) => [action.id, action]));
   const seen = new Map();
   for (const action of snapshot.actions) {
     if (!action.lease) continue;
@@ -279,7 +280,7 @@ function assertLaneInvariants(snapshot) {
     }
   }
   for (const [lane, actionId] of lockMap) {
-    const action = snapshot.actions.find((item) => item.id === actionId);
+    const action = actionById.get(actionId);
     assert.ok(action?.lease?.lanes.includes(lane), `orphaned lane lock ${lane} -> ${actionId}`);
   }
 }
@@ -303,6 +304,18 @@ function assertInvariants(cp, model, label) {
     const entry = audit[i];
     assert.equal(entry.sequence, i + 1, `audit sequence gap after ${label}`);
     assert.equal(sensitiveValuesAreRedacted(entry), true, `audit metadata not redacted at sequence ${entry.sequence}`);
+    const record = entry.actionId ? model.records.get(entry.actionId) : null;
+    if (record?.dispatchBarrier && entry.event === "action.leased" && entry.mode === "execute") {
+      assert.ok(entry.sequence <= record.dispatchBarrierAuditSequence, `dispatch-barrier action ${entry.actionId} re-entered execute after barrier`);
+    }
+    if (
+      record?.dispatchBarrier &&
+      record.dispatchBarrierAuditSequence === Number.MAX_SAFE_INTEGER &&
+      entry.event === "action.executing" &&
+      entry.executionAttempt === record.dispatchBoundaryExecutionAttempt
+    ) {
+      record.dispatchBarrierAuditSequence = entry.sequence;
+    }
     model.transitionHash.update(JSON.stringify(normalizeAudit(entry)) + "\n");
   }
   model.lastAuditCount = audit.length;
@@ -315,22 +328,7 @@ function assertInvariants(cp, model, label) {
     assert.ok(record.sideEffectProviderCalls <= 1, `side-effect provider call count exceeded one for ${action.id}`);
 
     if (record.dispatchBarrier) {
-      if (record.dispatchBarrierAuditSequence === Number.MAX_SAFE_INTEGER) {
-        const boundary = [...audit].reverse().find((entry) =>
-          entry.actionId === action.id &&
-          entry.event === "action.executing" &&
-          entry.executionAttempt === record.dispatchBoundaryExecutionAttempt
-        );
-        if (boundary) record.dispatchBarrierAuditSequence = boundary.sequence;
-      }
       assert.notEqual(action.lease?.mode, "execute", `dispatch-barrier action ${action.id} regained execute lease`);
-      const lateExecuteLease = audit.some((entry) =>
-        entry.actionId === action.id &&
-        entry.event === "action.leased" &&
-        entry.mode === "execute" &&
-        entry.sequence > record.dispatchBarrierAuditSequence
-      );
-      assert.equal(lateExecuteLease, false, `dispatch-barrier action ${action.id} re-entered execute after barrier`);
     }
 
     if (action.executionAttempts > 1) {
