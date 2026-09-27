@@ -574,7 +574,12 @@ export class ControlPlane {
         this.#auditEvent("action.failed", { actionId: action.id, sessionId: action.sessionId, correlationId: action.correlationId, reason: "executor_evidence", evidenceOutcome }); return;
       }
       if (["not_dispatched", "cancelled"].includes(evidenceOutcome)) { this.#finishNotApplied(action, { message: `Executor evidence outcome: ${evidenceOutcome}` }); return; }
-      if (evidenceOutcome === "succeeded") action.executionOutcome = "succeeded";
+      if (evidenceOutcome === "succeeded") {
+        action.executionOutcome = "succeeded";
+        if (!action.executionResult && evidence?.result && typeof evidence.result === "object") {
+          action.executionResult = clone(evidence.result);
+        }
+      }
 
       if (action.verification) {
         const verification = await this.#runVerification(action, session, controller, { reconciliation: true });

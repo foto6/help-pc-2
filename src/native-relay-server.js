@@ -307,6 +307,8 @@ export class NativeRelayServer {
     this.httpServer = null;
     const wsServer = this.wsServer;
     this.wsServer = null;
+    server.closeIdleConnections?.();
+    server.closeAllConnections?.();
     await new Promise((resolve) => server.close(() => resolve()));
     wsServer?.close();
   }

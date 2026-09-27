@@ -12,6 +12,7 @@
     "test:context-epoch": "node --test test/conformance/context-epoch-contracts.test.js test/context-epoch-e2e.test.js",
     "test:native-mcp": "node --test test/native-facade.test.js test/native-http.test.js",
     "test:relay": "node --test test/native-relay-server.test.js test/native-relay-current-wire.test.js",
+    "test:relay-provider": "node --test test/native-relay-provider.test.js",
     "test:soak": "node --test test/control-state-machine-soak.test.js",
     "test:mcp-host": "node --test test/mcp-host.integration.test.js test/mcp-stdio.integration.test.js",
     "mcp:stdio": "node bin/pc-native-mcp-stdio.js",

@@ -142,3 +142,11 @@ export {
 } from "./native-relay-protocol.js";
 export { JsonRelayStateStore, NativeRelayState, RelayStateError } from "./native-relay-state.js";
 export { NativeRelayServer, NativeRelayServerError } from "./native-relay-server.js";
+
+export {
+  NATIVE_RELAY_PROVIDER_IDENTITY,
+  NativeRelayProviderError,
+  NativeRelayExecutorProvider,
+  createNativeRelayExecutorBridge,
+  createExecutorBridge as createNativeRelayExecutorBridgeModule,
+} from "./native-relay-provider.js";
