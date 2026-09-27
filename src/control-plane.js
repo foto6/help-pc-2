@@ -432,6 +432,7 @@ export class ControlPlane {
       const end = this.#time(); this.metrics.recordDuration("verificationLatency", Math.max(0, end.ms - start.ms));
       if (!result || typeof result !== "object" || typeof result.ok !== "boolean") return { kind: "failed", error: { code: "VERIFICATION_MALFORMED", category: "verification_error", message: "Verification provider returned a malformed result.", retryable: false } };
       action.verificationResult = clone(result);
+      this.#persist();
       if (result.ok) return { kind: "success", result };
       if (result.conclusive === true && result.outcome === "not_applied") return { kind: "not_applied", result };
       if (isInconclusive(result) || result.retryable === true) return { kind: "inconclusive", result };
@@ -439,6 +440,7 @@ export class ControlPlane {
     } catch (error) {
       const end = this.#time(); this.metrics.recordDuration("verificationLatency", Math.max(0, end.ms - start.ms));
       if (controller.signal.aborted) return { kind: "inconclusive", result: { ok: false, code: "VERIFICATION_INTERRUPTED", category: "inconclusive", retryable: true, message: String(error?.message ?? error) } };
+      if (["sensor_evidence_invalid", "binding_mismatch"].includes(error?.category)) return { kind: "blocked", error: errorInfo(error) };
       return { kind: "failed", error: errorInfo(error) };
     }
   }
@@ -456,6 +458,27 @@ export class ControlPlane {
   #finishSuccess(action, result = action.executionResult) {
     const now = this.#time(); action.status = "succeeded"; action.result = clone(result); action.error = null; action.uncertainty = null; action.completedAt = now.iso; action.updatedAt = now.iso; this.#releaseLocks(action); this.#removeFromQueue(action.id);
     this.#auditEvent("action.succeeded", { actionId: action.id, sessionId: action.sessionId, correlationId: action.correlationId, executionAttempts: action.executionAttempts, verificationAttempts: action.verificationAttempts, reconciliationAttempts: action.reconciliationAttempts, reconciled: action.reconciliationAttempts > 0 });
+  }
+
+  #finishBlocked(action, error, reason = "verification_binding_invalid") {
+    const now = this.#time();
+    action.status = "blocked";
+    action.error = clone(error);
+    action.blockedAt = now.iso;
+    action.updatedAt = now.iso;
+    action.uncertainty = null;
+    this.#releaseLocks(action);
+    this.#removeFromQueue(action.id);
+    this.#auditEvent("action.blocked", {
+      actionId: action.id,
+      sessionId: action.sessionId,
+      correlationId: action.correlationId,
+      reason,
+      error: action.error,
+      executionAttempts: action.executionAttempts,
+      verificationAttempts: action.verificationAttempts,
+      reconciliationAttempts: action.reconciliationAttempts,
+    });
   }
 
   #finishNotApplied(action, result) {
@@ -525,6 +548,7 @@ export class ControlPlane {
         const verification = await this.#runVerification(action, session, controller, { reconciliation: true });
         if (verification.kind === "success") { this.#finishSuccess(action); return; }
         if (verification.kind === "not_applied") { this.#finishNotApplied(action, verification.result); return; }
+        if (verification.kind === "blocked") { this.#finishBlocked(action, verification.error); return; }
         if (verification.kind === "inconclusive") {
           if (action.verificationAttempts < action.maxVerificationAttempts && action.reconciliationAttempts < action.maxReconciliationAttempts) this.#scheduleReconciliation(action, "verification_inconclusive", { error: verification.result });
           else this.#exhaustReconciliation(action, "Read-only verification remained stale or inconclusive within bounded attempts.", verification.result);
@@ -584,6 +608,7 @@ export class ControlPlane {
         const verification = await this.#runVerification(action, session, controller, { reconciliation: false });
         if (verification.kind === "success") this.#finishSuccess(action);
         else if (verification.kind === "not_applied") this.#finishNotApplied(action, verification.result);
+        else if (verification.kind === "blocked") this.#finishBlocked(action, verification.error);
         else if (verification.kind === "inconclusive") {
           if (action.verificationAttempts < action.maxVerificationAttempts) this.#scheduleReconciliation(action, "verification_inconclusive_after_known_execution", { error: verification.result });
           else this.#exhaustReconciliation(action, "Verification remained inconclusive after known execution.", verification.result);

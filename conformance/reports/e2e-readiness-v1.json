@@ -1,0 +1,11 @@
+{
+  "schema": "pc_control.e2e_readiness_report.v1",
+  "executorHead": "d0ccb0f390474fc3fc091e51c25f7ef8771b0f09",
+  "visionHead": "df9a84590a4a9d8fe8dfdec9ff195fe4821397f6",
+  "scenarios": [
+    {
+      "name": "pending"
+    }
+  ],
+  "reportHash": "pending"
+}

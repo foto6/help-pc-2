@@ -43,3 +43,11 @@ export {
   parseVisionVerificationResultV1,
   VisionVerificationResultV1Adapter,
 } from "./conformance.js";
+
+export {
+  VISION_SEMANTIC_UI_DELTA_V1,
+  VISION_OBSERVATION_CONSISTENCY_V1,
+  parseVisionSemanticUiDeltaV1,
+  parseVisionObservationConsistencyV1,
+  VisionSensorReconciliationAdapter,
+} from "./sensor-reconciliation.js";
