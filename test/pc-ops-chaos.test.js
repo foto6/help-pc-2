@@ -324,3 +324,110 @@ test("protected cwd is rejected before process dispatch and no path access hook 
   assert.deepEqual(accessed, []);
   assert.equal(dispatches, 0);
 });
+
+
+test("native cutover chaos matrix is complete, validation-only, and deterministic", () => {
+  const matrixPath = new URL("../conformance/pc-ops-chaos/NATIVE_CUTOVER_CHAOS_MATRIX.v1.json", import.meta.url);
+  const matrix = JSON.parse(readFileSync(matrixPath, "utf8"));
+  const expectedIds = [
+    "native.mcp_disconnect_after_dispatch",
+    "native.control_plane_restart",
+    "native.executor_restart",
+    "native.stale_context_binding",
+    "native.duplicate_request_id",
+    "native.journal_unknown",
+    "native.result_lost_after_side_effect",
+    "native.managed_process_reconnect",
+    "native.managed_session_reconnect",
+    "native.ui_observation_epoch_change",
+    "safety.protected_e_manhwa_pre_dispatch",
+  ];
+  assert.equal(matrix.version, "pc_ops.native_cutover_chaos_matrix.v1");
+  assert.equal(matrix.scope, "independent_validation_only");
+  assert.equal(matrix.cutover_readiness_claim, false);
+  assert.deepEqual(matrix.cases.map((item) => item.id), expectedIds);
+  assert.ok(matrix.cases.every((item) => item.status === "PASS"));
+  assert.deepEqual(matrix.summary, { PASS: 11, PENDING: 0, BLOCKED: 0 });
+
+  const expected = matrix.matrix_sha256;
+  const body = structuredClone(matrix);
+  delete body.matrix_sha256;
+  assert.equal(sha256(body), expected);
+  assert.equal(
+    readFileSync(new URL("../conformance/pc-ops-chaos/NATIVE_CUTOVER_CHAOS_MATRIX.v1.sha256", import.meta.url), "utf8").trim(),
+    `${expected}  NATIVE_CUTOVER_CHAOS_MATRIX.v1.json`,
+  );
+});
+
+test("native cutover provenance pins exact current green producer heads without readiness claim", () => {
+  const provenance = JSON.parse(
+    readFileSync(new URL("../conformance/pc-ops-chaos/NATIVE_CUTOVER_PROVENANCE.v1.json", import.meta.url), "utf8"),
+  );
+  assert.equal(provenance.version, "pc_ops.native_cutover_provenance.v1");
+  assert.equal(provenance.starting_head, "53bf83a63cb4137c5e41fbd06cd18863f890d730");
+  assert.equal(provenance.cutover_readiness_claim, false);
+  assert.equal(provenance.primary_gateway_policy_modified, false);
+
+  const expectedHeads = {
+    control_mcp_gateway: "5495c320304860bf190476833177f716fe9ad960",
+    control_plane: "801d024a4e9bf71eda0e362c64ec719efb869ddc",
+    ops_gateway: "732f0f5e6482f6bb96f0dfa582dc1c0fe2ea712e",
+    executor: "2cc1e40f792a3d74560b726a0d246c90b7f077e9",
+    relay: "58bad1bc60f7d4d26d03223c8f0bea5f138f49a6",
+    vision: "bdfa71226a9265f9ac052ef576a6d18cada80b84",
+  };
+  for (const [name, head] of Object.entries(expectedHeads)) {
+    assert.equal(provenance.producers[name].head, head);
+    assert.equal(provenance.producers[name].ci.conclusion, "success");
+  }
+  assert.equal(provenance.producers.relay.structured_ops_fixture_pack, "present");
+
+  const expected = provenance.provenance_sha256;
+  const body = structuredClone(provenance);
+  delete body.provenance_sha256;
+  assert.equal(sha256(body), expected);
+  assert.equal(
+    readFileSync(new URL("../conformance/pc-ops-chaos/NATIVE_CUTOVER_PROVENANCE.v1.sha256", import.meta.url), "utf8").trim(),
+    `${expected}  NATIVE_CUTOVER_PROVENANCE.v1.json`,
+  );
+});
+
+test("frozen native producer evidence contains structured process/session and restart contracts", () => {
+  const root = new URL("../conformance/frozen/pc-ops-chaos/", import.meta.url);
+  const inventory = JSON.parse(readFileSync(new URL(
+    "relay/58bad1bc60f7d4d26d03223c8f0bea5f138f49a6/tests/fixtures/pc_ops_v1/action_inventory.json",
+    root,
+  ), "utf8"));
+  assert.ok(inventory.groups.process.includes("process.start"));
+  assert.ok(inventory.groups.process.includes("process.read_output"));
+  assert.ok(inventory.groups.shell_session.includes("shell.session.start"));
+  assert.ok(inventory.groups.shell_session.includes("shell.session.write_stdin"));
+
+  const outcomes = JSON.parse(readFileSync(new URL(
+    "relay/58bad1bc60f7d4d26d03223c8f0bea5f138f49a6/tests/fixtures/pc_ops_v1/outcome_examples.json",
+    root,
+  ), "utf8"));
+  assert.ok(outcomes.examples.some((item) => item.effect_state === "unknown" && item.reexecution_safe === false));
+  assert.ok(outcomes.examples.some((item) => item.effect_state === "completed" && item.reexecution_safe === false));
+
+  const context = JSON.parse(readFileSync(new URL(
+    "control-plane/801d024a4e9bf71eda0e362c64ec719efb869ddc/conformance/reports/context-epoch-e2e-v1.json",
+    root,
+  ), "utf8"));
+  assert.ok(context.scenarios.some((item) => item.name === "unknown_journal_reconciliation_only" && item.sideEffectProviderCalls === 1));
+  assert.ok(context.scenarios.some((item) => item.name === "context_mismatch_unknown_journal" && item.sideEffectProviderCalls === 0));
+  assert.ok(context.scenarios.some((item) => item.name === "completed_then_epoch_change_reverify" && item.sideEffectProviderCalls === 1));
+
+  const vision = JSON.parse(readFileSync(new URL(
+    "vision/bdfa71226a9265f9ac052ef576a6d18cada80b84/tests/fixtures/observation_epoch_v1/scenarios.json",
+    root,
+  ), "utf8"));
+  assert.ok(Object.keys(vision.scenarios).length > 0);
+
+  const gatewayScenarios = JSON.parse(readFileSync(new URL(
+    "ops-gateway/732f0f5e6482f6bb96f0dfa582dc1c0fe2ea712e/conformance/pc_ops.gateway.v1/e2e-scenarios.json",
+    root,
+  ), "utf8"));
+  assert.ok(gatewayScenarios.scenarios.some((item) => item.id === "protected-path-rejection"));
+  assert.ok(gatewayScenarios.scenarios.some((item) => item.id === "unknown-outcome-reconciliation"));
+});
