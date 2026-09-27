@@ -51,3 +51,7 @@ export {
   parseVisionObservationConsistencyV1,
   VisionSensorReconciliationAdapter,
 } from "./sensor-reconciliation.js";
+
+export { ExecutorJsonlClient } from "./executor-jsonl-client.js";
+export { createLiveControlRuntime } from "./live-runtime.js";
+export { PcControlMcpGateway, createMcpJsonRpcHandler, serveMcpStdio, CONVENIENCE_TOOLS } from "./mcp-gateway.js";
