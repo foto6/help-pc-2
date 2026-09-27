@@ -1,9 +1,9 @@
 # PC Control Plane
 
-Provider-neutral coordinator and reliability layer for full-PC agent control.
+Provider-neutral reliability layer for full-PC agent control.
 
-Runtime v2 adds durable sessions/actions, leases and restart recovery, idempotency across restarts, lane locking, bounded structured retries, cancellation propagation, generic post-action verification hooks, dry-run simulation adapters, append-only audit, and runtime metrics.
+Runtime v2 provides durable sessions/actions, leases, restart recovery, idempotency, lane locking, cancellation, generic verification, dry-run simulation, redacted append-only audit and metrics. Wave 3 adds uncertain-outcome reconciliation so interrupted side-effect dispatch is never blindly replayed.
 
-Safety baseline remains unchanged: execution is delegated to the Executor; no credential/CAPTCHA automation; destructive actions are disabled by default; never touch `E:\\manhwa`.
+Safety baseline: execution remains delegated to the Executor; no credential/CAPTCHA automation; destructive actions are disabled by default; never touch `E:\manhwa`.
 
-See `docs/RUNTIME_V2.md` and `docs/ARCHITECTURE.md`.
+See `docs/RUNTIME_V2.md`, `docs/UNCERTAIN_OUTCOME_RECONCILIATION.md`, and `docs/ARCHITECTURE.md`.

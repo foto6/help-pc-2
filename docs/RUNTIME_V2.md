@@ -1,63 +1,27 @@
 # Resilient PC Control Runtime v2
 
+Runtime v2 provides durable sessions/actions, leases, lane locks, idempotency, cancellation, provider-neutral verification, audit, metrics and RPC/MCP projection. Wave 3 strengthens its recovery semantics without rebuilding those abstractions.
+
 ## Lifecycle
 
-Actions can move through `queued -> leased -> executing -> verifying -> succeeded`. Retryable failures move to `retry_wait`; policy blocks, cancellation, and exhausted/non-retryable failures terminate as `blocked`, `cancelled`, or `failed`. The legacy `awaiting_confirmation` gate remains for backward compatibility before `queued`.
+Normal execution is `queued -> leased -> executing -> verifying -> succeeded`. `awaiting_confirmation`, `retry_wait`, `blocked`, `cancelled`, and `failed` remain supported.
 
-A lease records worker ownership and expiry. Persisted `leased`, `executing`, or `verifying` work is recovered on restart: never-started leases return to `queued`; interrupted attempts enter bounded `retry_wait` or `failed` at the attempt limit. Explicit lease-expiry recovery provides the same behavior while a process remains alive.
+Wave 3 adds `uncertain_outcome`, `reconciliation_wait`, and `reconciling`. A never-started execution lease may return to `queued`. An interrupted `executing` action never automatically returns to the execution queue; it enters read-only reconciliation. Interrupted verification also resumes read-only reconciliation.
 
-## Durability
+See `UNCERTAIN_OUTCOME_RECONCILIATION.md` for exact transition and retry ownership rules.
 
-`JsonStateStore` atomically persists version-2 state. Session ownership, queue state, idempotency keys, attempt counts, retry deadlines, metrics, and action correlation IDs survive restart. Corrupt or unsupported persisted state fails closed with `STATE_CORRUPTED`/`STATE_VERSION_UNSUPPORTED`; it is never silently reset.
+## Persistence and compatibility
 
-`JsonlAuditTimeline` is append-only. Audit entries carry correlation IDs but redact metadata keys commonly associated with credentials, tokens, CAPTCHA values, text-entry values, and secrets. Long strings are bounded.
+Persisted state is version 3. Version 1/2 snapshots are migrated in memory. Legacy `attempts` is retained as an alias of `executionAttempts`; verification and reconciliation have separate persisted counters. Existing ActionSpec/RPC/MCP names remain available.
 
-## Resource ownership and lanes
+`JsonStateStore` remains atomic and fails closed on corrupt state. `JsonlAuditTimeline` remains append-only and redacts secret/token/password/CAPTCHA/text/value-like metadata.
 
-Desktop ownership remains session-exclusive. Action leases additionally lock provider-neutral runtime lanes:
+## Provider boundaries
 
-- `keyboard-mouse:<desktop>` for keyboard, mouse, UIA side effects, and `vision.target.invoke`;
-- `observation:<desktop>` for screenshot/window/UIA observation;
-- `shell:<desktop>` for shell work;
-- `resource:<custom>` when callers supply a resource key;
-- a conservative `desktop-action:<desktop>` fallback for uncategorized actions.
+`HelpPc1Adapter` preserves the existing Executor request envelope and dry-run default. Current Executor `b3f126f...` response fields are normalized into evidence without assuming an Executor-internal journal. Optional `readEvidence` is an injected read-only boundary only.
 
-Locks are released on success, failure, cancellation, retry scheduling, lease expiry, and restart recovery.
+Verification remains provider-neutral; future Vision verification v2 fixtures can be supplied through the same `verify()` contract.
 
-## Retry and cancellation
+## Safety
 
-Retries are bounded by `maxAttempts`. Automatic retry requires a structured error with `retryable: true`. `policy_blocked`, cancellation/abort, malformed results, and ordinary non-retryable failures never auto-retry. `retryDelayMs` controls the durable `retry_wait` deadline.
-
-Cancelling queued/retry/leased work terminates it immediately and releases locks. Cancelling executing/verifying work aborts the provider `AbortSignal`; the resulting state is `cancelled`, never a retry.
-
-## Executor and verification boundaries
-
-`HelpPc1Adapter` retains the frozen Executor envelope:
-
-```json
-{"request_id":"...","action":"vision.target.invoke","params":{},"dry_run":true}
-```
-
-Dry-run remains adapter configuration and defaults true. Frozen Executor blocked results remain non-retryable provider failures for A3 compatibility. Future structured Executor errors can opt into bounded retry only with explicit retry metadata.
-
-Verification is a separate generic provider boundary. An ActionSpec may add:
-
-```json
-{"verification":{"provider":"vision-2","type":"post_action.observe","input":{}}}
-```
-
-The core only consumes `{ok, code, category, retryable, ...}` verification results. It does not interpret Vision target semantics or confidence rules.
-
-## Simulation and failure injection
-
-`createSimulationRuntime()` wires `FakeExecutorAdapter` and `FakeVisionObservationAdapter` in dry-run mode. Tests cover executor timeout, stale/ambiguous verification, process crash recovery, cancellation races, duplicate requests, lease expiry, and corrupted persisted state.
-
-## Metrics
-
-`runtime.metrics` reports queue, execution, and verification duration counts/totals/max/average plus retry, cancellation, and lease-expiry counters. Metrics are persisted with runtime state.
-
-## Backward compatibility and migration
-
-Existing constructor usage, session/action methods, `processNext()`, `drain()`, ActionSpec fields, RPC names, and MCP projection remain supported. Version-1 snapshots are migrated in memory to version 2; legacy `running` becomes `executing`, action lanes/correlation IDs are derived, and existing idempotency mappings are retained. The `awaiting_confirmation` compatibility gate remains. Runtime v2 adds new states and fields, so clients should treat unknown future statuses as non-terminal unless the API documents otherwise.
-
-No migration enables credentials, CAPTCHA handling, coordinate fallback, destructive defaults, or protected-path access.
+No credential/CAPTCHA automation, no destructive default actions, no implicit coordinate fallback, and no protected-path access are introduced by reconciliation.

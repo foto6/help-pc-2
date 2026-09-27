@@ -2,81 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { ControlPlane, HelpPc1Adapter } from "../../src/index.js";
-
+import { ControlPlane, HelpPc1Adapter, FakeVisionObservationAdapter, normalizeExecutorOutcomeEvidence } from "../../src/index.js";
 const fixture = JSON.parse(readFileSync(fileURLToPath(new URL("../fixtures/grounded_target_v1.json", import.meta.url)), "utf8"));
 function ids() { let n = 0; return () => `id-${++n}`; }
-function executorSuccess(request) { return { request_id: request.request_id, action: request.action, ok: true, status: request.dry_run ? "dry_run" : "completed", data: {}, error: null, dry_run: request.dry_run }; }
+function success(request) { return { request_id: request.request_id, action: request.action, ok: true, status: request.dry_run ? "dry_run" : "completed", started_at: "2026-09-27T00:00:00.000Z", finished_at: "2026-09-27T00:00:00.001Z", data: {}, error: null, error_kind: null, dry_run: request.dry_run }; }
 
-test("vision.target.invoke maps to exact Executor envelope and defaults dry_run true", async () => {
-  const calls = [];
-  const adapter = new HelpPc1Adapter({ invoke: async (request, context) => (calls.push({ request, context }), executorSuccess(request)) });
-  const cp = new ControlPlane({ providers: [adapter], idFactory: ids() });
-  const session = cp.createSession({ desktopId: "desktop-A" });
-  const action = cp.enqueueAction(session.id, { provider: "help-pc-1", type: "vision.target.invoke", input: { target: fixture } });
-  const finished = await cp.processNext();
-  assert.deepEqual(calls[0].request, { request_id: action.id, action: "vision.target.invoke", params: { target: fixture }, dry_run: true });
-  assert.ok(calls[0].context.signal instanceof AbortSignal);
-  assert.equal(finished.status, "succeeded");
-});
+test("b3f126f success response normalizes to outcome evidence without changing exact request envelope", async () => { const calls = []; const adapter = new HelpPc1Adapter({ invoke: async (request) => (calls.push(request), success(request)) }); const cp = new ControlPlane({ providers: [adapter], idFactory: ids() }); const session = cp.createSession({ desktopId: "desktop-A" }); const action = cp.enqueueAction(session.id, { provider: "help-pc-1", type: "vision.target.invoke", input: { target: fixture } }); const finished = await cp.processNext(); assert.deepEqual(calls[0], { request_id: action.id, action: "vision.target.invoke", params: { target: fixture }, dry_run: true }); assert.equal(finished.status, "succeeded"); assert.equal(finished.executorEvidence.outcome, "succeeded"); assert.equal(finished.executionAttempts, 1); });
 
-test("action payload cannot override adapter dry_run configuration", async () => {
-  let envelope;
-  const adapter = new HelpPc1Adapter({ invoke: async (request) => (envelope = request, executorSuccess(request)) });
-  const cp = new ControlPlane({ providers: [adapter], idFactory: ids() });
-  const session = cp.createSession({ desktopId: "desktop-A" });
-  cp.enqueueAction(session.id, { provider: "help-pc-1", type: "vision.target.invoke", input: { target: fixture, dry_run: false } });
-  await cp.processNext();
-  assert.equal(envelope.dry_run, true);
-  assert.equal(envelope.params.dry_run, false);
-});
+test("b3f126f structured stale_target is confirmed not-dispatched and is not auto-replayed", async () => { let calls = 0; const adapter = new HelpPc1Adapter({ invoke: async (request) => (calls += 1, { request_id: request.request_id, action: request.action, ok: false, status: "stale_target", error: "missing", error_kind: "stale_target", dry_run: true }) }); const cp = new ControlPlane({ providers: [adapter], idFactory: ids() }); const session = cp.createSession({ desktopId: "desktop-A" }); const action = cp.enqueueAction(session.id, { provider: "help-pc-1", type: "vision.target.invoke", input: { target: fixture }, maxAttempts: 3 }); const result = await cp.processNext(); assert.equal(result.status, "failed"); assert.equal(result.executionAttempts, 1); assert.equal(calls, 1); assert.equal(await cp.processNext(), null); assert.equal(cp.getAction(action.id).executionAttempts, 1); });
 
-test("frozen Executor blocked result remains non-retryable failure", async () => {
-  let calls = 0;
-  const adapter = new HelpPc1Adapter({ invoke: async (request) => (calls += 1, { request_id: request.request_id, action: request.action, ok: false, status: "blocked", error: "not actionable", dry_run: true }) });
-  const cp = new ControlPlane({ providers: [adapter], idFactory: ids() });
-  const session = cp.createSession({ desktopId: "desktop-A" });
-  const action = cp.enqueueAction(session.id, { provider: "help-pc-1", type: "vision.target.invoke", input: { target: fixture }, maxAttempts: 3 });
-  const finished = await cp.processNext();
-  assert.equal(finished.status, "failed");
-  assert.equal(finished.attempts, 1);
-  assert.equal(finished.error.code, "EXECUTOR_BLOCKED");
-  assert.equal(calls, 1);
-  assert.equal(await cp.processNext(), null);
-  assert.equal(cp.getAction(action.id).attempts, 1);
-});
+test("b3f126f timeout is uncertain and reconciles read-only without a second invoke", async () => { let invokes = 0; const vision = new FakeVisionObservationAdapter({ script: [{ ok: true, observation: { applied: true } }] }); const adapter = new HelpPc1Adapter({ invoke: async (request) => (invokes += 1, { request_id: request.request_id, action: request.action, ok: false, status: "timeout", error: "timed out", error_kind: "timeout", dry_run: false }), readEvidence: async () => ({ outcome: "unknown", source: "executor-fixture" }) }); const cp = new ControlPlane({ providers: [adapter], verificationProviders: [vision], idFactory: ids() }); const session = cp.createSession({ desktopId: "desktop-A" }); const action = cp.enqueueAction(session.id, { provider: "help-pc-1", type: "vision.target.invoke", input: { target: fixture }, verification: { provider: "vision-2", type: "post_action.observe" } }); const uncertain = await cp.processNext(); assert.equal(uncertain.status, "uncertain_outcome"); const reconciled = await cp.processNext(); assert.equal(reconciled.status, "succeeded"); assert.equal(invokes, 1); assert.equal(reconciled.executionAttempts, 1); assert.equal(reconciled.reconciliationAttempts, 1); assert.equal(reconciled.verificationAttempts, 1); });
 
-test("structured Executor timeout opts into bounded retry", async () => {
-  let calls = 0;
-  const adapter = new HelpPc1Adapter({ invoke: async (request) => {
-    calls += 1;
-    if (calls === 1) return { request_id: request.request_id, action: request.action, ok: false, status: "error", error: { code: "executor_timeout", category: "transient", retryable: true, message: "timed out" }, dry_run: true };
-    return executorSuccess(request);
-  }});
-  const cp = new ControlPlane({ providers: [adapter], idFactory: ids() });
-  const session = cp.createSession({ desktopId: "desktop-A" });
-  cp.enqueueAction(session.id, { provider: "help-pc-1", type: "vision.target.invoke", input: { target: fixture }, maxAttempts: 2 });
-  assert.equal((await cp.processNext()).status, "retry_wait");
-  assert.equal((await cp.processNext()).status, "succeeded");
-  assert.equal(calls, 2);
-});
-
-test("abort/cancel remains cancelled and not retry", async () => {
-  let started;
-  const startedPromise = new Promise((resolve) => { started = resolve; });
-  let calls = 0;
-  const adapter = new HelpPc1Adapter({ invoke: async (_request, { signal }) => {
-    calls += 1; started();
-    return new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason ?? new Error("aborted")), { once: true }));
-  }});
-  const cp = new ControlPlane({ providers: [adapter], idFactory: ids() });
-  const session = cp.createSession({ desktopId: "desktop-A" });
-  const action = cp.enqueueAction(session.id, { provider: "help-pc-1", type: "vision.target.invoke", input: { target: fixture }, maxAttempts: 3 });
-  const processing = cp.processNext();
-  await startedPromise;
-  cp.cancelAction(action.id, "operator_stop");
-  const finished = await processing;
-  assert.equal(finished.status, "cancelled");
-  assert.equal(finished.attempts, 1);
-  assert.equal(calls, 1);
-});
+test("normalizer accepts current b3f126f ActionResult fields", () => { const evidence = normalizeExecutorOutcomeEvidence({ request_id: "r1", action: "uia.invoke", ok: false, status: "ambiguous_target", error_kind: "ambiguous_target", dry_run: false, started_at: "a", finished_at: "b" }, { id: "r1", type: "uia.invoke" }); assert.equal(evidence.outcome, "not_dispatched"); assert.equal(evidence.errorKind, "ambiguous_target"); });

@@ -2,11 +2,8 @@ export class ProviderRegistry {
   #providers = new Map();
   constructor(providers = []) { for (const provider of providers) this.register(provider); }
   register(provider) {
-    if (!provider || typeof provider.name !== "string" || typeof provider.execute !== "function") {
-      throw new TypeError("Provider must expose { name, execute(action, context) }.");
-    }
-    this.#providers.set(provider.name, provider);
-    return provider;
+    if (!provider || typeof provider.name !== "string" || typeof provider.execute !== "function") throw new TypeError("Provider must expose { name, execute(action, context) }.");
+    this.#providers.set(provider.name, provider); return provider;
   }
   get(name) { return this.#providers.get(name) ?? null; }
   list() { return [...this.#providers.keys()]; }
@@ -16,107 +13,124 @@ export class VerificationRegistry {
   #providers = new Map();
   constructor(providers = []) { for (const provider of providers) this.register(provider); }
   register(provider) {
-    if (!provider || typeof provider.name !== "string" || typeof provider.verify !== "function") {
-      throw new TypeError("Verification provider must expose { name, verify(request, context) }.");
-    }
-    this.#providers.set(provider.name, provider);
-    return provider;
+    if (!provider || typeof provider.name !== "string" || typeof provider.verify !== "function") throw new TypeError("Verification provider must expose { name, verify(request, context) }.");
+    this.#providers.set(provider.name, provider); return provider;
   }
   get(name) { return this.#providers.get(name) ?? null; }
   list() { return [...this.#providers.keys()]; }
 }
 
 class InvokeAdapter {
-  constructor(name, invoke) {
+  constructor(name, invoke, { readEvidence = null } = {}) {
     if (typeof invoke !== "function") throw new TypeError("invoke must be a function.");
-    this.name = name;
-    this.invoke = invoke;
+    if (readEvidence !== null && typeof readEvidence !== "function") throw new TypeError("readEvidence must be a function when supplied.");
+    this.name = name; this.invoke = invoke; this._readEvidence = readEvidence;
   }
   async execute(action, context) {
-    return this.invoke({
-      requestId: action.id,
-      sessionId: action.sessionId,
-      tool: action.type,
-      input: action.input,
-      resource: action.resource,
-      signal: context.signal,
-      attempt: context.attempt,
-    });
+    return this.invoke({ requestId: action.id, sessionId: action.sessionId, tool: action.type, input: action.input, resource: action.resource, signal: context.signal, executionAttempt: context.executionAttempt });
+  }
+  async readOutcomeEvidence(action, context) {
+    if (!this._readEvidence) return { outcome: "unknown", source: this.name, requestId: action.id, reason: "no_evidence_reader" };
+    return this._readEvidence({ requestId: action.id, action: action.type, input: action.input, executionAttempt: action.executionAttempts }, context);
   }
 }
 
-function normalizedExecutorError(result) {
+function executorResultEvidence(result, action) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return null;
+  const kind = typeof result.error_kind === "string" ? result.error_kind : null;
+  let outcome = "unknown";
+  if (result.ok === true) outcome = "succeeded";
+  else if (result.ok === false && (result.status === "blocked" || kind === "policy_blocked")) outcome = "blocked";
+  else if (result.ok === false && (result.status === "cancelled" || kind === "cancelled")) outcome = "unknown";
+  else if (result.ok === false && ["stale_target", "ambiguous_target"].includes(kind ?? result.status)) outcome = "not_dispatched";
+  else if (result.ok === false && ["timeout", "transient", "executor_failure"].includes(kind ?? result.status)) outcome = "unknown";
+  else if (result.ok === false) outcome = "failed";
+  return {
+    source: "help-pc-1",
+    contract: "pc_executor.action_result.v2-compatible",
+    requestId: result.request_id ?? action.id,
+    action: result.action ?? action.type,
+    outcome,
+    status: result.status ?? null,
+    errorKind: kind,
+    dryRun: result.dry_run ?? null,
+    startedAt: result.started_at ?? null,
+    finishedAt: result.finished_at ?? null,
+  };
+}
+
+function executorProviderFailure(result) {
+  const evidence = executorResultEvidence(result, { id: result?.request_id, type: result?.action });
+  const kind = typeof result?.error_kind === "string" ? result.error_kind : null;
   const detail = result?.error;
-  const blocked = result?.status === "blocked" || detail?.category === "policy_blocked" || detail?.code === "policy_blocked";
-  const message = typeof detail === "string"
-    ? detail
-    : typeof detail?.message === "string"
-      ? detail.message
-      : blocked ? "PC Executor blocked the action." : "PC Executor reported action failure.";
+  const blocked = result?.status === "blocked" || kind === "policy_blocked";
+  const message = typeof detail === "string" && detail ? detail : blocked ? "PC Executor blocked the action." : "PC Executor reported action failure.";
   const error = new Error(message);
   error.name = "ProviderExecutionError";
-  error.code = typeof detail?.code === "string" ? detail.code : blocked ? "EXECUTOR_BLOCKED" : "EXECUTOR_FAILED";
-  error.category = typeof detail?.category === "string" ? detail.category : blocked ? "executor_blocked" : "executor_error";
-  error.retryable = blocked ? false : detail?.retryable === true;
+  error.code = blocked ? "EXECUTOR_BLOCKED" : kind ? `EXECUTOR_${kind.toUpperCase()}` : "EXECUTOR_FAILED";
+  error.category = kind ?? (blocked ? "executor_blocked" : "executor_error");
+  error.retryable = false;
+  error.dispatchState = evidence?.outcome === "not_dispatched" || evidence?.outcome === "blocked" ? "not_dispatched" : "unknown";
+  error.outcomeUncertain = error.dispatchState !== "not_dispatched";
+  error.executorEvidence = evidence;
   error.providerResult = result;
   return error;
 }
 
 function malformedExecutorResult() {
   const error = new Error("PC Executor returned a malformed result.");
-  error.name = "ProviderExecutionError";
-  error.code = "EXECUTOR_MALFORMED_RESULT";
-  error.category = "malformed_result";
-  error.retryable = false;
+  error.name = "ProviderExecutionError"; error.code = "EXECUTOR_MALFORMED_RESULT"; error.category = "malformed_result";
+  error.retryable = false; error.dispatchState = "unknown"; error.outcomeUncertain = true;
   return error;
 }
 
 export class HelpPc1Adapter {
-  constructor({ invoke, dryRun = true } = {}) {
+  constructor({ invoke, dryRun = true, readEvidence = null } = {}) {
     if (typeof invoke !== "function") throw new TypeError("invoke must be a function.");
     if (typeof dryRun !== "boolean") throw new TypeError("dryRun must be a boolean.");
-    this.name = "help-pc-1";
-    this.invoke = invoke;
-    this.dryRun = dryRun;
+    if (readEvidence !== null && typeof readEvidence !== "function") throw new TypeError("readEvidence must be a function when supplied.");
+    this.name = "help-pc-1"; this.invoke = invoke; this.dryRun = dryRun; this._readEvidence = readEvidence;
   }
-
   async execute(action, context) {
-    const result = await this.invoke(
-      {
-        request_id: action.id,
-        action: action.type,
-        params: structuredClone(action.input ?? {}),
-        dry_run: this.dryRun,
-      },
-      { signal: context.signal, attempt: context.attempt, session: context.session },
-    );
+    let result;
+    try {
+      result = await this.invoke(
+        { request_id: action.id, action: action.type, params: structuredClone(action.input ?? {}), dry_run: this.dryRun },
+        { signal: context.signal, executionAttempt: context.executionAttempt, session: context.session },
+      );
+    } catch (error) {
+      if (error && typeof error === "object") {
+        if (!error.dispatchState) error.dispatchState = "unknown";
+        if (error.outcomeUncertain === undefined) error.outcomeUncertain = error.dispatchState !== "not_dispatched";
+      }
+      throw error;
+    }
     if (!result || typeof result !== "object" || Array.isArray(result)) throw malformedExecutorResult();
-    if (result.ok === false || result.status === "blocked") throw normalizedExecutorError(result);
-    if (result.ok === true && typeof result.status === "string" && result.status.trim()) return result;
+    if (result.ok === false || result.status === "blocked") throw executorProviderFailure(result);
+    if (result.ok === true && typeof result.status === "string" && result.status.trim()) {
+      return { result, evidence: executorResultEvidence(result, action) };
+    }
     throw malformedExecutorResult();
   }
-}
-
-export class Vision2Adapter extends InvokeAdapter {
-  constructor({ invoke }) { super("vision-2", invoke); }
-}
-
-export class FunctionProvider extends InvokeAdapter {
-  constructor(name, invoke) { super(name, invoke); }
-}
-
-export class FunctionVerificationProvider {
-  constructor(name, verify) {
-    if (typeof verify !== "function") throw new TypeError("verify must be a function.");
-    this.name = name;
-    this._verify = verify;
+  async readOutcomeEvidence(action, context) {
+    if (!this._readEvidence) return { outcome: "unknown", source: this.name, requestId: action.id, reason: "no_executor_evidence_reader" };
+    const raw = await this._readEvidence({ request_id: action.id, action: action.type, execution_attempt: action.executionAttempts }, context);
+    if (raw && typeof raw === "object" && typeof raw.outcome === "string") return structuredClone(raw);
+    const normalized = executorResultEvidence(raw, action);
+    return normalized ?? { outcome: "unknown", source: this.name, requestId: action.id, reason: "malformed_evidence" };
   }
+}
+
+export class Vision2Adapter extends InvokeAdapter { constructor({ invoke }) { super("vision-2", invoke); } }
+export class FunctionProvider extends InvokeAdapter { constructor(name, invoke, options = {}) { super(name, invoke, options); } }
+export class FunctionVerificationProvider {
+  constructor(name, verify) { if (typeof verify !== "function") throw new TypeError("verify must be a function."); this.name = name; this._verify = verify; }
   verify(request, context) { return this._verify(request, context); }
 }
 
 export class FakeExecutorAdapter extends HelpPc1Adapter {
-  constructor({ script = [], dryRun = true } = {}) {
-    const state = { calls: [], script: [...script] };
+  constructor({ script = [], evidenceScript = [], dryRun = true } = {}) {
+    const state = { calls: [], script: [...script], evidenceCalls: [], evidenceScript: [...evidenceScript] };
     super({
       dryRun,
       invoke: async (request, context) => {
@@ -126,9 +140,15 @@ export class FakeExecutorAdapter extends HelpPc1Adapter {
         if (next instanceof Error) throw next;
         return { request_id: request.request_id, action: request.action, dry_run: request.dry_run, ...structuredClone(next) };
       },
+      readEvidence: async (request, context) => {
+        state.evidenceCalls.push(structuredClone(request));
+        const next = state.evidenceScript.length ? state.evidenceScript.shift() : { outcome: "unknown", source: "fake-executor", requestId: request.request_id };
+        if (typeof next === "function") return next(request, context);
+        if (next instanceof Error) throw next;
+        return structuredClone(next);
+      },
     });
-    this.calls = state.calls;
-    this._state = state;
+    this.calls = state.calls; this.evidenceCalls = state.evidenceCalls; this._state = state;
   }
 }
 
@@ -142,7 +162,8 @@ export class FakeVisionObservationAdapter extends FunctionVerificationProvider {
       if (next instanceof Error) throw next;
       return structuredClone(next);
     });
-    this.calls = state.calls;
-    this._state = state;
+    this.calls = state.calls; this._state = state;
   }
 }
+
+export { executorResultEvidence as normalizeExecutorOutcomeEvidence };
