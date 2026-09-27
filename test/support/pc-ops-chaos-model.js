@@ -31,7 +31,7 @@ export class RequestLedger {
     const existing = this.records.get(request.id);
     if (!existing) {
       const record = { id: request.id, digest, phase: "received", sideEffects: 0, result: null };
-      this.records.set(request.id, record);
+      this.records.set(logicalId, record);
       return { disposition: "accepted", record: structuredClone(record) };
     }
     if (existing.digest !== digest) return { disposition: "conflict", record: structuredClone(existing) };
@@ -175,8 +175,10 @@ export class NativeCutoverOracle {
   }
 
   receive(request) {
+    const logicalId = request.request_id ?? request.id;
+    if (!logicalId) throw new Error("native request requires request_id");
     const digest = requestIdentity(request);
-    const existing = this.records.get(request.id);
+    const existing = this.records.get(logicalId);
     if (existing) {
       return {
         disposition: existing.digest === digest ? "duplicate" : "conflict",
@@ -184,7 +186,7 @@ export class NativeCutoverOracle {
       };
     }
     const record = {
-      id: request.id,
+      id: logicalId,
       digest,
       phase: "received",
       dispatchAttempts: 0,
@@ -210,13 +212,16 @@ export class NativeCutoverOracle {
 
   dispatch(id, { contextDigest, observationEpoch }) {
     const record = this.#get(id);
+    if (!record.contextDigest || !record.observationEpoch) {
+      return { disposition: "fail_closed", code: "EXECUTION_CONTEXT_UNBOUND", record: structuredClone(record) };
+    }
     if (record.contextDigest !== contextDigest) {
       return { disposition: "fail_closed", code: "STALE_CONTEXT_BINDING", record: structuredClone(record) };
     }
     if (record.observationEpoch !== observationEpoch) {
       return { disposition: "fail_closed", code: "STALE_OBSERVATION_EPOCH", record: structuredClone(record) };
     }
-    if (!["ready", "received"].includes(record.phase) && !record.retryAuthorized) {
+    if (record.phase !== "ready" && !record.retryAuthorized) {
       return { disposition: "fail_closed", code: "RECONCILIATION_REQUIRED", record: structuredClone(record) };
     }
     record.dispatchAttempts += 1;
@@ -301,7 +306,12 @@ export class ManagedOperationOracle {
 
   begin(operationId, kind) {
     const existing = this.operations.get(operationId);
-    if (existing) return { disposition: "existing", operation: structuredClone(existing) };
+    if (existing) {
+      if (existing.kind !== kind) {
+        return { disposition: "fail_closed", code: "OPERATION_ID_KIND_CONFLICT", operation: structuredClone(existing) };
+      }
+      return { disposition: "existing", operation: structuredClone(existing) };
+    }
     const operation = {
       operationId,
       kind,
