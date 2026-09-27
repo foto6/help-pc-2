@@ -370,13 +370,15 @@ export function parseVisionVerificationResultV1(payload, { verificationInput = n
 }
 
 export class VisionVerificationResultV1Adapter {
-  constructor({ readResult, name = "vision-2", verificationInputResolver = null, targetIdentityResolver = null } = {}) {
+  constructor({ readResult, name = "vision-2", verificationInputResolver = null, verificationInputCanonicalJsonResolver = null, targetIdentityResolver = null } = {}) {
     if (typeof readResult !== "function") throw new TypeError("readResult must be a function.");
     if (verificationInputResolver !== null && typeof verificationInputResolver !== "function") throw new TypeError("verificationInputResolver must be a function.");
+    if (verificationInputCanonicalJsonResolver !== null && typeof verificationInputCanonicalJsonResolver !== "function") throw new TypeError("verificationInputCanonicalJsonResolver must be a function.");
     if (targetIdentityResolver !== null && typeof targetIdentityResolver !== "function") throw new TypeError("targetIdentityResolver must be a function.");
     this.name = name;
     this.readResult = readResult;
     this.verificationInputResolver = verificationInputResolver;
+    this.verificationInputCanonicalJsonResolver = verificationInputCanonicalJsonResolver;
     this.targetIdentityResolver = targetIdentityResolver;
   }
 
@@ -385,7 +387,9 @@ export class VisionVerificationResultV1Adapter {
     const verificationInput = this.verificationInputResolver
       ? await this.verificationInputResolver(request, context)
       : request?.verification?.input?.verificationInput ?? null;
-    const verificationInputCanonicalJson = request?.verification?.input?.verificationInputCanonicalJson ?? null;
+    const verificationInputCanonicalJson = this.verificationInputCanonicalJsonResolver
+      ? await this.verificationInputCanonicalJsonResolver(request, context)
+      : request?.verification?.input?.verificationInputCanonicalJson ?? null;
     const targetIdentity = this.targetIdentityResolver
       ? await this.targetIdentityResolver(request, context)
       : request?.verification?.input?.targetIdentity ?? null;

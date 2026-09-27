@@ -1,0 +1,22 @@
+{
+  "schema": "pc_control.state_machine_fault_soak.v1",
+  "seeds": [334462, 12648430],
+  "logicalActions": 512,
+  "events": 0,
+  "restarts": 0,
+  "duplicates": 0,
+  "cancellations": 0,
+  "leaseExpiryChecks": 0,
+  "persistenceFaultChecks": 13,
+  "executionAttempts": 0,
+  "verificationAttempts": 0,
+  "reconciliationAttempts": 0,
+  "sideEffectProviderCalls": 0,
+  "executorEvidenceCalls": 0,
+  "observationCalls": 0,
+  "terminalActions": 0,
+  "quiescentUncertain": 0,
+  "malformedEvidenceActions": 0,
+  "runTransitionHashes": ["pending", "pending"],
+  "aggregateTransitionHash": "pending"
+}
