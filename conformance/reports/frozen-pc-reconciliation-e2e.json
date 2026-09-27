@@ -1,0 +1,25 @@
+{
+  "schema": "pc_control.cross_repo_reconciliation_e2e_report.v1",
+  "executor_head": "606074456ca00681fac30a40ee28f7bb0f67c79c",
+  "vision_head": "f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82",
+  "scenario": "unknown-outcome-read-only-verification-success",
+  "terminalStatus": "succeeded",
+  "counters": {
+    "executionAttempts": 1,
+    "verificationAttempts": 1,
+    "reconciliationAttempts": 1,
+    "sideEffectProviderCalls": 1,
+    "executorEvidenceCalls": 1,
+    "observationCalls": 1
+  },
+  "transitionTrace": [
+    "action.enqueued",
+    "action.leased:execute",
+    "action.executing",
+    "action.uncertain_outcome",
+    "action.leased:reconcile",
+    "action.reconciling",
+    "action.verification_attempt",
+    "action.succeeded"
+  ]
+}

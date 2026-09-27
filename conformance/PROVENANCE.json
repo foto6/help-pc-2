@@ -1,0 +1,105 @@
+{
+  "schema": "pc_control.frozen_cross_repo_conformance.v1",
+  "created_for": "Round 2 Wave 4 frozen PC reconciliation gate",
+  "hash_note": "git_blob_sha1 is the authoritative Git object content hash; copied blobs were recreated from exact pinned source bytes and matched upstream blob SHAs.",
+  "upstreams": {
+    "executor": {
+      "repository": "foto6/help-pc-1",
+      "commit_sha": "606074456ca00681fac30a40ee28f7bb0f67c79c",
+      "contract": "pc_executor.action_outcome.v1",
+      "authoritative_contract_path": "docs/ACTION_OUTCOME_V1.md"
+    },
+    "vision": {
+      "repository": "foto6/vision-2",
+      "commit_sha": "f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82",
+      "contract": "vision.post_action_verification_result.v1",
+      "authoritative_contract_path": "docs/POST_ACTION_VERIFICATION_RESULT_V1.md"
+    }
+  },
+  "files": [
+    {
+      "repository": "foto6/help-pc-1",
+      "commit_sha": "606074456ca00681fac30a40ee28f7bb0f67c79c",
+      "source_path": "tests/fixtures/action_outcome_v1.json",
+      "git_blob_sha1": "9e9403b7e96b294ef5d835e06978e5c3141a9123",
+      "copied_path": "conformance/frozen/executor/606074456ca00681fac30a40ee28f7bb0f67c79c/tests/fixtures/action_outcome_v1.json"
+    },
+    {
+      "repository": "foto6/help-pc-1",
+      "commit_sha": "606074456ca00681fac30a40ee28f7bb0f67c79c",
+      "source_path": "tests/fixtures/action_outcome_v1_not_started.json",
+      "git_blob_sha1": "5ff2dddab48b478090cd4b49e7727224ce6f664b",
+      "copied_path": "conformance/frozen/executor/606074456ca00681fac30a40ee28f7bb0f67c79c/tests/fixtures/action_outcome_v1_not_started.json"
+    },
+    {
+      "repository": "foto6/help-pc-1",
+      "commit_sha": "606074456ca00681fac30a40ee28f7bb0f67c79c",
+      "source_path": "tests/fixtures/action_outcome_v1_unknown.json",
+      "git_blob_sha1": "4a2146dbebdfb580da1603aa93743296a4e15857",
+      "copied_path": "conformance/frozen/executor/606074456ca00681fac30a40ee28f7bb0f67c79c/tests/fixtures/action_outcome_v1_unknown.json"
+    },
+    {
+      "repository": "foto6/vision-2",
+      "commit_sha": "f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82",
+      "source_path": "tests/fixtures/post_action_verification_result_v1/verification_input.json",
+      "git_blob_sha1": "1ea6ed7e18d6d46969c6d9691266af9ef0094e5d",
+      "copied_path": "conformance/frozen/vision/f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82/tests/fixtures/post_action_verification_result_v1/verification_input.json"
+    },
+    {
+      "repository": "foto6/vision-2",
+      "commit_sha": "f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82",
+      "source_path": "tests/fixtures/post_action_verification_result_v1/verified.json",
+      "git_blob_sha1": "6bc62e3c86f3d159f97c453c6ff08f808646f6f4",
+      "copied_path": "conformance/frozen/vision/f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82/tests/fixtures/post_action_verification_result_v1/verified.json"
+    },
+    {
+      "repository": "foto6/vision-2",
+      "commit_sha": "f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82",
+      "source_path": "tests/fixtures/post_action_verification_result_v1/failed.json",
+      "git_blob_sha1": "492a777ed6e1cca9ce0066866acc8b104b62d560",
+      "copied_path": "conformance/frozen/vision/f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82/tests/fixtures/post_action_verification_result_v1/failed.json"
+    },
+    {
+      "repository": "foto6/vision-2",
+      "commit_sha": "f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82",
+      "source_path": "tests/fixtures/post_action_verification_result_v1/stale.json",
+      "git_blob_sha1": "1bd3f7d6c687e6a97626563bd3d670e2b3dd2fb0",
+      "copied_path": "conformance/frozen/vision/f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82/tests/fixtures/post_action_verification_result_v1/stale.json"
+    },
+    {
+      "repository": "foto6/vision-2",
+      "commit_sha": "f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82",
+      "source_path": "tests/fixtures/post_action_verification_result_v1/inconclusive.json",
+      "git_blob_sha1": "c3c6aecda4f0f648fa7243fde49100cdb290442c",
+      "copied_path": "conformance/frozen/vision/f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82/tests/fixtures/post_action_verification_result_v1/inconclusive.json"
+    },
+    {
+      "repository": "foto6/vision-2",
+      "commit_sha": "f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82",
+      "source_path": "tests/fixtures/post_action_verification_result_v1/manifest.json",
+      "git_blob_sha1": "f227218a22e59f6b05b0f47a49412098717062b6",
+      "copied_path": "conformance/frozen/vision/f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82/tests/fixtures/post_action_verification_result_v1/manifest.json"
+    },
+    {
+      "repository": "foto6/vision-2",
+      "commit_sha": "f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82",
+      "source_path": "tests/fixtures/post_action_verification_input_v1.json",
+      "git_blob_sha1": "1ea6ed7e18d6d46969c6d9691266af9ef0094e5d",
+      "copied_path": "conformance/frozen/vision/f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82/tests/fixtures/post_action_verification_input_v1.json"
+    },
+    {
+      "repository": "foto6/vision-2",
+      "commit_sha": "f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82",
+      "source_path": "tests/fixtures/perception_snapshot_v2.json",
+      "git_blob_sha1": "5b769fd23975598bcc195d5a4f5848e2338cf94c",
+      "copied_path": "conformance/frozen/vision/f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82/tests/fixtures/perception_snapshot_v2.json"
+    },
+    {
+      "repository": "foto6/vision-2",
+      "commit_sha": "f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82",
+      "source_path": "tests/fixtures/perception_snapshot_v2_successor.json",
+      "git_blob_sha1": "72cf07abae75c3781da8d654391f682ee7c869a8",
+      "copied_path": "conformance/frozen/vision/f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82/tests/fixtures/perception_snapshot_v2_successor.json"
+    }
+  ]
+}

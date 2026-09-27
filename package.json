@@ -1,8 +1,11 @@
 {
   "name": "pc-control-plane",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
-  "scripts": {"test": "node --test", "test:wave3": "node --test test/uncertain-outcome.test.js test/integration/help-pc-1-adapter.integration.test.js"},
+  "scripts": {
+    "test": "node --test",
+    "test:conformance": "node --test test/conformance/contracts.test.js test/conformance/flows.test.js test/conformance/restart-state-machine.test.js"
+  },
   "engines": {"node": ">=20"}
 }

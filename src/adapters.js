@@ -1,3 +1,5 @@
+import { adaptExecutorActionOutcomeV1, ConformanceValidationError } from "./conformance.js";
+
 export class ProviderRegistry {
   #providers = new Map();
   constructor(providers = []) { for (const provider of providers) this.register(provider); }
@@ -35,7 +37,7 @@ class InvokeAdapter {
   }
 }
 
-function executorResultEvidence(result, action) {
+function legacyExecutorResultEvidence(result, action) {
   if (!result || typeof result !== "object" || Array.isArray(result)) return null;
   const kind = typeof result.error_kind === "string" ? result.error_kind : null;
   let outcome = "unknown";
@@ -59,8 +61,26 @@ function executorResultEvidence(result, action) {
   };
 }
 
-function executorProviderFailure(result) {
-  const evidence = executorResultEvidence(result, { id: result?.request_id, type: result?.action });
+function executorResultEvidence(result, action) {
+  if (result?.outcome_evidence !== undefined) {
+    return adaptExecutorActionOutcomeV1(result.outcome_evidence, { requestId: action.id, action: action.type });
+  }
+  return legacyExecutorResultEvidence(result, action);
+}
+
+function invalidExecutorOutcome(error) {
+  const wrapped = new Error(`PC Executor outcome evidence failed conformance: ${error.message}`);
+  wrapped.name = "ProviderExecutionError";
+  wrapped.code = "EXECUTOR_OUTCOME_INVALID";
+  wrapped.category = "malformed_result";
+  wrapped.retryable = false;
+  wrapped.dispatchState = "unknown";
+  wrapped.outcomeUncertain = true;
+  wrapped.cause = error;
+  return wrapped;
+}
+
+function executorProviderFailure(result, evidence) {
   const kind = typeof result?.error_kind === "string" ? result.error_kind : null;
   const detail = result?.error;
   const blocked = result?.status === "blocked" || kind === "policy_blocked";
@@ -69,8 +89,8 @@ function executorProviderFailure(result) {
   error.name = "ProviderExecutionError";
   error.code = blocked ? "EXECUTOR_BLOCKED" : kind ? `EXECUTOR_${kind.toUpperCase()}` : "EXECUTOR_FAILED";
   error.category = kind ?? (blocked ? "executor_blocked" : "executor_error");
-  error.retryable = false;
   error.dispatchState = evidence?.outcome === "not_dispatched" || evidence?.outcome === "blocked" ? "not_dispatched" : "unknown";
+  error.retryable = error.dispatchState === "not_dispatched" && ["transient", "timeout"].includes(kind);
   error.outcomeUncertain = error.dispatchState !== "not_dispatched";
   error.executorEvidence = evidence;
   error.providerResult = result;
@@ -106,18 +126,33 @@ export class HelpPc1Adapter {
       throw error;
     }
     if (!result || typeof result !== "object" || Array.isArray(result)) throw malformedExecutorResult();
-    if (result.ok === false || result.status === "blocked") throw executorProviderFailure(result);
-    if (result.ok === true && typeof result.status === "string" && result.status.trim()) {
-      return { result, evidence: executorResultEvidence(result, action) };
+
+    let evidence;
+    try {
+      evidence = executorResultEvidence(result, action);
+      if (result.outcome_evidence && result.ok === false && evidence?.effectState === "completed") {
+        throw new ConformanceValidationError("failed ActionResult cannot carry completed outcome evidence");
+      }
+    } catch (error) {
+      throw invalidExecutorOutcome(error);
     }
+
+    if (result.ok === false || result.status === "blocked") throw executorProviderFailure(result, evidence);
+    if (result.ok === true && typeof result.status === "string" && result.status.trim()) return { result, evidence };
     throw malformedExecutorResult();
   }
+
   async readOutcomeEvidence(action, context) {
     if (!this._readEvidence) return { outcome: "unknown", source: this.name, requestId: action.id, reason: "no_executor_evidence_reader" };
     const raw = await this._readEvidence({ request_id: action.id, action: action.type, execution_attempt: action.executionAttempts }, context);
+    try {
+      if (raw?.contract_version === "pc_executor.action_outcome.v1") return adaptExecutorActionOutcomeV1(raw, { requestId: action.id, action: action.type });
+      if (raw?.outcome_evidence?.contract_version === "pc_executor.action_outcome.v1") return adaptExecutorActionOutcomeV1(raw.outcome_evidence, { requestId: action.id, action: action.type });
+    } catch (error) {
+      throw invalidExecutorOutcome(error);
+    }
     if (raw && typeof raw === "object" && typeof raw.outcome === "string") return structuredClone(raw);
-    const normalized = executorResultEvidence(raw, action);
-    return normalized ?? { outcome: "unknown", source: this.name, requestId: action.id, reason: "malformed_evidence" };
+    return legacyExecutorResultEvidence(raw, action) ?? { outcome: "unknown", source: this.name, requestId: action.id, reason: "malformed_evidence" };
   }
 }
 
@@ -166,4 +201,4 @@ export class FakeVisionObservationAdapter extends FunctionVerificationProvider {
   }
 }
 
-export { executorResultEvidence as normalizeExecutorOutcomeEvidence };
+export { legacyExecutorResultEvidence as normalizeExecutorOutcomeEvidence };
