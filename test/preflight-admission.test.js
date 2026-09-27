@@ -54,7 +54,7 @@ function runtime({
 } = {}) {
   const counters = { preflight: 0, capabilities: 0, execution: 0 };
   const preflightQueue = [...preflightNames];
-  const capabilityQueue = capabilities.map(structuredClone);
+  const capabilityQueue = capabilities.map((item) => structuredClone(item));
   let cp = null;
 
   const adapter = new HelpPc1Adapter({
