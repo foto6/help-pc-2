@@ -113,9 +113,9 @@ test("future mutable/PDF/batch/search capabilities become available from the liv
   const manifest = desktopCommanderCompatibilityManifestV1({
     nativeManifest: await new FakeFacade({
       actions: [
-        "device.shutdown", "config.set", "fs.read_many", "pdf.write",
+        "agent.shutdown", "config.set", "fs.read_multiple", "pdf.write",
         "search.start", "search.read", "search.list", "search.stop",
-        "identity.get", "metrics.get", "audit.history",
+        "identity.who_am_i", "diagnostics.usage_stats", "diagnostics.recent_tool_calls",
       ],
     }).capabilities(),
   });
@@ -129,25 +129,22 @@ test("future mutable/PDF/batch/search capabilities become available from the liv
   }
 });
 
-test("current green PC Core capability set exposes every required compatibility tool except PDF", async () => {
+test("current finalized PC Core capability set exposes every required compatibility tool", async () => {
   const currentActions = [
-    "device.info", "health.get", "config.get", "config.set", "device.shutdown",
-    "fs.read_text", "fs.read_many", "fs.write_text", "fs.append_text", "fs.mkdir", "fs.list", "fs.move", "fs.stat", "fs.hash", "fs.edit_text",
+    "device.info", "health.get", "config.get", "config.set", "agent.shutdown",
+    "fs.read_text", "fs.read_multiple", "fs.write_text", "fs.append_text", "fs.mkdir", "fs.list", "fs.move", "fs.stat", "fs.hash", "fs.edit_text", "pdf.write",
     "search.start", "search.read", "search.list", "search.stop",
     "shell.session.start", "shell.session.read", "shell.session.write_stdin", "shell.session.terminate",
     "process.managed.list", "process.list", "system.process.kill",
-    "identity.get", "metrics.get", "audit.history",
+    "identity.who_am_i", "diagnostics.usage_stats", "diagnostics.recent_tool_calls",
   ];
   const facade = new FakeFacade({ actions: currentActions });
   const manifest = desktopCommanderCompatibilityManifestV1({ nativeManifest: await facade.capabilities() });
   const status = Object.fromEntries(manifest.tools.map((tool) => [tool.name, tool]));
-  for (const name of REQUIRED_NAMES.filter((name) => name !== "write_pdf")) {
+  for (const name of REQUIRED_NAMES) {
     assert.equal(status[name].available, true, name);
     assert.equal(status[name].availability_reason, "available", name);
   }
-  assert.equal(status.write_pdf.available, false);
-  assert.equal(status.write_pdf.availability_reason, "required_native_capability_unavailable");
-  assert.deepEqual(status.write_pdf.capability_variants[0].missing_executor_actions, ["pdf.write"]);
 });
 
 test("write_pdf is explicit capability unavailable and never dispatches without pdf.write", async () => {
@@ -225,9 +222,9 @@ test("read_file negative offset preserves Desktop Commander tail semantics and i
 test("read_multiple_files uses one true-batch native action with deterministic per-file records", async () => {
   const paths = ["C:\tmp\a.txt", "C:\tmp\missing.txt", "C:\tmp\b.txt"];
   const facade = new FakeFacade({
-    actions: ["fs.read_many"],
+    actions: ["fs.read_multiple"],
     handler: async (envelope) => {
-      assert.equal(envelope.tool, "file.read_many");
+      assert.equal(envelope.tool, "file.read_multiple");
       assert.deepEqual(envelope.arguments, { paths });
       return completed({
         results: [
@@ -250,7 +247,7 @@ test("read_multiple_files uses one true-batch native action with deterministic p
   assert.equal(facade.calls[0].request_id, "batch-7");
 });
 
-test("read_multiple_files fails closed without fs.read_many and never composes serial reads", async () => {
+test("read_multiple_files fails closed without fs.read_multiple and never composes serial reads", async () => {
   const facade = new FakeFacade({ actions: ["fs.read_text"] });
   const surface = new DesktopCommanderCompatibilitySurface({ facade });
   const result = await surface.invoke(request("read_multiple_files", {
@@ -461,7 +458,7 @@ test("current PC Core process/session and sanitized meta contracts are translate
   const facade = new FakeFacade({
     actions: [
       "shell.session.start", "shell.session.read", "shell.session.write_stdin", "shell.session.terminate",
-      "process.managed.list", "metrics.get", "audit.history", "identity.get",
+      "process.managed.list", "diagnostics.usage_stats", "diagnostics.recent_tool_calls", "identity.who_am_i",
     ],
     handler: async (envelope) => {
       if (envelope.tool === "shell.session.start") {
@@ -487,9 +484,9 @@ test("current PC Core process/session and sanitized meta contracts are translate
       }
       if (envelope.tool === "process.managed.list") return completed({ handles: [{ handle_id: "session-h-1", pid: 7331, kind: "session", running: true }] });
       if (envelope.tool === "shell.session.terminate") return completed({ handle_id: "session-h-1", already_exited: false, returncode: 0 });
-      if (envelope.tool === "metrics.get") return completed({ available: true, sanitized: true, actions: { "shell.session.start": 1 }, outcomes: { succeeded: 1 } });
+      if (envelope.tool === "diagnostics.usage_stats") return completed({ available: true, sanitized: true, actions: { "shell.session.start": 1 }, outcomes: { succeeded: 1 } });
       if (envelope.tool === "audit.recent") return completed({ contract_version: "pc_executor.audit_history.v1", sanitized: true, events: [{ action: "fs.read_text", phase: "completed", timestamp: "2026-09-28T00:00:00Z" }] });
-      if (envelope.tool === "identity.get") return completed({ controller: "pc_executor", device_id: "device-1", session_epoch: "epoch-1", transport: "native_remote" });
+      if (envelope.tool === "identity.who_am_i") return completed({ controller: "pc_executor", device_id: "device-1", session_epoch: "epoch-1", transport: "native_remote" });
       throw new Error(`unexpected native tool ${envelope.tool}`);
     },
   });

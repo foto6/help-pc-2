@@ -161,7 +161,7 @@ test("official MCP client exercises observed Desktop Commander compatibility cal
   let processReadCalls = 0;
   const h = await createHarness({
     actions: [
-      "fs.read_text", "fs.read_many", "fs.hash", "fs.edit_text", "fs.write_text",
+      "fs.read_text", "fs.read_multiple", "fs.hash", "fs.edit_text", "fs.write_text",
       "process.start", "process.read", "process.list", "process.terminate",
     ],
     invoke: async (request) => {
@@ -183,7 +183,7 @@ test("official MCP client exercises observed Desktop Commander compatibility cal
             returned_bytes: 1,
             next_cursor: null,
           });
-        case "fs.read_many":
+        case "fs.read_multiple":
           return success(request, {
             results: request.params.paths.map((path) => path.endsWith("missing.txt")
               ? {
@@ -796,14 +796,14 @@ test("Desktop Commander tools/list exposes current capability availability and f
   assert.equal(h.calls.length, callsBeforeUnavailable);
 });
 
-test("official MCP current PC Core capabilities expose admin/batch/shutdown and keep PDF unavailable", async (t) => {
+test("official MCP current finalized PC Core exposes admin/batch/shutdown/PDF capabilities", async (t) => {
   const actions = [
-    "device.info", "health.get", "config.get", "config.set", "device.shutdown",
-    "fs.read_text", "fs.read_many", "fs.write_text", "fs.append_text", "fs.mkdir", "fs.list", "fs.move", "fs.stat", "fs.hash", "fs.edit_text",
+    "device.info", "health.get", "config.get", "config.set", "agent.shutdown",
+    "fs.read_text", "fs.read_multiple", "fs.write_text", "fs.append_text", "fs.mkdir", "fs.list", "fs.move", "fs.stat", "fs.hash", "fs.edit_text", "pdf.write",
     "search.start", "search.read", "search.list", "search.stop",
     "shell.session.start", "shell.session.read", "shell.session.write_stdin", "shell.session.terminate",
     "process.managed.list", "process.list", "system.process.kill",
-    "identity.get", "metrics.get", "audit.history",
+    "identity.who_am_i", "diagnostics.usage_stats", "diagnostics.recent_tool_calls",
   ];
   const seen = [];
   const h = await createHarness({
@@ -811,12 +811,13 @@ test("official MCP current PC Core capabilities expose admin/batch/shutdown and 
     invoke: async (request) => {
       seen.push(structuredClone(request));
       if (request.action === "config.set") return success(request, { key: request.params.key, config: { [request.params.key]: request.params.value }, revision: "a".repeat(64) });
-      if (request.action === "fs.read_many") return success(request, {
+      if (request.action === "fs.read_multiple") return success(request, {
         results: request.params.paths.map((path, index) => ({ path, ok: true, text: String(index), encoding: "utf-8", returned_bytes: 1, file_bytes: 1, truncated: false, sha256: "b".repeat(64) })),
         count: request.params.paths.length,
         returned_bytes: request.params.paths.length,
       });
-      if (request.action === "device.shutdown") return success(request, { shutdown_requested: true, scope: "current_device_agent" });
+      if (request.action === "agent.shutdown") return success(request, { shutdown_requested: true, scope: "current_device_agent" });
+      if (request.action === "pdf.write") return success(request, { output_path: request.params.output_path ?? request.params.path, page_count: 1, bytes: 128 });
       return success(request, {});
     },
   });
@@ -831,15 +832,12 @@ test("official MCP current PC Core capabilities expose admin/batch/shutdown and 
     "list_devices", "ping", "shutdown", "get_config", "set_config_value", "read_file", "read_multiple_files", "write_file",
     "create_directory", "list_directory", "move_file", "start_search", "get_more_search_results", "stop_search", "list_searches",
     "get_file_info", "edit_block", "start_process", "read_process_output", "interact_with_process", "force_terminate", "list_sessions",
-    "list_processes", "kill_process", "who_am_i", "get_usage_stats", "get_recent_tool_calls",
+    "list_processes", "kill_process", "who_am_i", "get_usage_stats", "get_recent_tool_calls", "write_pdf",
   ];
   for (const name of required) {
     assert.equal(compat(name)._meta["pc.desktop_commander/available"], true, name);
     assert.equal(compat(name)._meta["pc.desktop_commander/executor_digest"], "executor-cap-v1", name);
   }
-  assert.equal(compat("write_pdf")._meta["pc.desktop_commander/available"], false);
-  assert.equal(compat("write_pdf")._meta["pc.desktop_commander/selected_variant"], null);
-  assert.equal(compat("write_pdf")._meta["pc.desktop_commander/availability_reason"], "required_native_capability_unavailable");
   assert.equal(compat("get_prompts"), undefined);
   assert.equal(compat("give_feedback_to_desktop_commander"), undefined);
   assert.deepEqual(
@@ -849,10 +847,10 @@ test("official MCP current PC Core capabilities expose admin/batch/shutdown and 
 
   const changed = structured(await client.callTool({
     name: "set_config_value",
-    arguments: { request_id: "core-config-set", key: "read_many_max_bytes", value: 524288 },
+    arguments: { request_id: "core-config-set", key: "batch_read.max_aggregate_bytes", value: 524288 },
   }));
   assert.equal(changed.status, "completed");
-  assert.equal(changed.data.key, "read_many_max_bytes");
+  assert.equal(changed.data.key, "batch_read.max_aggregate_bytes");
 
   const batch = structured(await client.callTool({
     name: "read_multiple_files",
@@ -862,19 +860,21 @@ test("official MCP current PC Core capabilities expose admin/batch/shutdown and 
   assert.deepEqual(batch.data.results.map((item) => item.path), ["C:\\tmp\\a.txt", "C:\\tmp\\b.txt"]);
   assert.deepEqual(batch.data.results.map((item) => item.ok), [true, true]);
 
-  const pdfCalls = seen.length;
   const pdf = structured(await client.callTool({
     name: "write_pdf",
-    arguments: { request_id: "core-pdf-gap", path: "C:\\tmp\\gap.pdf", content: "# no provider" },
+    arguments: { request_id: "core-pdf", path: "C:\\tmp\\out.pdf", content: "# native pdf" },
   }));
-  assert.equal(pdf.status, "error");
-  assert.equal(pdf.error.code, "CAPABILITY_UNAVAILABLE");
-  assert.equal(seen.length, pdfCalls);
+  assert.equal(pdf.status, "completed");
+  assert.equal(pdf.data.output_path, "C:\\tmp\\out.pdf");
+  assert.deepEqual(
+    seen.filter((item) => item.action === "pdf.write")[0].params,
+    { path: "C:\\tmp\\out.pdf", content: "# native pdf" },
+  );
 
   const shutdown = structured(await client.callTool({ name: "shutdown", arguments: { request_id: "core-shutdown" } }));
   assert.equal(shutdown.status, "completed");
   assert.equal(shutdown.data.native.shutdown_requested, true);
-  assert.deepEqual(seen.filter((item) => item.action === "device.shutdown")[0].params, {});
+  assert.deepEqual(seen.filter((item) => item.action === "agent.shutdown")[0].params, {});
 });
 
 test("official MCP filesystem compatibility category stays Executor-bound and bounded", async (t) => {
@@ -1060,7 +1060,7 @@ test("official MCP process/system and sanitized meta compatibility delegate thro
     actions: [
       "shell.session.start", "shell.session.read", "shell.session.write_stdin", "shell.session.terminate",
       "process.managed.list", "process.list", "system.process.kill",
-      "identity.get", "metrics.get", "audit.history",
+      "identity.who_am_i", "diagnostics.usage_stats", "diagnostics.recent_tool_calls",
     ],
     invoke: async (request) => {
       switch (request.action) {
@@ -1101,14 +1101,14 @@ test("official MCP process/system and sanitized meta compatibility delegate thro
         case "system.process.kill":
           assert.equal(request.params.expected_name, "worker.exe");
           return success(request, { terminated: true });
-        case "identity.get":
+        case "identity.who_am_i":
           return success(request, {
             controller: "pc_executor", device_id: "device-1", session_epoch: "epoch-1", transport: "native_remote",
             auth_token: "redact-me",
           });
-        case "metrics.get":
+        case "diagnostics.usage_stats":
           return success(request, { available: true, sanitized: true, completed_calls: 12, actions: { "fs.read_text": 4 }, secret_key: "redact-me" });
-        case "audit.history":
+        case "diagnostics.recent_tool_calls":
           return success(request, {
             contract_version: "pc_executor.audit_history.v1",
             available: true,

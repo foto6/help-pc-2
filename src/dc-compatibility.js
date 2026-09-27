@@ -564,6 +564,11 @@ export class DesktopCommanderCompatibilitySurface {
         category: "argument",
       });
     }
+    if (args.options !== undefined && args.options !== null && Object.keys(args.options).length > 0) {
+      this.#unsupportedMode("write_pdf", "write_pdf options are unavailable in the current Executor-bound PDF action.", {
+        unsupported_parameters: ["options"],
+      });
+    }
     const response = await this.#invokeNative({
       sessionId,
       requestId,
@@ -572,7 +577,6 @@ export class DesktopCommanderCompatibilitySurface {
         path,
         content: clone(args.content),
         ...(args.outputPath === undefined ? {} : { output_path: nonemptyString(args.outputPath, "outputPath") }),
-        ...(args.options === undefined ? {} : { options: clone(args.options) }),
       },
       signal,
     });
@@ -900,11 +904,14 @@ export class DesktopCommanderCompatibilitySurface {
   async #getRecentToolCalls(sessionId, requestId, args, signal = null) {
     const { variant } = await this.#selectVariant("get_recent_tool_calls");
     const requested = integer(args.maxResults, "maxResults", { fallback: 50, minimum: 1, maximum: 1000 });
+    const nativeArgs = { max_results: Math.min(requested, 200) };
+    if (args.toolName !== undefined) nativeArgs.tool_name = nonemptyString(args.toolName, "toolName");
+    if (args.since !== undefined) nativeArgs.since = nonemptyString(args.since, "since");
     const response = await this.#invokeNative({
       sessionId,
       requestId,
       tool: variant.native_tools[0],
-      arguments: { limit: Math.min(requested, 200) },
+      arguments: nativeArgs,
       signal,
     });
     const data = sanitize(response.data ?? {});
@@ -967,7 +974,7 @@ export class DesktopCommanderCompatibilitySurface {
     const response = await this.#invokeNative({
       sessionId,
       requestId,
-      tool: "file.read_many",
+      tool: "file.read_multiple",
       arguments: { paths },
       signal,
     });
@@ -977,7 +984,7 @@ export class DesktopCommanderCompatibilitySurface {
         ? response.data.files
         : null;
     if (!rawResults || rawResults.length !== paths.length) {
-      throw new DcCompatibilityError("Native fs.read_many returned an invalid batch result cardinality.", {
+      throw new DcCompatibilityError("Native fs.read_multiple returned an invalid batch result cardinality.", {
         code: "NATIVE_RESULT_INVALID",
         category: "native_result",
         details: {
@@ -990,7 +997,7 @@ export class DesktopCommanderCompatibilitySurface {
     const results = rawResults.map((item, index) => {
       const path = paths[index];
       if (item?.path !== undefined && item.path !== path) {
-        throw new DcCompatibilityError("Native fs.read_many changed deterministic batch ordering.", {
+        throw new DcCompatibilityError("Native fs.read_multiple changed deterministic batch ordering.", {
           code: "NATIVE_RESULT_INVALID",
           category: "native_result",
           details: { index, expected_path: path, actual_path: item.path },

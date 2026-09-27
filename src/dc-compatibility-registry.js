@@ -53,10 +53,10 @@ const definitions = [
   {
     name: "shutdown",
     effect: "side_effect",
-    native_tools: ["device.shutdown"],
-    capability_variants: [{ id: "executor_bound", executor_actions: ["device.shutdown"], native_tools: ["device.shutdown"] }],
+    native_tools: ["agent.shutdown"],
+    capability_variants: [{ id: "executor_bound", executor_actions: ["agent.shutdown"], native_tools: ["agent.shutdown"] }],
     input_schema: requestObject([], {}),
-    semantics: "Fails closed unless the Executor explicitly publishes device.shutdown; the control host never exits or shuts down the PC directly.",
+    semantics: "Fails closed unless the Executor explicitly publishes agent.shutdown; the control host never exits or shuts down the PC directly.",
   },
   {
     name: "get_config",
@@ -110,8 +110,8 @@ const definitions = [
   {
     name: "read_multiple_files",
     effect: "read_only",
-    native_tools: ["file.read_many"],
-    capability_variants: [{ id: "true_batch", executor_actions: ["fs.read_many"], native_tools: ["file.read_many"] }],
+    native_tools: ["file.read_multiple"],
+    capability_variants: [{ id: "true_batch", executor_actions: ["fs.read_multiple"], native_tools: ["file.read_multiple"] }],
     input_schema: requestObject(["paths"], {
       paths: { type: "array", minItems: 1, maxItems: 64, items: string(1) },
     }),
@@ -148,7 +148,7 @@ const definitions = [
       outputPath: string(1),
       options: { type: "object" },
     }),
-    semantics: "Explicitly unavailable until the Executor publishes an actual pdf.write action. No host-side PDF implementation or fake parity.",
+    semantics: "Available only when the live Executor publishes pdf.write. Older/partial manifests fail closed; Control/MCP never renders or edits PDF bytes itself.",
   },
   {
     name: "create_directory",
@@ -371,34 +371,34 @@ const definitions = [
   {
     name: "who_am_i",
     effect: "read_only",
-    native_tools: ["identity.get"],
-    capability_variants: [{ id: "sanitized_identity", executor_actions: ["identity.get"], native_tools: ["identity.get"] }],
+    native_tools: ["identity.who_am_i"],
+    capability_variants: [{ id: "sanitized_identity", executor_actions: ["identity.who_am_i"], native_tools: ["identity.who_am_i"] }],
     input_schema: {
       type: "object",
       additionalProperties: false,
       properties: {},
     },
-    semantics: "Available only when the Executor publishes a sanitized identity.get action; never synthesized from host OS/account state.",
+    semantics: "Available only when the Executor publishes a sanitized identity.who_am_i action; never synthesized from host OS/account state.",
   },
   {
     name: "get_usage_stats",
     effect: "read_only",
-    native_tools: ["metrics.get"],
-    capability_variants: [{ id: "sanitized_usage", executor_actions: ["metrics.get"], native_tools: ["metrics.get"] }],
+    native_tools: ["diagnostics.usage_stats"],
+    capability_variants: [{ id: "sanitized_usage", executor_actions: ["diagnostics.usage_stats"], native_tools: ["diagnostics.usage_stats"] }],
     input_schema: requestObject([], {}),
-    semantics: "Available only when the Executor publishes sanitized metrics.get; Control/MCP reports native action/outcome metrics and does not infer subscription or remote quota data.",
+    semantics: "Available only when the Executor publishes sanitized diagnostics.usage_stats; Control/MCP reports native action/outcome metrics and does not infer subscription or remote quota data.",
   },
   {
     name: "get_recent_tool_calls",
     effect: "read_only",
     native_tools: ["audit.recent"],
-    capability_variants: [{ id: "sanitized_audit", executor_actions: ["audit.history"], native_tools: ["audit.recent"] }],
+    capability_variants: [{ id: "sanitized_audit", executor_actions: ["diagnostics.recent_tool_calls"], native_tools: ["audit.recent"] }],
     input_schema: requestObject([], {
       maxResults: integer(1, 1000),
       toolName: string(1),
       since: { type: "string", format: "date-time" },
     }),
-    semantics: "Available only when the Executor publishes sanitized audit.history records; secrets/raw sensitive payloads are not reconstructed by Control/MCP.",
+    semantics: "Available only when the Executor publishes sanitized diagnostics.recent_tool_calls records; secrets/raw sensitive payloads are not reconstructed by Control/MCP.",
   },
 ].map((value) => Object.freeze({
   ...value,

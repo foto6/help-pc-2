@@ -18,21 +18,21 @@ Desktop Commander vendor workflows `get_prompts` and `give_feedback_to_desktop_c
 
 ## Capability-gated availability
 
-The current green PC Core full-parity producer (`agent/pc-native-full-dc-parity` at `de9797eaf0fd646291ad7ed06af8447c281ddcac`) publishes the capability set required for every mandatory compatibility name except PDF output. Availability is still resolved dynamically from the live Executor manifest rather than hard-coded.
+The current finalized PC Core producer (`agent/pc-native-core-finalized` at `60d1bdd24ce9530cdd6cbf4c6fe38ac3d989c51c`) publishes the Executor actions required for every mandatory compatibility category, including `pdf.write`. Availability is still resolved dynamically from the live Executor manifest rather than hard-coded, so older or partial devices fail closed per tool.
 
 Current capability mappings include:
 
-- `shutdown` -> `device.shutdown` (current authenticated device agent/session only; not OS power-off)
+- `shutdown` -> `agent.shutdown` (current authenticated device agent/session only; not OS power-off)
 - `set_config_value` -> `config.set` (Executor allowlist and atomic validation remain authoritative)
-- `read_multiple_files` -> `fs.read_many`
-- `who_am_i` -> `identity.get`
-- `get_usage_stats` -> `metrics.get`
-- `get_recent_tool_calls` -> `audit.history`
+- `read_multiple_files` -> `fs.read_multiple`
+- `who_am_i` -> `identity.who_am_i`
+- `get_usage_stats` -> `diagnostics.usage_stats`
+- `get_recent_tool_calls` -> `diagnostics.recent_tool_calls`
 - stateful search -> `search.start`, `search.read`, `search.list`, `search.stop`
 
-`write_pdf` remains explicitly unavailable because the current producer does not advertise `pdf.write`. The registry already contains the translation schema, so it will become available only when an Executor-bound `pdf.write` capability is actually advertised. There is no host-side PDF renderer.
+`write_pdf` is available only when the live Executor advertises `pdf.write`. The finalized PC Core does advertise it, so Control/MCP translates the Desktop Commander create/modify payload directly to that action. Older manifests lacking `pdf.write` still return `CAPABILITY_UNAVAILABLE`. There is no host-side PDF renderer, and unsupported host-only PDF options fail closed rather than being approximated.
 
-There is no composed serial fallback for `read_multiple_files` in the canonical full-DC surface. True batch ordering and independent per-file records require `fs.read_many`. Identity, usage, and audit data are not synthesized by the host.
+There is no composed serial fallback for `read_multiple_files` in the canonical full-DC surface. True batch ordering and independent per-file records require `fs.read_multiple`. Identity, usage, and audit data are not synthesized by the host.
 
 ## Filesystem semantics
 
