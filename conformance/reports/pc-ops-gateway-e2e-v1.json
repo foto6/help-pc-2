@@ -79,5 +79,13 @@
   ],
   "blockers": [
     "Exact-green relay head has no structured fs/log/process/session/system-resource fixture pack; migration support is not fabricated."
-  ]
+  ],
+  "fixture_pins": {
+    "path": "conformance/pc_ops.gateway.v1/producer-fixture-pins.json",
+    "sha256": "61a172fe3b65137c37b197786d57633185a3d73ad613b4f1d7be36903c3dc693"
+  },
+  "scenario_pack": {
+    "path": "conformance/pc_ops.gateway.v1/e2e-scenarios.json",
+    "sha256": "108f11552f67c24f762912dccc800cdbcc9ff0bd92bef99d3a2e01ecadc88ab0"
+  }
 }
