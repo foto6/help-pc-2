@@ -1,23 +1,45 @@
 # Native MCP Protocol Host v1
 
-This host exposes the existing `pc.native.control.v1` facade as a standards-compliant Model Context Protocol server. It uses the official Model Context Protocol TypeScript SDK v2 packages pinned at `2.1.0`, serves the modern `2026-07-28` protocol revision, and keeps the SDK's supported 2025-era compatibility path enabled.
+This host exposes the existing `pc.native.control.v1` facade through the official Model Context Protocol TypeScript SDK v2 packages pinned at `2.1.0`. It serves modern `2026-07-28` and retains the SDK-supported 2025-era compatibility path.
 
-The MCP host contains no filesystem, process, shell, UI, input, clipboard, or other machine-side effect implementation. Every `tools/call` delegates to `NativeControlFacade`, which in turn creates or resumes the existing durable Control Plane action targeting the injected help-pc-1 Executor bridge.
+The MCP host contains no filesystem, process, shell, UI, input, clipboard, search, PDF, or other machine-side implementation. Every tool call reaches machine authority only through `NativeControlFacade` and the existing Control Plane provider.
 
+## Production Executor identity pin
+
+Production startup does not trust an arbitrary local module because it exports the expected functions. `PC_NATIVE_EXECUTOR_MODULE` is only a locator for the already-pinned module identity.
+
+The immutable production identity is loaded from the fixed package file `config/executor-module-pin.json`; there is no environment variable that selects a different pin file. A release bundle must replace the checked-in fail-closed placeholder with reviewed metadata for its exact Executor bridge:
+
+- canonical real module path;
+- module SHA-256;
+- canonical package root;
+- package name and package version;
+- package.json SHA-256;
+- pin contract `pc.native.executor_module_pin.v1`.
+
+Before any dynamic import, startup resolves and verifies all fields. A module symlink, package-manifest symlink, junction/path alias drift, path substitution, package version drift, package manifest drift, or module digest mismatch aborts startup before attacker module code can execute.
+
+The source-tree pin is deliberately `configured:false`. Consequently, the production binaries fail closed until release packaging installs a reviewed pin.
+
+## Test-only injection
+
+Tests may call `createConfiguredNativeMcpRuntime({testConfig:{enabled:true,...}})` in-process. The seam accepts either an explicit test bridge factory or a test module plus a trusted test pin.
+
+The stdio/HTTP production entrypoints never set `testConfig`, and no environment variable enables this seam. Production therefore always follows the fixed identity-pin path.
 ## Transports
 
-For local spawned clients, use stdio:
+For a packaged local stdio deployment, release packaging first installs the reviewed fixed pin and then starts with the matching absolute module path:
 
 ```text
-PC_NATIVE_EXECUTOR_MODULE=/absolute/path/to/executor-bridge.js
+PC_NATIVE_EXECUTOR_MODULE=/reviewed/absolute/executor-bridge.js
 PC_NATIVE_STATE_DIR=/absolute/path/to/state
 npm run mcp:stdio
 ```
 
-For network clients, use Streamable HTTP:
+Streamable HTTP additionally requires its bearer token and remains loopback-only:
 
 ```text
-PC_NATIVE_EXECUTOR_MODULE=/absolute/path/to/executor-bridge.js
+PC_NATIVE_EXECUTOR_MODULE=/reviewed/absolute/executor-bridge.js
 PC_NATIVE_STATE_DIR=/absolute/path/to/state
 PC_NATIVE_MCP_TOKEN=<at-least-24-character-secret>
 PC_NATIVE_MCP_HOST=127.0.0.1
@@ -25,13 +47,11 @@ PC_NATIVE_MCP_PORT=8765
 npm run mcp:http
 ```
 
-The MCP endpoint is `/mcp`. HTTP defaults to `127.0.0.1`, requires a Bearer token on every request, validates the Host header as loopback, and refuses non-loopback bind addresses. There is no remote-auth mode in Wave 1B, so remote binding fails closed.
+The MCP endpoint is `/mcp`. HTTP validates loopback binding and Host headers and has no remote-auth mode. The SDK's Streamable HTTP implementation remains authoritative; no deprecated HTTP+SSE server is added.
 
-The host uses Streamable HTTP via the SDK's `createMcpHandler` and Node adapter. It does not add a new deprecated HTTP+SSE endpoint. The SDK may use SSE framing inside Streamable HTTP when required by the current transport specification.
+## Bridge contract
 
-## Executor bridge boundary
-
-`PC_NATIVE_EXECUTOR_MODULE` points to a local module exporting either `createExecutorBridge()` or a default factory. The returned object must provide:
+Only after identity verification does the host import the reviewed module. It must export `createExecutorBridge()` or a default factory returning:
 
 ```js
 {
@@ -45,61 +65,35 @@ The host uses Streamable HTTP via the SDK's `createMcpHandler` and Node adapter.
 }
 ```
 
-The bridge is dependency injection only. help-pc-2 does not import help-pc-1 source or require a sibling repository checkout. The injected functions must speak the existing Executor wire/action contracts already consumed by `HelpPc1Adapter`.
+Interface conformance is necessary but not sufficient: identity verification always precedes import in production.
 
-## MCP tool contract
+## MCP tools and capabilities
 
-Every entry in `src/native-registry.js` is registered as an MCP tool. `tools/list` exposes strict JSON schemas, stable descriptions, MCP annotations, and metadata containing:
+Native MCP tool names remain those in `src/native-registry.js`. Desktop Commander compatibility aliases are registered alongside them with strict Zod schemas and deterministic descriptions.
 
-- native protocol version;
-- native registry contract and digest;
-- current Executor capability digest;
-- read-only versus side-effect classification;
-- streaming classification.
+Compatibility-only internal native mappings are fixed in code and are not advertised as independent native MCP tools. They exist only so the compatibility translator can bind future PC-Core actions, such as stateful search or PDF generation, through `NativeFacade`.
 
-Each tool accepts an optional `request_id`. Clients that may retry a logical call should supply a stable value. If omitted, the host derives one from the MCP request identity. The facade binds that value to its durable idempotency key.
+`tools/list` reports compatibility availability from the current Executor capability digest. Missing actions return explicit `CAPABILITY_UNAVAILABLE`; tool registration never invents readiness.
+## Request identity, cancellation, and reconciliation
 
-Paginated tools accept:
+Every tool accepts optional `request_id`. If supplied, it remains the logical request identity. Otherwise the host derives identity from the MCP request.
 
-```json
-{"page":{"limit":100,"cursor":"opaque-continuation"}}
-```
-
-The host/facade enforce the negotiated native page bound. Executor continuation cursors are wrapped so they are bound to the native session and tool. Large file/process output must therefore use pagination/ranges rather than a single unbounded result. The MCP host also caps serialized tool results and returns a bounded truncation marker if a provider violates the response expectation.
-
-## Sessions, probes, and protocol compatibility
-
-MCP discovery/initialize does not claim the desktop or create a side-effect-capable facade session. The host pins the initial native capability manifest and performs read-only capability validation while constructing MCP server instances. A durable facade/control session is acquired lazily on the first `tools/call`.
-
-This matters for modern stdio negotiation: the official SDK may use a disposable sibling process for `server/discover`. Probe processes stay read-only and cannot take desktop ownership.
-
-The same server factory supports:
-- modern MCP `2026-07-28` negotiation;
-- supported 2025-era initialize compatibility through the official SDK.
-
-Capability/schema drift between host startup and a call fails closed before provider dispatch.
-
-## Cancellation and uncertain outcomes
-
-The SDK request cancellation signal is passed into `NativeControlFacade.invoke`. The facade maps it to the existing Control Plane cancellation path. If cancellation races with a dispatched side effect, the result remains uncertain and follows the existing read-only reconciliation path.
-
-A lost connection, lost result, Executor restart, or unknown side-effect outcome never creates a replacement action. The MCP result surfaces `reconciliation_required`, and a retry with the same logical `request_id` reuses the same durable action.
+The SDK cancellation signal is propagated through compatibility translation to `NativeControlFacade.invoke`. Once a side effect may have dispatched, cancellation, lost result, disconnect, or Executor restart follows the durable UNKNOWN/RECONCILE path rather than creating a replacement action. Repeating the same logical request cannot create a second side effect.
 
 ## Protected paths
 
-The Executor remains authoritative for protected-path policy. The native facade also rejects `E:\\manhwa` before enqueue as a conformance guard. MCP tests use only the literal mocked path and verify zero provider dispatch; the host never accesses that location.
+The compatibility translator and native facade both reject the protected root before provider dispatch. Tests use only literal policy inputs and temporary C-drive fixtures; the protected root is never accessed.
 
 ## Verification
 
-Focused integration tests use the official SDK client and transports rather than handwritten MCP framing:
+Focused gates:
 
 ```text
 npm run test:mcp-host
 npm run test:native-mcp
+npm run test:dc-compat
 ```
 
-The repository-wide suite remains:
+`test/mcp-runtime-config-security.test.js` covers module substitution, same-path digest drift, package/version drift, and symlink/junction aliases. `test/mcp-stdio.integration.test.js` also launches the real production stdio binary with an attacker module locator and proves the official MCP client cannot connect and attacker top-level code never runs.
 
-```text
-npm test
-```
+Repository-wide validation remains `npm test`.

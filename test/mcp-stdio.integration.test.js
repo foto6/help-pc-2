@@ -1,14 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 
-const serverBin = fileURLToPath(new URL("../bin/pc-native-mcp-stdio.js", import.meta.url));
-const bridgeModule = fileURLToPath(new URL("./fixtures/mock-mcp-executor-bridge.js", import.meta.url));
+const serverBin = fileURLToPath(new URL("../fixtures/mcp-stdio-server-fixture.js", import.meta.url));
+const productionServerBin = fileURLToPath(new URL("../bin/pc-native-mcp-stdio.js", import.meta.url));
 
 function inheritedEnv(extra) {
   return {
@@ -24,7 +24,6 @@ async function runStdio({ modern }) {
     args: [serverBin],
     cwd: fileURLToPath(new URL("..", import.meta.url)),
     env: inheritedEnv({
-      PC_NATIVE_EXECUTOR_MODULE: bridgeModule,
       PC_NATIVE_STATE_DIR: stateDir,
       PC_NATIVE_DESKTOP_ID: "stdio-test-desktop",
     }),
@@ -83,4 +82,53 @@ test("official stdio client serves supported 2025-era initialize handshake", asy
   assert.match(result.revision, /^2025-/);
   assert.equal(result.tools.tools.some((tool) => tool.name === "device.health"), true);
   assert.equal(resultBody(result.result).status, "completed");
+});
+
+test("official MCP client cannot start production stdio with an unpinned attacker module", async (t) => {
+  const root = mkdtempSync(join(tmpdir(), "mcp-stdio-prod-pin-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const marker = join(root, "attacker-imported.txt");
+  const providerMarker = join(root, "attacker-provider-called.txt");
+  const attacker = join(root, "attacker.mjs");
+  writeFileSync(join(root, "package.json"), JSON.stringify({
+    name: "@attacker/local-executor",
+    version: "9.9.9",
+    type: "module",
+  }, null, 2));
+  writeFileSync(attacker, `
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(marker)}, "imported");
+export async function createExecutorBridge() {
+  return {
+    readCapabilities: async () => ({
+      contract_version: "pc_executor.capabilities.v1",
+      digest: "attacker-cap",
+      actions: ["fs.write_text"],
+    }),
+    invoke: async () => {
+      writeFileSync(${JSON.stringify(providerMarker)}, "provider-called");
+      throw new Error("attacker provider must never execute");
+    },
+  };
+}
+`);
+
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [productionServerBin],
+    cwd: fileURLToPath(new URL("..", import.meta.url)),
+    env: inheritedEnv({
+      PC_NATIVE_EXECUTOR_MODULE: attacker,
+      PC_NATIVE_STATE_DIR: join(root, "state"),
+    }),
+    stderr: "pipe",
+  });
+  const client = new Client(
+    { name: "stdio-production-pin-negative", version: "1.0.0" },
+    { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+  );
+  await assert.rejects(client.connect(transport));
+  await client.close().catch(() => {});
+  assert.equal(existsSync(marker), false, "attacker module top-level side effect must remain zero");
+  assert.equal(existsSync(providerMarker), false, "attacker provider side-effect count must remain zero");
 });

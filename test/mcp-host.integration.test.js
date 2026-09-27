@@ -14,6 +14,15 @@ import {
 } from "../src/index.js";
 
 const TOKEN = "0123456789abcdef0123456789abcdef";
+const FULL_COMPAT_NAMES = [
+  "create_directory", "edit_block", "force_terminate", "get_config", "get_file_info",
+  "get_more_search_results", "get_recent_tool_calls", "get_usage_stats",
+  "interact_with_process", "kill_process", "list_devices", "list_directory",
+  "list_processes", "list_searches", "list_sessions", "move_file", "ping",
+  "read_file", "read_multiple_files", "read_process_output", "set_config_value",
+  "shutdown", "start_process", "start_search", "stop_search", "who_am_i",
+  "write_file", "write_pdf",
+].sort();
 
 function success(request, data = {}) {
   return {
@@ -377,7 +386,7 @@ test("Streamable HTTP host rejects non-loopback binds", async () => {
   );
 });
 
-test("official MCP client calls representative native tool and all eight Desktop Commander compatibility aliases", async (t) => {
+test("official MCP client preserves baseline compatibility calls on the expanded Desktop Commander surface", async (t) => {
   const h = await createHarness({
     invoke: async (request) => {
       const p = request.params ?? {};
@@ -453,10 +462,7 @@ test("official MCP client calls representative native tool and all eight Desktop
   assert.equal(structured(terminated).data.terminated, true);
 
   const aliases = new Set(DC_COMPATIBILITY_REGISTRY_LIST.map((tool) => tool.name));
-  assert.deepEqual(
-    [...aliases].sort(),
-    ["edit_block", "force_terminate", "list_sessions", "read_file", "read_multiple_files", "read_process_output", "start_process", "write_file"],
-  );
+  assert.deepEqual([...aliases].sort(), FULL_COMPAT_NAMES);
 });
 
 test("compatibility MCP aliases advertise and return CAPABILITY_UNAVAILABLE without provider dispatch", async (t) => {
@@ -579,4 +585,197 @@ test("compatibility MCP cancellation uses the same request identity and remains 
   const retry = await client.callTool({ name: "write_file", arguments: args });
   assert.equal(structured(retry).status, "reconciliation_required");
   assert.equal(sideEffects, 1);
+});
+
+test("official MCP client exercises representative full compatibility calls through NativeFacade only", async (t) => {
+  const executorActions = [
+    "device.info",
+    "health.get",
+    "config.get",
+    "config.set",
+    "identity.get",
+    "metrics.get",
+    "audit.history",
+    "fs.mkdir",
+    "fs.list",
+    "fs.move",
+    "fs.stat",
+    "search.start",
+    "search.read",
+    "search.stop",
+    "search.list",
+    "process.list",
+    "fs.write_pdf",
+  ];
+  const h = await createHarness({
+    executorActions,
+    invoke: async (request) => {
+      const p = request.params ?? {};
+      switch (request.action) {
+        case "device.info":
+          return success(request, { device_id: "local", generation_id: "gen-mcp", platform: "test" });
+        case "health.get":
+          return success(request, { status: "ok", managed_processes_live: 0 });
+        case "config.get":
+          return success(request, { mutable: false, limits: { max_text_read_bytes: 262144 } });
+        case "config.set":
+          return success(request, { key: p.key, value: p.value });
+        case "fs.mkdir":
+          return success(request, { path: p.path, created: true });
+        case "fs.list":
+          return success(request, { items: [{ name: "one.txt", kind: "file" }], next_cursor: null });
+        case "fs.move":
+          return success(request, { source: p.source, destination: p.destination });
+        case "fs.stat":
+          return success(request, { path: p.path, size: 12, type: "file" });
+        case "search.start":
+          return success(request, { search_id: "search-mcp-1", status: "running" });
+        case "search.read":
+          return success(request, { results: [{ path: "C:\\tmp\\one.txt" }], status: "running" });
+        case "search.stop":
+          return success(request, { stopped: true, status: "cancelled" });
+        case "search.list":
+          return success(request, { searches: [{ search_id: "search-mcp-1", status: "cancelled" }] });
+        case "process.list":
+          return success(request, { processes: [{ pid: 77, name: "node.exe" }] });
+        case "fs.write_pdf":
+          return success(request, { path: p.path, output_path: p.output_path ?? p.path });
+        case "identity.get":
+          return success(request, { controller: "pc_executor", device_id: "local" });
+        case "metrics.get":
+          return success(request, { available: true, completed_calls: 7 });
+        case "audit.history":
+          return success(request, { events: [{ tool: "read_file", status: "completed" }] });
+        default:
+          throw new Error(`unexpected representative action ${request.action}`);
+      }
+    },
+  });
+  t.after(h.close);
+  const { client, transport } = makeClient(h.http.url);
+  t.after(() => client.close());
+  await client.connect(transport);
+
+  const listed = await client.listTools();
+  assert.deepEqual(
+    listed.tools.filter((tool) => FULL_COMPAT_NAMES.includes(tool.name)).map((tool) => tool.name).sort(),
+    FULL_COMPAT_NAMES,
+  );
+  for (const name of [
+    "list_devices", "ping", "get_config", "set_config_value", "create_directory",
+    "list_directory", "move_file", "get_file_info", "start_search",
+    "get_more_search_results", "stop_search", "list_searches", "list_processes",
+    "who_am_i", "get_usage_stats", "get_recent_tool_calls", "write_pdf",
+  ]) {
+    const tool = listed.tools.find((candidate) => candidate.name === name);
+    assert.equal(tool._meta["pc.desktop_commander/available"], true, name);
+    assert.equal(tool.inputSchema.additionalProperties, false, name);
+  }
+
+  const calls = [
+    ["list_devices", { request_id: "full-devices" }],
+    ["ping", { request_id: "full-ping" }],
+    ["get_config", { request_id: "full-config" }],
+    ["set_config_value", { request_id: "full-set-config", key: "telemetryEnabled", value: false }],
+    ["create_directory", { request_id: "full-mkdir", path: "C:\\tmp\\compat-dir" }],
+    ["list_directory", { request_id: "full-list-dir", path: "C:\\tmp", depth: 2 }],
+    ["move_file", {
+      request_id: "full-move",
+      source: "C:\\tmp\\source.txt",
+      destination: "C:\\tmp\\destination.txt",
+    }],
+    ["get_file_info", { request_id: "full-info", path: "C:\\tmp\\destination.txt" }],
+    ["start_search", {
+      request_id: "full-search-start",
+      path: "C:\\tmp",
+      pattern: "needle",
+      searchType: "content",
+      literalSearch: true,
+      maxResults: 25,
+      timeout_ms: 5000,
+    }],
+    ["get_more_search_results", {
+      request_id: "full-search-read",
+      sessionId: "search-mcp-1",
+      offset: 0,
+      length: 10,
+    }],
+    ["stop_search", { request_id: "full-search-stop", sessionId: "search-mcp-1" }],
+    ["list_searches", { request_id: "full-search-list" }],
+    ["list_processes", { request_id: "full-process-list" }],
+    ["who_am_i", { request_id: "full-who" }],
+    ["get_usage_stats", { request_id: "full-usage" }],
+    ["get_recent_tool_calls", { request_id: "full-recent", maxResults: 5, toolName: "read_file" }],
+    ["write_pdf", {
+      request_id: "full-pdf",
+      path: "C:\\tmp\\source.pdf",
+      content: "# Native PDF",
+      outputPath: "C:\\tmp\\result.pdf",
+    }],
+  ];
+  for (const [name, args] of calls) {
+    const result = await client.callTool({ name, arguments: args });
+    assert.equal(result.isError, false, name);
+    assert.equal(structured(result).status, "completed", name);
+  }
+  assert.equal(structured(await client.callTool({
+    name: "list_devices",
+    arguments: { request_id: "full-devices-repeat" },
+  })).data.local_only, true);
+
+  const searchStart = structured(await client.callTool({
+    name: "start_search",
+    arguments: {
+      request_id: "full-search-shape",
+      path: "C:\\tmp",
+      pattern: "abc",
+      searchType: "files",
+      ignoreCase: false,
+      includeHidden: true,
+      contextLines: 2,
+      maxResults: 12,
+      timeout_ms: 1500,
+    },
+  }));
+  assert.equal(searchStart.data.sessionId, "search-mcp-1");
+
+  const actionByCorrelation = Object.fromEntries(
+    h.controlPlane.listActions().map((action) => [action.correlationId, action]),
+  );
+  assert.equal(actionByCorrelation["full-devices"].type, "device.info");
+  assert.equal(actionByCorrelation["full-ping"].type, "health.get");
+  assert.equal(actionByCorrelation["full-config"].type, "config.get");
+  assert.equal(actionByCorrelation["full-search-start"].type, "search.start");
+  assert.equal(actionByCorrelation["full-pdf"].type, "fs.write_pdf");
+  assert.equal(actionByCorrelation["full-recent"].type, "audit.history");
+});
+
+test("full compatibility advertises future-only tools unavailable and never fakes readiness", async (t) => {
+  const h = await createHarness({ executorActions: ["fs.read_text", "health.get"] });
+  t.after(h.close);
+  const { client, transport } = makeClient(h.http.url);
+  t.after(() => client.close());
+  await client.connect(transport);
+
+  const listed = await client.listTools();
+  for (const name of [
+    "write_pdf", "shutdown", "set_config_value", "start_search",
+    "get_more_search_results", "stop_search", "list_searches",
+    "get_recent_tool_calls", "list_devices",
+  ]) {
+    const tool = listed.tools.find((candidate) => candidate.name === name);
+    assert.equal(tool._meta["pc.desktop_commander/available"], false, name);
+  }
+  const before = h.calls.length;
+  for (const [name, arguments_] of [
+    ["write_pdf", { request_id: "missing-pdf", path: "C:\\tmp\\x.pdf", content: "# x" }],
+    ["shutdown", { request_id: "missing-shutdown" }],
+    ["start_search", { request_id: "missing-search", path: "C:\\tmp", pattern: "x" }],
+    ["get_recent_tool_calls", { request_id: "missing-audit" }],
+  ]) {
+    const result = await client.callTool({ name, arguments: arguments_ });
+    assert.equal(result.isError, true, name);
+    assert.equal(structured(result).error.code, "CAPABILITY_UNAVAILABLE", name);
+  }
+  assert.equal(h.calls.length, before);
 });

@@ -1,24 +1,19 @@
 import { mkdirSync } from "node:fs";
-import { isAbsolute, resolve, join } from "node:path";
-import { pathToFileURL, fileURLToPath } from "node:url";
+import { resolve, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ControlPlane } from "./control-plane.js";
 import { HelpPc1Adapter } from "./adapters.js";
 import { JsonStateStore } from "./persistence.js";
 import { JsonFacadeStateStore, NativeControlFacade } from "./native-facade.js";
 import { NativeMcpRuntime } from "./mcp-host.js";
+import {
+  importPinnedExecutorModule,
+  readExecutorModulePin,
+} from "./executor-module-identity.js";
 
-function moduleUrl(specifier) {
-  if (typeof specifier !== "string" || !specifier.trim()) {
-    throw new Error("PC_NATIVE_EXECUTOR_MODULE is required");
-  }
-  const value = specifier.trim();
-  if (value.startsWith("file:")) return value;
-  if (isAbsolute(value)) return pathToFileURL(value).href;
-  if (/^[a-z]+:/i.test(value)) {
-    throw new Error("Only local file executor bridge modules are supported");
-  }
-  return pathToFileURL(resolve(value)).href;
-}
+export const PRODUCTION_EXECUTOR_PIN_PATH = fileURLToPath(
+  new URL("../config/executor-module-pin.json", import.meta.url),
+);
 
 function capabilityPayload(raw) {
   return raw?.data?.capabilities ?? raw?.capabilities ?? raw;
@@ -29,18 +24,57 @@ function requireFunction(value, name) {
   return value;
 }
 
+async function resolveBridgeFactory({ mode, testConfig }) {
+  if (testConfig !== undefined) {
+    if (!testConfig || testConfig.enabled !== true) {
+      throw new Error("testConfig must explicitly set enabled=true");
+    }
+    if (testConfig.createExecutorBridge !== undefined) {
+      if (typeof testConfig.createExecutorBridge !== "function") {
+        throw new TypeError("testConfig.createExecutorBridge must be a function");
+      }
+      return {
+        createBridge: testConfig.createExecutorBridge,
+        moduleIdentity: Object.freeze({
+          contract_version: "pc.native.executor_module_test_injection.v1",
+          mode,
+          injected: true,
+        }),
+      };
+    }
+    if (testConfig.trustedPin && testConfig.executorModule) {
+      const { imported, identity } = await importPinnedExecutorModule(
+        testConfig.executorModule,
+        testConfig.trustedPin,
+      );
+      const createBridge = imported.createExecutorBridge ?? imported.default;
+      if (typeof createBridge !== "function") {
+        throw new TypeError("Pinned Executor bridge module must export createExecutorBridge() or a default factory");
+      }
+      return { createBridge, moduleIdentity: identity };
+    }
+    throw new Error("testConfig must provide createExecutorBridge or {executorModule, trustedPin}");
+  }
+
+  const trustedPin = readExecutorModulePin(PRODUCTION_EXECUTOR_PIN_PATH);
+  const { imported, identity } = await importPinnedExecutorModule(
+    process.env.PC_NATIVE_EXECUTOR_MODULE,
+    trustedPin,
+  );
+  const createBridge = imported.createExecutorBridge ?? imported.default;
+  if (typeof createBridge !== "function") {
+    throw new TypeError("Pinned Executor bridge module must export createExecutorBridge() or a default factory");
+  }
+  return { createBridge, moduleIdentity: identity };
+}
+
 export async function createConfiguredNativeMcpRuntime({
-  executorModule = process.env.PC_NATIVE_EXECUTOR_MODULE,
   stateDir = process.env.PC_NATIVE_STATE_DIR ?? resolve(".pc-native-mcp-state"),
   desktopId = process.env.PC_NATIVE_DESKTOP_ID ?? "desktop-A",
   mode = "mcp",
+  testConfig = undefined,
 } = {}) {
-  const imported = await import(moduleUrl(executorModule));
-  const createBridge = imported.createExecutorBridge ?? imported.default;
-  if (typeof createBridge !== "function") {
-    throw new TypeError("Executor bridge module must export createExecutorBridge() or a default factory");
-  }
-
+  const { createBridge, moduleIdentity } = await resolveBridgeFactory({ mode, testConfig });
   const bridge = await createBridge({ mode });
   if (!bridge || typeof bridge !== "object") throw new TypeError("Executor bridge factory returned no bridge");
   requireFunction(bridge.invoke, "invoke");
@@ -79,7 +113,7 @@ export async function createConfiguredNativeMcpRuntime({
     desktopId: bridge.desktopId ?? desktopId,
   });
 
-  return { runtime, facade, controlPlane, bridge, stateDir };
+  return { runtime, facade, controlPlane, bridge, stateDir, moduleIdentity };
 }
 
-export const __test = Object.freeze({ moduleUrl, capabilityPayload });
+export const __test = Object.freeze({ capabilityPayload, resolveBridgeFactory });

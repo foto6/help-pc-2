@@ -21,9 +21,9 @@ No native MCP tool name or official Streamable HTTP/stdio implementation was rep
 
 ## MCP compatibility integration
 
-The MCP host exposes the exact observed aliases: `edit_block`, `read_file`, `read_multiple_files`, `write_file`, `start_process`, `read_process_output`, `list_sessions`, and `force_terminate`.
+The original integration established the eight mandatory observed aliases. The security/compatibility follow-on expands the registry to the full 28-tool non-vendor installed surface documented in `DC_COMPATIBILITY_SURFACE_V1.md`, while retaining the original names and semantics.
 
-Each alias has a strict Zod input schema and deterministic description. `tools/list` reports compatibility registry metadata and whether the current Executor capability manifest can satisfy each alias. Missing actions remain explicit as `CAPABILITY_UNAVAILABLE`; registration never fakes readiness.
+Every alias has a strict Zod input schema and deterministic description. `tools/list` reports compatibility registry metadata and whether the current Executor capability manifest can satisfy each alias. Missing actions remain explicit as `CAPABILITY_UNAVAILABLE`; registration never fakes readiness.
 
 Caller-supplied `request_id` remains the compatibility logical request identity. Compatibility sub-operations use deterministic derived request IDs where required for batch reads and atomic edit preconditions. MCP cancellation is forwarded to the same facade invocation, preserving NativeFacade at-most-once and UNKNOWN/RECONCILE behavior.
 

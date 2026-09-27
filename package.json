@@ -12,7 +12,8 @@
     "test:context-epoch": "node --test test/conformance/context-epoch-contracts.test.js test/context-epoch-e2e.test.js",
     "test:native-mcp": "node --test test/native-facade.test.js test/native-http.test.js",
     "test:soak": "node --test test/control-state-machine-soak.test.js",
-    "test:mcp-host": "node --test test/mcp-host.integration.test.js test/mcp-stdio.integration.test.js",
+    "test:mcp-host": "node --test test/mcp-host.integration.test.js test/mcp-stdio.integration.test.js test/mcp-runtime-config-security.test.js",
+    "test:mcp-security": "node --test test/mcp-runtime-config-security.test.js",
     "mcp:stdio": "node bin/pc-native-mcp-stdio.js",
     "mcp:http": "node bin/pc-native-mcp-http.js",
     "test:dc-compat": "node --test test/dc-compatibility.test.js"

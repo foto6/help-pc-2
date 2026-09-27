@@ -1,0 +1,11 @@
+{
+  "contract_version": "pc.native.executor_module_pin.v1",
+  "configured": false,
+  "module_path": null,
+  "module_sha256": null,
+  "package_root": null,
+  "package_name": null,
+  "package_version": null,
+  "package_json_sha256": null,
+  "note": "Release packaging must replace this fail-closed placeholder with the reviewed Executor bridge identity."
+}

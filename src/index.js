@@ -41,6 +41,7 @@ export {
   DC_COMPATIBILITY_REGISTRY,
   DC_COMPATIBILITY_REGISTRY_LIST,
   DC_COMPATIBILITY_REGISTRY_DIGEST,
+  DC_VENDOR_SPECIFIC_EXCLUSIONS,
   desktopCommanderToolDefinition,
   desktopCommanderCompatibilityManifestV1,
 } from "./dc-compatibility-registry.js";
@@ -118,4 +119,11 @@ export {
   mcpDcToolDescription,
 } from "./mcp-dc-schemas.js";
 export { startNativeMcpHttpServer, isLoopbackHost as isMcpLoopbackHost } from "./mcp-http-host.js";
-export { createConfiguredNativeMcpRuntime } from "./mcp-runtime-config.js";
+export { createConfiguredNativeMcpRuntime, PRODUCTION_EXECUTOR_PIN_PATH } from "./mcp-runtime-config.js";
+export {
+  EXECUTOR_MODULE_PIN_V1,
+  inspectExecutorModuleIdentity,
+  verifyExecutorModuleIdentity,
+  importPinnedExecutorModule,
+  readExecutorModulePin,
+} from "./executor-module-identity.js";

@@ -71,8 +71,44 @@ export function sha256(value) {
   return createHash("sha256").update(typeof value === "string" ? value : canonicalJson(value)).digest("hex");
 }
 
+const compatibilityInternalTools = [
+  ["compat.device.info", "device.info", "read_only"],
+  ["compat.health.get", "health.get", "read_only"],
+  ["compat.config.get", "config.get", "read_only"],
+  ["compat.config.set", "config.set", "side_effect"],
+  ["compat.identity.get", "identity.get", "read_only"],
+  ["compat.metrics.get", "metrics.get", "read_only"],
+  ["compat.audit.history", "audit.history", "read_only"],
+  ["compat.file.read_many", "fs.read_many", "read_only"],
+  ["compat.fs.mkdir", "fs.mkdir", "side_effect"],
+  ["compat.fs.list", "fs.list", "read_only"],
+  ["compat.fs.move", "fs.move", "side_effect"],
+  ["compat.fs.stat", "fs.stat", "read_only"],
+  ["compat.search.start", "search.start", "side_effect"],
+  ["compat.search.read", "search.read", "read_only"],
+  ["compat.search.stop", "search.stop", "side_effect"],
+  ["compat.search.list", "search.list", "read_only"],
+  ["compat.process.list_all", "process.list", "read_only"],
+  ["compat.process.managed.list", "process.managed.list", "read_only"],
+  ["compat.process.read_output", "process.read_output", "read_only"],
+  ["compat.shell.session.write_stdin", "shell.session.write_stdin", "side_effect"],
+  ["compat.file.write_pdf", "fs.write_pdf", "side_effect"],
+  ["compat.device.shutdown", "device.shutdown", "side_effect", null, "destructive"],
+].map(([name, executorAction, effect, stream = null, handle = null]) => Object.freeze({
+  name,
+  executorAction,
+  effect,
+  streaming: stream === "stream",
+  handleMode: handle?.startsWith("handle_") ? handle.slice(7) : null,
+  destructive: handle === "destructive",
+  internalCompatibilityOnly: true,
+}));
+
 export const TOOL_REGISTRY = Object.freeze(Object.fromEntries(tools.map((tool) => [tool.name, tool])));
 export const TOOL_REGISTRY_LIST = Object.freeze([...tools].sort((a, b) => a.name.localeCompare(b.name)));
+export const COMPATIBILITY_INTERNAL_TOOL_REGISTRY = Object.freeze(
+  Object.fromEntries(compatibilityInternalTools.map((tool) => [tool.name, tool])),
+);
 export const TOOL_REGISTRY_DIGEST = sha256({
   contract_version: NATIVE_TOOL_REGISTRY_V1,
   tools: TOOL_REGISTRY_LIST,
@@ -133,5 +169,5 @@ export function assertCapabilityNegotiation(client, manifest) {
 }
 
 export function toolDefinition(name) {
-  return TOOL_REGISTRY[name] ?? null;
+  return TOOL_REGISTRY[name] ?? COMPATIBILITY_INTERNAL_TOOL_REGISTRY[name] ?? null;
 }
