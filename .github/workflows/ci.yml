@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - agent/pc-control-plane
+      - agent/pc-ops-chaos
   pull_request:
 
 permissions:
@@ -19,6 +20,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Verify exact checkout
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -28,5 +32,7 @@ jobs:
         run: npm run test:preflight
       - name: Focused Executor journal recovery
         run: npm run test:journal
+      - name: Focused PC ops chaos
+        run: npm run test:chaos
       - name: Full test suite
         run: npm test

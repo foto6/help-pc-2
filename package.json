@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "test:conformance": "node --test test/conformance/contracts.test.js test/conformance/flows.test.js test/conformance/restart-state-machine.test.js test/conformance/python-canonical-vectors.test.js test/conformance/journal-contracts.test.js test/conformance/preflight-contracts.test.js test/conformance/sensor-reconciliation.test.js",
-    "test:journal": "node --test test/conformance/journal-contracts.test.js test/executor-journal-recovery.test.js",
+    "test:conformance": "node --test test/conformance/*.test.js",
+    "test:journal": "node --test test/conformance/journal-contracts.test.js test/uncertain-outcome.test.js",
     "test:preflight": "node --test test/conformance/preflight-contracts.test.js test/preflight-admission.test.js",
-    "test:e2e": "node --test test/conformance/sensor-reconciliation.test.js test/e2e-readiness.test.js",
-    "test:soak": "node --test test/control-state-machine-soak.test.js"
+    "test:e2e": "node --test test/e2e-readiness.test.js",
+    "test:soak": "node --test test/control-state-machine-soak.test.js",
+    "test:chaos": "node --test test/pc-ops-chaos.test.js"
   },
-  "engines": {"node": ">=20"}
+  "engines": {
+    "node": ">=20"
+  }
 }

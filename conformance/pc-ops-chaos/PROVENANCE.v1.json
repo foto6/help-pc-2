@@ -1,0 +1,86 @@
+{
+  "version": "pc_ops.chaos_provenance.v1",
+  "base": {
+    "repo": "foto6/help-pc-2",
+    "branch": "agent/pc-ops-chaos",
+    "head": "f082a7e837392240788d7474123c90095891e153"
+  },
+  "control_plane": {
+    "repo": "foto6/help-pc-2",
+    "branch": "agent/pc-control-plane",
+    "head": "f082a7e837392240788d7474123c90095891e153",
+    "ci": {
+      "run_id": 36317766821,
+      "conclusion": "success"
+    },
+    "files": {
+      "test/e2e-readiness.test.js": {
+        "git_blob_sha1": "09ef5930bfb1bf83ddd4d94ced46e5c7443f76ab"
+      },
+      "test/preflight-admission.test.js": {
+        "git_blob_sha1": "c9efb056c32c755b57742afae414bdff6bbc6498"
+      },
+      "src/schemas.js": {
+        "git_blob_sha1": "0191caf73a44d98266a4890fe43f37ce0d631702"
+      }
+    }
+  },
+  "relay": {
+    "repo": "foto6/help-pc-1",
+    "branch": "agent/pc-relay-hardening",
+    "head": "fcea28ec18a7e3a72e43a62c2782b5a51414a32f",
+    "ci": {
+      "run_id": 36326683913,
+      "conclusion": "success"
+    },
+    "files": {
+      "schemas/pc_relay.request.v2.schema.json": {
+        "git_blob_sha1": "e061ca068110f8f419e7c194e32310216becd521"
+      },
+      "schemas/pc_relay.result.v2.schema.json": {
+        "git_blob_sha1": "f7705d285c3e1c0ba8f8a5d95715b96971c3fef5"
+      },
+      "tests/test_pc_relay.py": {
+        "git_blob_sha1": "b293591fef1b1a7d83acab7057647ac031e91948"
+      },
+      "tools/pc_relay.py": {
+        "git_blob_sha1": "15497ec98426c04cb18479bf96fb2c90be96ed30"
+      }
+    },
+    "latest_observed": {
+      "head": "e0e290403a6e61fa2e4dd9ca063e7c333f5cfa4b",
+      "ci": {
+        "run_id": 36328579472,
+        "conclusion": "failure"
+      },
+      "binding_eligible": false
+    }
+  },
+  "executor": {
+    "repo": "foto6/help-pc-1",
+    "branch": "agent/pc-executor",
+    "head": "2cc1e40f792a3d74560b726a0d246c90b7f077e9",
+    "ci": {
+      "run_id": 36318986551,
+      "conclusion": "success"
+    },
+    "fixture_manifests": [
+      "tests/fixtures/execution_context_binding_v1/manifest.json",
+      "tests/fixtures/outcome_journal_v1/manifest.json",
+      "tests/fixtures/preflight_v1/manifest.json"
+    ]
+  },
+  "gateway": {
+    "repo": "foto6/help-pc-2",
+    "branch": "agent/pc-ops-gateway",
+    "head": "642e05349e898514034e4f280e54bb14e4a98fa5",
+    "ci": {
+      "run_id": 36328674709,
+      "status": "in_progress",
+      "conclusion": null
+    },
+    "status": "pending_exact_head_green",
+    "reason": "latest observed gateway exact-head CI was still in progress; no gateway bytes are frozen or used as PASS evidence"
+  },
+  "binding_policy": "Only exact-head green producer artifacts are frozen. Missing producer capability remains PENDING; source code is never imported from sibling branches at runtime."
+}

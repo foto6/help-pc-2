@@ -1,0 +1,206 @@
+{
+  "version": "pc_ops.CHAOS_MATRIX.v1",
+  "generated_from": {
+    "control_plane": {
+      "head": "f082a7e837392240788d7474123c90095891e153",
+      "ci_run": 36317766821,
+      "conclusion": "success"
+    },
+    "relay_binding": {
+      "head": "fcea28ec18a7e3a72e43a62c2782b5a51414a32f",
+      "ci_run": 36326683913,
+      "conclusion": "success"
+    },
+    "relay_latest_observed": {
+      "head": "e0e290403a6e61fa2e4dd9ca063e7c333f5cfa4b",
+      "ci_run": 36328579472,
+      "conclusion": "failure",
+      "binding_eligible": false
+    },
+    "executor": {
+      "head": "2cc1e40f792a3d74560b726a0d246c90b7f077e9",
+      "ci_run": 36318986551,
+      "conclusion": "success"
+    },
+    "gateway_observed": {
+      "head": "642e05349e898514034e4f280e54bb14e4a98fa5",
+      "ci_run": 36328674709,
+      "status": "in_progress",
+      "binding_eligible": false
+    }
+  },
+  "invariants": [
+    "no_duplicate_side_effect_after_uncertain_boundary",
+    "unknown_completed_outcome_never_blind_replayed",
+    "protected_e_manhwa_never_touched",
+    "credentials_captcha_blocked",
+    "output_bounded",
+    "no_raw_coordinate_fallback",
+    "read_only_retries_safe",
+    "request_result_provenance_hashes_stable",
+    "cursor_monotonicity",
+    "expected_hash_semantics"
+  ],
+  "summary": {
+    "PASS": 9,
+    "PENDING": 11,
+    "BLOCKED": 2
+  },
+  "cases": [
+    {
+      "id": "relay.queue_advance_during_result_commit",
+      "family": "relay",
+      "fault": "Git queue advances during result publication",
+      "status": "PASS",
+      "evidence": "relay:test_fault_concurrent_queue_update_records_new_head_without_reexecution"
+    },
+    {
+      "id": "relay.restart_dispatch_before_publication",
+      "family": "relay",
+      "fault": "restart between dispatch and result publication",
+      "status": "PASS",
+      "evidence": "relay:test_fault_crash_after_dispatch_never_blind_replays"
+    },
+    {
+      "id": "relay.duplicate_request_same_payload",
+      "family": "relay",
+      "fault": "duplicate request id / same payload",
+      "status": "PASS",
+      "evidence": "relay:test_fault_result_already_published_skips_executor"
+    },
+    {
+      "id": "relay.duplicate_request_different_payload",
+      "family": "relay",
+      "fault": "duplicate request id / different payload",
+      "status": "PASS",
+      "evidence": "relay:test_fault_duplicate_id_with_different_content_is_quarantined"
+    },
+    {
+      "id": "relay.malformed_request_version_schema",
+      "family": "relay",
+      "fault": "malformed request/version/schema",
+      "status": "PASS",
+      "evidence": "relay:test_fault_malformed_json_schema_or_version_is_quarantined"
+    },
+    {
+      "id": "shell.stdout_stderr_truncation",
+      "family": "shell.run",
+      "fault": "large stdout/stderr truncation",
+      "status": "PASS",
+      "evidence": "relay:test_windows_powershell_stdout_stderr_are_bounded_and_truncated"
+    },
+    {
+      "id": "executor.unknown_completed_no_blind_replay",
+      "family": "outcome/preflight",
+      "fault": "unknown/completed outcome after uncertain boundary",
+      "status": "PASS",
+      "evidence": "executor:outcome_journal_v1 + control:test/uncertain-outcome.test.js"
+    },
+    {
+      "id": "safety.credentials_captcha_blocked",
+      "family": "shell.run|UIA",
+      "fault": "credentials/CAPTCHA request",
+      "status": "PASS",
+      "evidence": "relay:test_transport_rejects_protected_path_and_credential_captcha_shell_forms + control:assertSafeActionType"
+    },
+    {
+      "id": "safety.no_raw_coordinate_fallback",
+      "family": "window|UIA|vision",
+      "fault": "stale target/preflight must not fall back to raw coordinates",
+      "status": "PASS",
+      "evidence": "control:preflight-admission + e2e-readiness"
+    },
+    {
+      "id": "relay.stale_rebase_metadata",
+      "family": "relay",
+      "fault": "failed rebase/push with stale rebase metadata",
+      "status": "BLOCKED",
+      "blocker": "Last exact-green relay has no explicit stale rebase/rebase-merge/rebase-apply detection or fixture; publication recovery uses fetch/reset without proving stale metadata cleanup."
+    },
+    {
+      "id": "fs.protected_path_alias_traversal_junction",
+      "family": "fs.*|shell.run",
+      "fault": "protected path aliases/traversal/junction escape",
+      "status": "BLOCKED",
+      "blocker": "Exact-green evidence covers direct protected-path shell forms only; no structured-fs canonical path/junction fixture contract proves alias/junction escape safety."
+    },
+    {
+      "id": "process.exit_before_read",
+      "family": "process.*",
+      "fault": "long-running process exits before read",
+      "status": "PENDING",
+      "pending_on": "exact-green structured process fixture pack"
+    },
+    {
+      "id": "process.hang",
+      "family": "process.*",
+      "fault": "managed process hangs",
+      "status": "PENDING",
+      "pending_on": "exact-green structured process timeout/cancel fixture pack"
+    },
+    {
+      "id": "shell_session.restart",
+      "family": "shell.session.*",
+      "fault": "shell session host restart",
+      "status": "PENDING",
+      "pending_on": "exact-green shell session lifecycle fixture pack"
+    },
+    {
+      "id": "output_cursor.stale",
+      "family": "process.*|shell.session.*|log.*",
+      "fault": "stale output cursor",
+      "status": "PENDING",
+      "pending_on": "exact-green versioned cursor fixture pack"
+    },
+    {
+      "id": "fs.expected_hash_race",
+      "family": "fs.*",
+      "fault": "fs expected-hash race",
+      "status": "PENDING",
+      "pending_on": "exact-green fs expected-current-hash fixture pack"
+    },
+    {
+      "id": "fs.append_write_crash_boundary",
+      "family": "fs.*",
+      "fault": "append/write crash boundary",
+      "status": "PENDING",
+      "pending_on": "exact-green fs mutation restart fixture pack"
+    },
+    {
+      "id": "fs.deleted_or_moved_between_operations",
+      "family": "fs.*",
+      "fault": "file deleted/moved between stat/read/write",
+      "status": "PENDING",
+      "pending_on": "exact-green fs race fixture pack"
+    },
+    {
+      "id": "log.rotation_truncation",
+      "family": "log.*",
+      "fault": "log rotation/truncation",
+      "status": "PENDING",
+      "pending_on": "exact-green log cursor rotation fixture pack"
+    },
+    {
+      "id": "fs.concurrent_readers_writers",
+      "family": "fs.*|log.*",
+      "fault": "concurrent readers/writers",
+      "status": "PENDING",
+      "pending_on": "exact-green concurrency fixture pack"
+    },
+    {
+      "id": "gateway.restart_every_durable_boundary",
+      "family": "gateway|control",
+      "fault": "gateway/control restart at every durable boundary",
+      "status": "PENDING",
+      "pending_on": "gateway exact-head green restart-boundary fixtures"
+    },
+    {
+      "id": "readonly.retry_safety",
+      "family": "system.*|fs.read*|log.*|window|UIA inspect",
+      "fault": "read-only retry after transient failure",
+      "status": "PENDING",
+      "pending_on": "gateway/relay exact-head green tool-family fixtures"
+    }
+  ],
+  "matrix_sha256": "10a800fc22722d311a08f7a19226219bfa16a44666848949945200501e848544"
+}
