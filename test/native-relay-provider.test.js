@@ -154,7 +154,7 @@ async function connectDevice(address, {
       });
     },
     close() {
-      try { ws.close(); } catch {}
+      try { ws.terminate(); } catch {}
     },
   };
 }
