@@ -1,0 +1,20 @@
+{
+  "schema": "pc_control.executor_journal_recovery_report.v1",
+  "executorHead": "06217fe4246d0191ac3c93e69aac855bdd6e4136",
+  "controlBaseHead": "1e279e53a40adee973975944de1e17847496ebc4",
+  "scenarios": [
+    {
+      "name": "completed",
+      "status": "pending",
+      "executionAttempts": 0,
+      "verificationAttempts": 0,
+      "reconciliationAttempts": 0,
+      "sideEffectProviderCalls": 0,
+      "journalReads": 0,
+      "observationCalls": 0,
+      "transitionHash": "pending",
+      "evidenceHash": "pending"
+    }
+  ],
+  "aggregateTransitionEvidenceHash": "pending"
+}

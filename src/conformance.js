@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 
 export const EXECUTOR_OUTCOME_V1 = "pc_executor.action_outcome.v1";
+export const EXECUTOR_OUTCOME_JOURNAL_RECORD_V1 = "pc_executor.outcome_journal.record.v1";
+export const EXECUTOR_OUTCOME_JOURNAL_LOOKUP_V1 = "pc_executor.outcome_journal.lookup.v1";
 export const VISION_VERIFICATION_INPUT_V1 = "vision.post_action_verification_input.v1";
 export const VISION_VERIFICATION_RESULT_V1 = "vision.post_action_verification_result.v1";
 export const VISION_PERCEPTION_SNAPSHOT_V2 = "vision.perception_snapshot.v2";
@@ -172,6 +174,303 @@ export function adaptExecutorActionOutcomeV1(payload, expected = {}) {
     reexecutionSafe: parsed.reexecution_safe,
     reconciliationRequired: parsed.reconciliation_required,
     observedAt: parsed.observed_at,
+    raw: structuredClone(parsed),
+  });
+}
+
+
+export function executorJournalExecutionId(requestId, action, executionAttempt) {
+  const request = string(requestId, "journal execution request_id");
+  const actionName = string(action, "journal execution action");
+  const attempt = integer(executionAttempt, "journal execution_attempt", { minimum: 1 });
+  const hash = createHash("sha256");
+  hash.update(request, "utf8");
+  hash.update(Buffer.from([0]));
+  hash.update(actionName, "utf8");
+  hash.update(Buffer.from([0]));
+  hash.update(String(attempt), "utf8");
+  return `exec:${hash.digest("hex")}`;
+}
+
+function parseJournalRecordV1(payload, { requestId, action, executionAttempt, executionId } = {}) {
+  const root = object(payload, "journal record");
+  exactKeys(root, [
+    "contract_version", "journal_sequence", "recorded_at", "request_id", "action",
+    "execution_id", "execution_attempt", "transition", "evidence",
+    "previous_record_sha256", "record_sha256",
+  ], "journal record");
+  if (string(root.contract_version, "journal record.contract_version") !== EXECUTOR_OUTCOME_JOURNAL_RECORD_V1) {
+    throw new ConformanceValidationError("unsupported Executor journal record version", "EXECUTOR_JOURNAL_VERSION_MISMATCH");
+  }
+  const parsed = {
+    contract_version: root.contract_version,
+    journal_sequence: integer(root.journal_sequence, "journal record.journal_sequence", { minimum: 1 }),
+    recorded_at: string(root.recorded_at, "journal record.recorded_at"),
+    request_id: string(root.request_id, "journal record.request_id"),
+    action: string(root.action, "journal record.action"),
+    execution_id: string(root.execution_id, "journal record.execution_id"),
+    execution_attempt: integer(root.execution_attempt, "journal record.execution_attempt", { minimum: 1 }),
+    transition: string(root.transition, "journal record.transition"),
+    evidence: null,
+    previous_record_sha256: root.previous_record_sha256 === null ? null : digest(root.previous_record_sha256, "journal record.previous_record_sha256"),
+    record_sha256: digest(root.record_sha256, "journal record.record_sha256"),
+  };
+  if (!["dispatch_started", "terminal"].includes(parsed.transition)) {
+    throw new ConformanceValidationError("unsupported Executor journal transition");
+  }
+  parsed.evidence = parseExecutorActionOutcomeV1(root.evidence, { requestId: parsed.request_id, action: parsed.action });
+  const expectedExecutionId = executorJournalExecutionId(parsed.request_id, parsed.action, parsed.execution_attempt);
+  if (parsed.execution_id !== expectedExecutionId) {
+    throw new ConformanceValidationError("journal execution_id correlation mismatch", "EXECUTOR_JOURNAL_BINDING_MISMATCH");
+  }
+  const body = {
+    contract_version: parsed.contract_version,
+    journal_sequence: parsed.journal_sequence,
+    recorded_at: parsed.recorded_at,
+    request_id: parsed.request_id,
+    action: parsed.action,
+    execution_id: parsed.execution_id,
+    execution_attempt: parsed.execution_attempt,
+    transition: parsed.transition,
+    evidence: structuredClone(parsed.evidence),
+    previous_record_sha256: parsed.previous_record_sha256,
+  };
+  if (canonicalSha256(body) !== parsed.record_sha256) {
+    throw new ConformanceValidationError("journal record_sha256 mismatch", "EXECUTOR_JOURNAL_INTEGRITY_FAILURE");
+  }
+  if (parsed.transition === "dispatch_started") {
+    if (parsed.evidence.effect_state !== "unknown" || !parsed.evidence.dispatch_started || parsed.evidence.reason !== "dispatch_started") {
+      throw new ConformanceValidationError("dispatch_started journal record has inconsistent evidence");
+    }
+  } else if (parsed.evidence.reason === "dispatch_started") {
+    throw new ConformanceValidationError("terminal journal record cannot carry dispatch_started reason");
+  }
+  if (requestId !== undefined && parsed.request_id !== requestId) {
+    throw new ConformanceValidationError("journal record request_id binding mismatch", "EXECUTOR_JOURNAL_BINDING_MISMATCH");
+  }
+  if (action !== undefined && parsed.action !== action) {
+    throw new ConformanceValidationError("journal record action binding mismatch", "EXECUTOR_JOURNAL_BINDING_MISMATCH");
+  }
+  if (executionAttempt !== undefined && parsed.execution_attempt !== executionAttempt) {
+    throw new ConformanceValidationError("journal record execution_attempt binding mismatch", "EXECUTOR_JOURNAL_BINDING_MISMATCH");
+  }
+  if (executionId !== undefined && parsed.execution_id !== executionId) {
+    throw new ConformanceValidationError("journal record execution_id binding mismatch", "EXECUTOR_JOURNAL_BINDING_MISMATCH");
+  }
+  return Object.freeze(parsed);
+}
+
+function parseJournalCorruption(value) {
+  if (value === null) return null;
+  const root = object(value, "journal provenance.corruption");
+  exactKeys(root, ["kind", "line_number", "byte_offset", "detail", "safe_prefix_bytes"], "journal provenance.corruption");
+  const parsed = {
+    kind: string(root.kind, "journal corruption.kind"),
+    line_number: integer(root.line_number, "journal corruption.line_number", { minimum: 0 }),
+    byte_offset: integer(root.byte_offset, "journal corruption.byte_offset", { minimum: 0 }),
+    detail: string(root.detail, "journal corruption.detail"),
+    safe_prefix_bytes: integer(root.safe_prefix_bytes, "journal corruption.safe_prefix_bytes", { minimum: 0 }),
+  };
+  if (!["truncated_tail", "malformed_tail", "malformed_record", "request_action_conflict"].includes(parsed.kind)) {
+    throw new ConformanceValidationError("unsupported journal corruption kind");
+  }
+  return Object.freeze(parsed);
+}
+
+export function parseExecutorOutcomeJournalLookupV1(payload, {
+  requestId = null,
+  action = null,
+  executionAttempt = null,
+  executionId = null,
+} = {}) {
+  const root = object(payload, "outcome journal lookup");
+  exactKeys(root, [
+    "contract_version", "source", "request_id", "requestId", "action", "execution_attempt",
+    "outcome", "reason", "replay_authorized", "latest_valid_evidence",
+    "latest_valid_record", "history", "provenance",
+  ], "outcome journal lookup");
+  if (string(root.contract_version, "journal lookup.contract_version") !== EXECUTOR_OUTCOME_JOURNAL_LOOKUP_V1) {
+    throw new ConformanceValidationError("unsupported Executor journal lookup version", "EXECUTOR_JOURNAL_VERSION_MISMATCH");
+  }
+  if (string(root.source, "journal lookup.source") !== "help-pc-1.outcome-journal") {
+    throw new ConformanceValidationError("unsupported Executor journal lookup source");
+  }
+  const parsedRequestId = string(root.request_id, "journal lookup.request_id");
+  if (string(root.requestId, "journal lookup.requestId") !== parsedRequestId) {
+    throw new ConformanceValidationError("journal lookup requestId alias mismatch", "EXECUTOR_JOURNAL_BINDING_MISMATCH");
+  }
+  const parsedAction = string(root.action, "journal lookup.action");
+  const parsedAttempt = root.execution_attempt === null
+    ? null
+    : integer(root.execution_attempt, "journal lookup.execution_attempt", { minimum: 1 });
+  const outcome = string(root.outcome, "journal lookup.outcome");
+  if (!["succeeded", "unknown", "not_dispatched", "blocked", "cancelled"].includes(outcome)) {
+    throw new ConformanceValidationError("unsupported journal lookup outcome");
+  }
+  if (boolean(root.replay_authorized, "journal lookup.replay_authorized") !== false) {
+    throw new ConformanceValidationError("journal lookup must never authorize replay", "EXECUTOR_JOURNAL_REPLAY_AUTHORITY_INVALID");
+  }
+  if (requestId !== null && parsedRequestId !== requestId) {
+    throw new ConformanceValidationError("journal lookup request_id binding mismatch", "EXECUTOR_JOURNAL_BINDING_MISMATCH");
+  }
+  if (action !== null && parsedAction !== action) {
+    throw new ConformanceValidationError("journal lookup action binding mismatch", "EXECUTOR_JOURNAL_BINDING_MISMATCH");
+  }
+  if (executionAttempt !== null && parsedAttempt !== executionAttempt) {
+    throw new ConformanceValidationError("journal lookup execution_attempt binding mismatch", "EXECUTOR_JOURNAL_BINDING_MISMATCH");
+  }
+  const expectedExecutionId = executionId ?? (
+    executionAttempt !== null && requestId !== null && action !== null
+      ? executorJournalExecutionId(requestId, action, executionAttempt)
+      : null
+  );
+
+  if (!Array.isArray(root.history)) throw new ConformanceValidationError("journal lookup history must be an array");
+  const history = root.history.map((record, index) => {
+    const parsed = parseJournalRecordV1(record, {
+      requestId: parsedRequestId,
+      action: parsedAction,
+      ...(parsedAttempt === null ? {} : { executionAttempt: parsedAttempt }),
+      ...(expectedExecutionId === null ? {} : { executionId: expectedExecutionId }),
+    });
+    if (index > 0) {
+      const previous = root.history[index - 1];
+      if (parsed.journal_sequence <= previous.journal_sequence) {
+        throw new ConformanceValidationError("journal lookup history sequence is not increasing");
+      }
+      if (parsed.previous_record_sha256 !== previous.record_sha256) {
+        throw new ConformanceValidationError("journal lookup history hash chain mismatch", "EXECUTOR_JOURNAL_INTEGRITY_FAILURE");
+      }
+    }
+    return parsed;
+  });
+
+  let latestRecord = null;
+  if (root.latest_valid_record !== null) {
+    latestRecord = parseJournalRecordV1(root.latest_valid_record, {
+      requestId: parsedRequestId,
+      action: parsedAction,
+      ...(parsedAttempt === null ? {} : { executionAttempt: parsedAttempt }),
+      ...(expectedExecutionId === null ? {} : { executionId: expectedExecutionId }),
+    });
+  }
+  let latestEvidence = null;
+  if (root.latest_valid_evidence !== null) {
+    latestEvidence = parseExecutorActionOutcomeV1(root.latest_valid_evidence, { requestId: parsedRequestId, action: parsedAction });
+  }
+  if ((latestRecord === null) !== (latestEvidence === null)) {
+    throw new ConformanceValidationError("journal lookup latest record/evidence nullability mismatch");
+  }
+  if (history.length === 0 && latestRecord !== null) {
+    throw new ConformanceValidationError("journal lookup latest record requires history");
+  }
+  if (history.length > 0) {
+    const last = history.at(-1);
+    if (JSON.stringify(last) !== JSON.stringify(latestRecord)) {
+      throw new ConformanceValidationError("journal lookup latest_valid_record does not equal history tail");
+    }
+    if (JSON.stringify(last.evidence) !== JSON.stringify(latestEvidence)) {
+      throw new ConformanceValidationError("journal lookup latest_valid_evidence does not equal record evidence");
+    }
+  }
+
+  const provenance = object(root.provenance, "journal lookup.provenance");
+  exactKeys(provenance, [
+    "record_contract_version", "total_valid_records", "matched_records",
+    "journal_sha256", "integrity", "corruption",
+  ], "journal lookup.provenance");
+  if (string(provenance.record_contract_version, "journal provenance.record_contract_version") !== EXECUTOR_OUTCOME_JOURNAL_RECORD_V1) {
+    throw new ConformanceValidationError("journal provenance record contract version mismatch", "EXECUTOR_JOURNAL_VERSION_MISMATCH");
+  }
+  const totalValidRecords = integer(provenance.total_valid_records, "journal provenance.total_valid_records", { minimum: 0 });
+  const matchedRecords = integer(provenance.matched_records, "journal provenance.matched_records", { minimum: 0 });
+  if (matchedRecords !== history.length || totalValidRecords < matchedRecords) {
+    throw new ConformanceValidationError("journal provenance record counts are inconsistent");
+  }
+  const journalSha256 = digest(provenance.journal_sha256, "journal provenance.journal_sha256");
+  const integrity = string(provenance.integrity, "journal provenance.integrity");
+  if (!["clean", "corrupt"].includes(integrity)) throw new ConformanceValidationError("unsupported journal integrity value");
+  const corruption = parseJournalCorruption(provenance.corruption);
+  if ((integrity === "corrupt") !== (corruption !== null)) {
+    throw new ConformanceValidationError("journal integrity/corruption flags are inconsistent");
+  }
+
+  let expectedOutcome = "unknown";
+  let expectedReason = "no_evidence";
+  if (corruption !== null) {
+    expectedOutcome = "unknown";
+    expectedReason = `journal_${corruption.kind}`;
+  } else if (latestEvidence !== null) {
+    if (latestEvidence.effect_state === "completed") expectedOutcome = "succeeded";
+    else if (latestEvidence.effect_state === "unknown") expectedOutcome = "unknown";
+    else if (latestEvidence.reason === "policy_blocked") expectedOutcome = "blocked";
+    else if (latestEvidence.reason === "cancelled") expectedOutcome = "cancelled";
+    else expectedOutcome = "not_dispatched";
+    expectedReason = latestEvidence.reason;
+  }
+  if (outcome !== expectedOutcome || string(root.reason, "journal lookup.reason") !== expectedReason) {
+    throw new ConformanceValidationError("journal lookup outcome/reason is inconsistent with durable evidence");
+  }
+
+  if (corruption !== null && corruption.kind !== "truncated_tail") {
+    throw new ConformanceValidationError(
+      `journal integrity failure: ${corruption.kind}`,
+      "EXECUTOR_JOURNAL_INTEGRITY_FAILURE",
+    );
+  }
+
+  return Object.freeze({
+    contract_version: EXECUTOR_OUTCOME_JOURNAL_LOOKUP_V1,
+    source: "help-pc-1.outcome-journal",
+    request_id: parsedRequestId,
+    action: parsedAction,
+    execution_attempt: parsedAttempt,
+    outcome,
+    reason: root.reason,
+    replay_authorized: false,
+    latest_valid_evidence: latestEvidence,
+    latest_valid_record: latestRecord,
+    history: Object.freeze(history),
+    provenance: Object.freeze({
+      record_contract_version: EXECUTOR_OUTCOME_JOURNAL_RECORD_V1,
+      total_valid_records: totalValidRecords,
+      matched_records: matchedRecords,
+      journal_sha256: journalSha256,
+      integrity,
+      corruption,
+    }),
+  });
+}
+
+export function adaptExecutorOutcomeJournalLookupV1(payload, expected = {}) {
+  const parsed = parseExecutorOutcomeJournalLookupV1(payload, expected);
+  const evidence = parsed.latest_valid_evidence;
+  const safeNotStarted = (
+    parsed.provenance.integrity === "clean" &&
+    parsed.outcome === "not_dispatched" &&
+    evidence?.effect_state === "not_started" &&
+    evidence.reexecution_safe === true &&
+    evidence.dispatch_started === false &&
+    !["policy_blocked", "cancelled"].includes(evidence.reason)
+  );
+  return Object.freeze({
+    source: parsed.source,
+    contract: EXECUTOR_OUTCOME_JOURNAL_LOOKUP_V1,
+    requestId: parsed.request_id,
+    action: parsed.action,
+    executionAttempt: parsed.execution_attempt,
+    executionId: parsed.latest_valid_record?.execution_id ?? (
+      parsed.execution_attempt === null ? null : executorJournalExecutionId(parsed.request_id, parsed.action, parsed.execution_attempt)
+    ),
+    outcome: parsed.outcome,
+    reason: parsed.reason,
+    replayAuthorized: false,
+    safeNotStarted,
+    conservative: parsed.provenance.integrity === "corrupt" || parsed.outcome === "unknown",
+    integrity: parsed.provenance.integrity,
+    corruptionKind: parsed.provenance.corruption?.kind ?? null,
+    journalSha256: parsed.provenance.journal_sha256,
+    latestValidEvidence: evidence ? structuredClone(evidence) : null,
     raw: structuredClone(parsed),
   });
 }

@@ -1,4 +1,9 @@
-import { adaptExecutorActionOutcomeV1, ConformanceValidationError } from "./conformance.js";
+import {
+  adaptExecutorActionOutcomeV1,
+  adaptExecutorOutcomeJournalLookupV1,
+  ConformanceValidationError,
+  executorJournalExecutionId,
+} from "./conformance.js";
 
 export class ProviderRegistry {
   #providers = new Map();
@@ -80,6 +85,22 @@ function invalidExecutorOutcome(error) {
   return wrapped;
 }
 
+function invalidExecutorJournal(error) {
+  const wrapped = new Error(`PC Executor outcome journal evidence failed conformance: ${error.message}`);
+  wrapped.name = "ProviderEvidenceError";
+  wrapped.code = error?.code === "EXECUTOR_JOURNAL_BINDING_MISMATCH"
+    ? "EXECUTOR_JOURNAL_BINDING_MISMATCH"
+    : error?.code === "EXECUTOR_JOURNAL_VERSION_MISMATCH"
+      ? "EXECUTOR_JOURNAL_VERSION_MISMATCH"
+      : "EXECUTOR_JOURNAL_INVALID";
+  wrapped.category = "journal_evidence_invalid";
+  wrapped.retryable = false;
+  wrapped.dispatchState = "unknown";
+  wrapped.outcomeUncertain = true;
+  wrapped.cause = error;
+  return wrapped;
+}
+
 function executorProviderFailure(result, evidence) {
   const kind = typeof result?.error_kind === "string" ? result.error_kind : null;
   const detail = result?.error;
@@ -111,6 +132,16 @@ export class HelpPc1Adapter {
     if (readEvidence !== null && typeof readEvidence !== "function") throw new TypeError("readEvidence must be a function when supplied.");
     this.name = "help-pc-1"; this.invoke = invoke; this.dryRun = dryRun; this._readEvidence = readEvidence;
   }
+  executionCorrelation(action, executionAttempt) {
+    return Object.freeze({
+      contract: "pc_executor.outcome_journal.execution_correlation.v1",
+      requestId: action.id,
+      action: action.type,
+      executionAttempt,
+      executionId: executorJournalExecutionId(action.id, action.type, executionAttempt),
+    });
+  }
+
   async execute(action, context) {
     let result;
     try {
@@ -144,7 +175,34 @@ export class HelpPc1Adapter {
 
   async readOutcomeEvidence(action, context) {
     if (!this._readEvidence) return { outcome: "unknown", source: this.name, requestId: action.id, reason: "no_executor_evidence_reader" };
-    const raw = await this._readEvidence({ request_id: action.id, action: action.type, execution_attempt: action.executionAttempts }, context);
+    const raw = await this._readEvidence({
+      request_id: action.id,
+      action: action.type,
+      execution_attempt: action.executionAttempts,
+    }, context);
+    if (raw === null || raw === undefined) {
+      return { outcome: "unknown", source: this.name, requestId: action.id, reason: "journal_missing", journalMissing: true };
+    }
+
+    const journalPayload =
+      raw?.contract_version?.startsWith?.("pc_executor.outcome_journal.lookup.")
+        ? raw
+        : raw?.data?.outcome_evidence?.contract_version?.startsWith?.("pc_executor.outcome_journal.lookup.")
+          ? raw.data.outcome_evidence
+          : null;
+    if (journalPayload) {
+      try {
+        return adaptExecutorOutcomeJournalLookupV1(journalPayload, {
+          requestId: action.id,
+          action: action.type,
+          executionAttempt: action.executionAttempts,
+          executionId: action.executionCorrelation?.executionId ?? executorJournalExecutionId(action.id, action.type, action.executionAttempts),
+        });
+      } catch (error) {
+        throw invalidExecutorJournal(error);
+      }
+    }
+
     try {
       if (raw?.contract_version === "pc_executor.action_outcome.v1") return adaptExecutorActionOutcomeV1(raw, { requestId: action.id, action: action.type });
       if (raw?.outcome_evidence?.contract_version === "pc_executor.action_outcome.v1") return adaptExecutorActionOutcomeV1(raw.outcome_evidence, { requestId: action.id, action: action.type });

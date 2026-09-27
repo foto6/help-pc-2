@@ -49,7 +49,7 @@ function migrateSnapshot(raw) {
     action.verificationAttempts ??= 0; action.reconciliationAttempts ??= 0;
     action.maxVerificationAttempts ??= 3; action.maxReconciliationAttempts ??= 3;
     action.executionResult ??= action.result ?? null; action.executorEvidence ??= null; action.executionOutcome ??= action.result ? "succeeded" : null;
-    action.uncertainty ??= null;
+    action.executionCorrelation ??= null; action.uncertainty ??= null;
   }
   const schedulable = new Set(snapshot.queue);
   for (const action of snapshot.actions) if (["queued", "retry_wait", "uncertain_outcome", "reconciliation_wait"].includes(action.status)) schedulable.add(action.id);
@@ -118,7 +118,7 @@ export class ControlPlane {
       confirmationRequired, confirmedBy: null, destructive: spec.destructive, requiresDesktop: spec.requiresDesktop, verification: spec.verification, metadata: spec.metadata,
       status: confirmationRequired ? "awaiting_confirmation" : "queued", cancellationRequested: false,
       createdAt: now.iso, createdAtMs: now.ms, updatedAt: now.iso, lease: null, nextAttemptAtMs: null, nextReconciliationAtMs: null,
-      result: null, executionResult: null, executorEvidence: null, executionOutcome: null, verificationResult: null, error: null, uncertainty: null,
+      result: null, executionResult: null, executorEvidence: null, executionOutcome: null, executionCorrelation: null, verificationResult: null, error: null, uncertainty: null,
     };
     this.actions.set(id, action); if (idemScope) this.idempotency.set(idemScope, id); if (action.status === "queued") this.#enqueueId(id);
     this.#auditEvent("action.enqueued", { actionId: id, sessionId, correlationId: action.correlationId, provider: action.provider, type: action.type, status: action.status, lanes: action.lanes }); this.#persist(); return clone(action);
@@ -253,6 +253,45 @@ export class ControlPlane {
         action.executorEvidence = clone(evidence);
       }
       const evidenceOutcome = evidence?.outcome ?? (action.executionOutcome === "succeeded" ? "succeeded" : "unknown");
+      if (
+        evidenceOutcome === "not_dispatched" &&
+        evidence?.contract === "pc_executor.outcome_journal.lookup.v1" &&
+        evidence?.safeNotStarted === true
+      ) {
+        const now = this.#time();
+        if (action.cancellationRequested) {
+          this.#finishNotApplied(action, { message: "Journal proved the interrupted attempt was not started before cancellation." });
+          return;
+        }
+        if (action.executionAttempts < action.maxAttempts) {
+          action.status = "retry_wait";
+          action.error = {
+            code: "JOURNAL_CONFIRMED_NOT_STARTED",
+            category: "confirmed_not_dispatched",
+            message: "Read-only Executor journal proved the interrupted attempt was not started.",
+            retryable: true,
+          };
+          action.nextAttemptAtMs = now.ms + action.retryDelayMs;
+          action.updatedAt = now.iso;
+          action.uncertainty = null;
+          this.#releaseLocks(action);
+          this.#enqueueId(action.id);
+          this.metrics.increment("retries");
+          this.#auditEvent("action.retry_wait", {
+            actionId: action.id,
+            sessionId: action.sessionId,
+            correlationId: action.correlationId,
+            executionAttempt: action.executionAttempts,
+            maxAttempts: action.maxAttempts,
+            reason: "journal_confirmed_not_started",
+            evidenceContract: evidence.contract,
+            executionCorrelation: action.executionCorrelation,
+          });
+          return;
+        }
+        this.#finishNotApplied(action, { message: "Journal proved the interrupted attempt was not started, but the bounded execution-attempt budget is exhausted." });
+        return;
+      }
       if (evidenceOutcome === "blocked" || evidenceOutcome === "failed") {
         const now = this.#time(); action.status = "failed"; action.error = { code: evidenceOutcome === "blocked" ? "EXECUTOR_BLOCKED" : "EXECUTOR_FAILED", category: "reconciled_failure", message: "Executor evidence reports no successful side effect.", retryable: false }; action.failedAt = now.iso; action.updatedAt = now.iso; action.uncertainty = null; this.#releaseLocks(action); this.#removeFromQueue(action.id);
         this.#auditEvent("action.failed", { actionId: action.id, sessionId: action.sessionId, correlationId: action.correlationId, reason: "executor_evidence", evidenceOutcome }); return;
@@ -276,7 +315,24 @@ export class ControlPlane {
       if (action.reconciliationAttempts < action.maxReconciliationAttempts) this.#scheduleReconciliation(action, "executor_evidence_inconclusive", { error: evidence });
       else this.#exhaustReconciliation(action, "Executor outcome evidence remained unknown within bounded read-only attempts.", evidence);
     } catch (error) {
-      if (action.reconciliationAttempts < action.maxReconciliationAttempts) this.#scheduleReconciliation(action, "reconciliation_adapter_error", { error: errorInfo(error) });
+      if (error?.category === "journal_evidence_invalid") {
+        const now = this.#time();
+        action.status = "blocked";
+        action.error = errorInfo(error);
+        action.blockedAt = now.iso;
+        action.updatedAt = now.iso;
+        action.uncertainty = null;
+        this.#releaseLocks(action);
+        this.#removeFromQueue(action.id);
+        this.#auditEvent("action.blocked", {
+          actionId: action.id,
+          sessionId: action.sessionId,
+          correlationId: action.correlationId,
+          reason: "journal_evidence_invalid",
+          error: action.error,
+          executionCorrelation: action.executionCorrelation,
+        });
+      } else if (action.reconciliationAttempts < action.maxReconciliationAttempts) this.#scheduleReconciliation(action, "reconciliation_adapter_error", { error: errorInfo(error) });
       else this.#exhaustReconciliation(action, "Reconciliation adapter failed within bounded attempts.", errorInfo(error));
     } finally {
       this.metrics.recordDuration("reconciliationLatency", Math.max(0, this.#time().ms - start.ms)); this.controllers.delete(action.id); this.#persist();
@@ -290,8 +346,12 @@ export class ControlPlane {
     let executionStart;
     try {
       let now = this.#time(); action.status = "executing"; action.executionAttempts += 1; action.attempts = action.executionAttempts; this.metrics.increment("executionAttempts"); action.executingAt = now.iso; action.dispatchStartedAt = now.iso; action.updatedAt = now.iso; executionStart = now.ms;
-      this.#auditEvent("action.executing", { actionId, sessionId: action.sessionId, correlationId: action.correlationId, executionAttempt: action.executionAttempts, workerId: action.lease.workerId }); this.#persist();
-      const provider = this.providers.get(action.provider); const execution = await provider.execute(clone(action), { signal: controller.signal, executionAttempt: action.executionAttempts, session: clone(session) });
+      const provider = this.providers.get(action.provider);
+      action.executionCorrelation = typeof provider.executionCorrelation === "function"
+        ? clone(provider.executionCorrelation(clone(action), action.executionAttempts))
+        : { requestId: action.id, action: action.type, executionAttempt: action.executionAttempts };
+      this.#auditEvent("action.executing", { actionId, sessionId: action.sessionId, correlationId: action.correlationId, executionAttempt: action.executionAttempts, executionCorrelation: action.executionCorrelation, workerId: action.lease.workerId }); this.#persist();
+      const execution = await provider.execute(clone(action), { signal: controller.signal, executionAttempt: action.executionAttempts, session: clone(session) });
       now = this.#time(); this.metrics.recordDuration("executionLatency", Math.max(0, now.ms - executionStart)); executionStart = undefined;
       const wrapped = execution && typeof execution === "object" && Object.hasOwn(execution, "result") && Object.hasOwn(execution, "evidence");
       action.executionResult = clone(wrapped ? execution.result : execution); action.executorEvidence = clone(wrapped ? execution.evidence : null); action.executionOutcome = "succeeded"; action.updatedAt = now.iso; this.#persist();

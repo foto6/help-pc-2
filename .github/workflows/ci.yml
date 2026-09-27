@@ -22,4 +22,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm test
+      - name: Focused Executor journal recovery
+        run: npm run test:journal
+      - name: Full test suite
+        run: npm test

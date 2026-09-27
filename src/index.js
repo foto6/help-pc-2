@@ -17,6 +17,8 @@ export { RuntimeMetrics } from "./metrics.js";
 export { createSimulationRuntime } from "./simulation.js";
 export {
   EXECUTOR_OUTCOME_V1,
+  EXECUTOR_OUTCOME_JOURNAL_RECORD_V1,
+  EXECUTOR_OUTCOME_JOURNAL_LOOKUP_V1,
   VISION_VERIFICATION_INPUT_V1,
   VISION_VERIFICATION_RESULT_V1,
   VISION_PERCEPTION_SNAPSHOT_V2,
@@ -26,6 +28,9 @@ export {
   gitBlobSha1,
   parseExecutorActionOutcomeV1,
   adaptExecutorActionOutcomeV1,
+  executorJournalExecutionId,
+  parseExecutorOutcomeJournalLookupV1,
+  adaptExecutorOutcomeJournalLookupV1,
   parseVisionVerificationInputV1,
   parseVisionVerificationResultV1,
   VisionVerificationResultV1Adapter,

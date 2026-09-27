@@ -7,6 +7,7 @@ import {
   VisionVerificationResultV1Adapter,
   adaptExecutorActionOutcomeV1,
 } from "../../src/index.js";
+import { bindFrozenJournalLookup } from "./journal-fixtures.js";
 
 const EXECUTOR_BASE = new URL("../../conformance/frozen/executor/606074456ca00681fac30a40ee28f7bb0f67c79c/tests/fixtures/", import.meta.url);
 const VISION_BASE = new URL("../../conformance/frozen/vision/f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82/tests/fixtures/post_action_verification_result_v1/", import.meta.url);
@@ -221,7 +222,18 @@ function executorProvider(model) {
         return boundOutcome("action_outcome_v1_not_started.json", request, { reason: "transient" });
       }
       if (record.plan === "unknown_evidence_completed") {
-        return boundOutcome("action_outcome_v1.json", request);
+        return bindFrozenJournalLookup("completed.lookup.json", {
+          requestId: request.request_id,
+          action: request.action,
+          executionAttempt: request.execution_attempt,
+        });
+      }
+      if (record.plan === "unknown_verified") {
+        return bindFrozenJournalLookup("unknown.lookup.json", {
+          requestId: request.request_id,
+          action: request.action,
+          executionAttempt: request.execution_attempt,
+        });
       }
       if (record.plan === "malformed_executor_evidence") {
         const malformed = boundOutcome("action_outcome_v1_unknown.json", request);
