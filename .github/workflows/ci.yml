@@ -5,6 +5,7 @@ on:
     branches:
       - agent/pc-control-plane
       - agent/pc-native-mcp
+      - agent/pc-native-mcp-host
   pull_request:
 
 permissions:
@@ -23,6 +24,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+      - name: Install pinned dependencies
+        run: npm ci
+      - name: Official MCP host integration
+        run: npm run test:mcp-host
       - name: Native MCP/control facade
         run: npm run test:native-mcp
       - name: Focused execution-context and Vision epoch reconciliation

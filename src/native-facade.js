@@ -399,7 +399,24 @@ export class NativeControlFacade {
     return this.#projectAction(session, request, tool, action);
   }
 
-  async invoke(envelope) {
+  async #advanceWithCancellation(session, request, tool, signal) {
+    let onAbort = null;
+    if (signal) {
+      onAbort = () => {
+        if (!request.actionId) return;
+        try { this.controlPlane.cancelAction(request.actionId, "mcp_cancelled"); } catch {}
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
+    try {
+      return await this.#advance(session, request, tool);
+    } finally {
+      if (signal && onAbort) signal.removeEventListener("abort", onAbort);
+    }
+  }
+
+  async invoke(envelope, { signal = null } = {}) {
     if (!envelope || typeof envelope !== "object" || Array.isArray(envelope)) throw new NativeFacadeError("Request envelope must be an object.", { code: "INVALID_ARGUMENT" });
     if (envelope.contract_version !== NATIVE_CONTROL_PROTOCOL_V1) throw new NativeFacadeError("Unsupported request envelope version.", { code: "SCHEMA_VERSION_MISMATCH", category: "capability_mismatch", httpStatus: 409 });
     if (typeof envelope.session_id !== "string" || typeof envelope.request_id !== "string" || typeof envelope.tool !== "string") {
@@ -422,7 +439,7 @@ export class NativeControlFacade {
     if (request) {
       if (request.fingerprint !== fingerprint) throw new NativeFacadeError("Duplicate request_id was reused with different input.", { code: "DUPLICATE_REQUEST_MISMATCH", category: "idempotency", httpStatus: 409 });
       if (request.status === "completed" || request.status === "cancelled" || request.status === "error") return clone(request.response);
-      return this.#advance(session, request, tool);
+      return this.#advanceWithCancellation(session, request, tool, signal);
     }
 
     request = {
@@ -461,7 +478,7 @@ export class NativeControlFacade {
     request.actionId = action.id;
     request.status = "queued";
     this.#persist();
-    return this.#advance(session, request, tool);
+    return this.#advanceWithCancellation(session, request, tool, signal);
   }
 
   lookupRequest({ sessionId, requestId }) {

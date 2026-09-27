@@ -83,3 +83,18 @@ export {
   parseVisionTargetLivenessV1,
   validateVisionTargetLivenessV1,
 } from "./context-epoch.js";
+
+export {
+  MCP_HOST_VERSION,
+  MCP_MODERN_PROTOCOL,
+  NativeMcpRuntime,
+  nativeMcpServerFactory,
+} from "./mcp-host.js";
+export {
+  MCP_TOOL_SCHEMAS,
+  MCP_TOOL_DESCRIPTIONS,
+  mcpToolSchema,
+  mcpToolDescription,
+} from "./mcp-tool-schemas.js";
+export { startNativeMcpHttpServer, isLoopbackHost as isMcpLoopbackHost } from "./mcp-http-host.js";
+export { createConfiguredNativeMcpRuntime } from "./mcp-runtime-config.js";

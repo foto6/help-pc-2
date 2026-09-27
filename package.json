@@ -11,7 +11,22 @@
     "test:e2e": "node --test test/conformance/sensor-reconciliation.test.js test/e2e-readiness.test.js",
     "test:context-epoch": "node --test test/conformance/context-epoch-contracts.test.js test/context-epoch-e2e.test.js",
     "test:native-mcp": "node --test test/native-facade.test.js test/native-http.test.js",
-    "test:soak": "node --test test/control-state-machine-soak.test.js"
+    "test:soak": "node --test test/control-state-machine-soak.test.js",
+    "test:mcp-host": "node --test test/mcp-host.integration.test.js test/mcp-stdio.integration.test.js",
+    "mcp:stdio": "node bin/pc-native-mcp-stdio.js",
+    "mcp:http": "node bin/pc-native-mcp-http.js"
   },
-  "engines": {"node": ">=20"}
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.1.0",
+    "@modelcontextprotocol/node": "2.1.0",
+    "@modelcontextprotocol/server": "2.1.0",
+    "zod": "4.6.5"
+  },
+  "bin": {
+    "pc-native-mcp-stdio": "./bin/pc-native-mcp-stdio.js",
+    "pc-native-mcp-http": "./bin/pc-native-mcp-http.js"
+  }
 }

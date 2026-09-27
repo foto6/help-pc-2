@@ -1,0 +1,3 @@
+node_modules/
+.pc-native-mcp-state/
+.tmp-stdio-debug/
