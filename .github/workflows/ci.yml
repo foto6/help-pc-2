@@ -6,6 +6,7 @@ on:
       - agent/pc-control-plane
       - agent/pc-native-mcp
       - agent/pc-native-mcp-host
+      - agent/pc-native-control-integrated
   pull_request:
 
 permissions:
@@ -31,6 +32,8 @@ jobs:
         run: npm run test:mcp-host
       - name: Native MCP/control facade
         run: npm run test:native-mcp
+      - name: Desktop Commander compatibility surface
+        run: npm run test:dc-compat
       - name: Focused execution-context and Vision epoch reconciliation
         run: npm run test:context-epoch
       - name: Frozen Wave 8 E2E readiness

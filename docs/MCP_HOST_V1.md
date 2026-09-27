@@ -49,15 +49,11 @@ The bridge is dependency injection only. help-pc-2 does not import help-pc-1 sou
 
 ## MCP tool contract
 
-Every entry in `src/native-registry.js` is registered as an MCP tool. `tools/list` exposes strict JSON schemas, stable descriptions, MCP annotations, and metadata containing:
+Every entry in `src/native-registry.js` and every v1 Desktop Commander compatibility entry in `src/dc-compatibility-registry.js` is registered as an MCP tool. Native tools retain dotted names while compatibility tools retain the exact observed underscore names, so the two registries are unambiguous. `tools/list` exposes strict JSON schemas, stable descriptions, MCP annotations, and version/digest metadata.
 
-- native protocol version;
-- native registry contract and digest;
-- current Executor capability digest;
-- read-only versus side-effect classification;
-- streaming classification.
+Native tools publish the native protocol version, native registry contract/digest, current Executor capability digest, effect classification, and streaming classification. Compatibility tools publish `pc.desktop_commander.compat_registry.v1`, its digest, the native registry digest, Executor digest, capability variants/availability, and effect classification.
 
-Each tool accepts an optional `request_id`. Clients that may retry a logical call should supply a stable value. If omitted, the host derives one from the MCP request identity. The facade binds that value to its durable idempotency key.
+Each native or compatibility tool accepts an optional `request_id`. Clients that may retry a logical call should supply a stable value. If omitted, the host derives one from the MCP request identity. Compatibility translation derives deterministic child IDs for multi-step/batch work; all calls still bind to the facade's durable idempotency boundary.
 
 Paginated tools accept:
 
@@ -69,7 +65,7 @@ The host/facade enforce the negotiated native page bound. Executor continuation 
 
 ## Sessions, probes, and protocol compatibility
 
-MCP discovery/initialize does not claim the desktop or create a side-effect-capable facade session. The host pins the initial native capability manifest and performs read-only capability validation while constructing MCP server instances. A durable facade/control session is acquired lazily on the first `tools/call`.
+MCP discovery/initialize does not claim the desktop or create a side-effect-capable facade session. The host pins the initial native capability manifest and performs read-only capability validation while constructing MCP server instances. A durable facade/control session is acquired lazily on the first `tools/call`. The configured runtime also persists Desktop Commander process compatibility metadata in `dc-compatibility.json` so pid-to-native-handle mapping survives host restart without becoming a second execution authority.
 
 This matters for modern stdio negotiation: the official SDK may use a disposable sibling process for `server/discover`. Probe processes stay read-only and cannot take desktop ownership.
 

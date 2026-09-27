@@ -5,7 +5,20 @@ import {
   NATIVE_TOOL_REGISTRY_V1,
   TOOL_REGISTRY_LIST,
 } from "./native-registry.js";
-import { mcpToolDescription, mcpToolSchema } from "./mcp-tool-schemas.js";
+import {
+  mcpToolDescription,
+  mcpToolSchema,
+  mcpCompatibilityToolDescription,
+  mcpCompatibilityToolSchema,
+} from "./mcp-tool-schemas.js";
+import {
+  DC_COMPATIBILITY_REGISTRY_V1,
+  DC_COMPATIBILITY_RESPONSE_V1,
+  DC_COMPATIBILITY_REGISTRY_DIGEST,
+  DC_COMPATIBILITY_REGISTRY_LIST,
+  desktopCommanderCompatibilityManifestV1,
+} from "./dc-compatibility-registry.js";
+import { DesktopCommanderCompatibilitySurface } from "./dc-compatibility.js";
 
 export const MCP_HOST_VERSION = "1.0.0";
 export const MCP_MODERN_PROTOCOL = "2026-07-28";
@@ -33,6 +46,24 @@ function facadeErrorResult(error) {
       details: error?.details ?? null,
     },
     stream: null,
+  };
+}
+
+function compatibilityErrorResult(error, { requestId = null, sessionId = null, tool = null } = {}) {
+  return {
+    contract_version: DC_COMPATIBILITY_RESPONSE_V1,
+    request_id: requestId,
+    session_id: sessionId,
+    tool,
+    status: "error",
+    data: null,
+    error: {
+      code: error?.code ?? "MCP_DC_COMPATIBILITY_HOST_ERROR",
+      category: error?.category ?? "host",
+      message: String(error?.message ?? error),
+      retryable: error?.retryable === true,
+      details: error?.details ?? null,
+    },
   };
 }
 
@@ -75,6 +106,7 @@ export class NativeMcpRuntime {
     desktopId,
     facadeSession = null,
     initialManifest,
+    compatibilitySurface = null,
     serverName = "pc-native-mcp",
     serverVersion = MCP_HOST_VERSION,
     maxToolResultBytes = 256 * 1024,
@@ -83,6 +115,7 @@ export class NativeMcpRuntime {
     this.desktopId = desktopId;
     this.facadeSession = facadeSession;
     this.initialManifest = initialManifest;
+    this.compatibilitySurface = compatibilitySurface;
     this.serverName = serverName;
     this.serverVersion = serverVersion;
     this.maxToolResultBytes = maxToolResultBytes;
@@ -94,6 +127,7 @@ export class NativeMcpRuntime {
     serverName = "pc-native-mcp",
     serverVersion = MCP_HOST_VERSION,
     maxToolResultBytes = 256 * 1024,
+    compatibilitySurface = null,
   }) {
     if (!facade) throw new TypeError("facade is required");
     const manifest = await facade.capabilities();
@@ -107,11 +141,13 @@ export class NativeMcpRuntime {
       resume_token: reusable.resumeToken,
       capability_manifest: manifest,
     } : null;
+    const compatibility = compatibilitySurface ?? new DesktopCommanderCompatibilitySurface({ facade });
     return new NativeMcpRuntime({
       facade,
       desktopId,
       facadeSession,
       initialManifest: manifest,
+      compatibilitySurface: compatibility,
       serverName,
       serverVersion,
       maxToolResultBytes,
@@ -181,7 +217,35 @@ export class NativeMcpRuntime {
     } catch (error) {
       response = facadeErrorResult(error);
       response.request_id = requestId;
-      response.session_id = this.facadeSession.session_id;
+      response.session_id = this.facadeSession?.session_id ?? null;
+    }
+
+    const bounded = boundedResult(response, this.maxToolResultBytes);
+    return {
+      content: [{ type: "text", text: safeJson(bounded) }],
+      structuredContent: bounded,
+      isError: bounded.status === "error",
+    };
+  }
+
+  async callCompatibilityTool(tool, args, ctx) {
+    const requestId = requestIdentity(tool.name, args, ctx);
+    const { request_id: _requestId, ...compatibilityArguments } = args;
+    let response;
+    try {
+      await this.ensureFacadeSession();
+      response = await this.compatibilitySurface.invoke({
+        session_id: this.facadeSession.session_id,
+        request_id: requestId,
+        tool: tool.name,
+        arguments: compatibilityArguments,
+      }, { signal: ctx.mcpReq.signal });
+    } catch (error) {
+      response = compatibilityErrorResult(error, {
+        requestId,
+        sessionId: this.facadeSession?.session_id ?? null,
+        tool: tool.name,
+      });
     }
 
     const bounded = boundedResult(response, this.maxToolResultBytes);
@@ -194,6 +258,7 @@ export class NativeMcpRuntime {
 
   async createServer(ctx = {}) {
     const manifest = await this.ensureCapabilities();
+    const compatibilityManifest = desktopCommanderCompatibilityManifestV1({ nativeManifest: manifest });
     const server = new McpServer(
       { name: this.serverName, version: this.serverVersion },
       { capabilities: { tools: {} } },
@@ -225,6 +290,39 @@ export class NativeMcpRuntime {
       );
     }
 
+    const nativeNames = new Set(TOOL_REGISTRY_LIST.map((tool) => tool.name));
+    for (const tool of DC_COMPATIBILITY_REGISTRY_LIST) {
+      if (nativeNames.has(tool.name)) {
+        throw new Error("Native and Desktop Commander compatibility tool names collide: " + tool.name);
+      }
+      const advertised = compatibilityManifest.tools.find((entry) => entry.name === tool.name);
+      server.registerTool(
+        tool.name,
+        {
+          description: mcpCompatibilityToolDescription(tool.name),
+          inputSchema: mcpCompatibilityToolSchema(tool.name),
+          annotations: {
+            readOnlyHint: tool.effect === "read_only",
+            destructiveHint: false,
+            idempotentHint: tool.effect === "read_only",
+            openWorldHint: false,
+          },
+          _meta: {
+            "pc.desktop_commander/compat_registry_contract": DC_COMPATIBILITY_REGISTRY_V1,
+            "pc.desktop_commander/compat_registry_digest": DC_COMPATIBILITY_REGISTRY_DIGEST,
+            "pc.desktop_commander/native_protocol_version": manifest.protocol_version,
+            "pc.desktop_commander/native_registry_digest": manifest.registry_digest,
+            "pc.desktop_commander/executor_digest": manifest.executor?.digest ?? null,
+            "pc.desktop_commander/effect": tool.effect,
+            "pc.desktop_commander/available": advertised?.available === true,
+            "pc.desktop_commander/capability_variants": advertised?.capability_variants ?? [],
+            "pc.desktop_commander/mcp_era": ctx.era ?? null,
+          },
+        },
+        async (args, callCtx) => this.callCompatibilityTool(tool, args, callCtx),
+      );
+    }
+
     return server;
   }
 
@@ -246,4 +344,5 @@ export const __test = Object.freeze({
   requestIdentity,
   splitHostArguments,
   boundedResult,
+  compatibilityErrorResult,
 });

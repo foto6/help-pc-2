@@ -11,6 +11,7 @@
     "test:e2e": "node --test test/conformance/sensor-reconciliation.test.js test/e2e-readiness.test.js",
     "test:context-epoch": "node --test test/conformance/context-epoch-contracts.test.js test/context-epoch-e2e.test.js",
     "test:native-mcp": "node --test test/native-facade.test.js test/native-http.test.js",
+    "test:dc-compat": "node --test test/dc-compatibility.test.js",
     "test:soak": "node --test test/control-state-machine-soak.test.js",
     "test:mcp-host": "node --test test/mcp-host.integration.test.js test/mcp-stdio.integration.test.js",
     "mcp:stdio": "node bin/pc-native-mcp-stdio.js",

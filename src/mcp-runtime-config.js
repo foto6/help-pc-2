@@ -6,6 +6,7 @@ import { HelpPc1Adapter } from "./adapters.js";
 import { JsonStateStore } from "./persistence.js";
 import { JsonFacadeStateStore, NativeControlFacade } from "./native-facade.js";
 import { NativeMcpRuntime } from "./mcp-host.js";
+import { DesktopCommanderCompatibilitySurface, JsonDcCompatibilityStore } from "./dc-compatibility.js";
 
 function moduleUrl(specifier) {
   if (typeof specifier !== "string" || !specifier.trim()) {
@@ -74,9 +75,15 @@ export async function createConfiguredNativeMcpRuntime({
     )),
   });
 
+  const compatibilitySurface = new DesktopCommanderCompatibilitySurface({
+    facade,
+    store: new JsonDcCompatibilityStore(join(stateDir, "dc-compatibility.json")),
+  });
+
   const runtime = await NativeMcpRuntime.create({
     facade,
     desktopId: bridge.desktopId ?? desktopId,
+    compatibilitySurface,
   });
 
   return { runtime, facade, controlPlane, bridge, stateDir };

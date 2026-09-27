@@ -8,6 +8,8 @@ import {
   NativeMcpRuntime,
   TOOL_REGISTRY_DIGEST,
   TOOL_REGISTRY_LIST,
+  DC_COMPATIBILITY_REGISTRY_DIGEST,
+  DC_COMPATIBILITY_REGISTRY_LIST,
   startNativeMcpHttpServer,
 } from "../src/index.js";
 
@@ -83,7 +85,7 @@ function structured(result) {
   return text ? JSON.parse(text) : null;
 }
 
-test("official modern client negotiates 2026-07-28, lists exact native tools, and delegates read/write calls", async (t) => {
+test("official modern client negotiates 2026-07-28, lists native plus versioned DC compatibility tools, and delegates native calls", async (t) => {
   let sideEffects = 0;
   const h = await createHarness({
     invoke: async (request) => {
@@ -104,16 +106,30 @@ test("official modern client negotiates 2026-07-28, lists exact native tools, an
   assert.equal(client.getNegotiatedProtocolVersion(), "2026-07-28");
 
   const listed = await client.listTools();
-  assert.equal(listed.tools.length, TOOL_REGISTRY_LIST.length);
-  assert.deepEqual(
-    listed.tools.map((tool) => tool.name).sort(),
-    TOOL_REGISTRY_LIST.map((tool) => tool.name).sort(),
-  );
+  const expectedToolNames = [
+    ...TOOL_REGISTRY_LIST.map((tool) => tool.name),
+    ...DC_COMPATIBILITY_REGISTRY_LIST.map((tool) => tool.name),
+  ].sort();
+  assert.equal(listed.tools.length, expectedToolNames.length);
+  assert.deepEqual(listed.tools.map((tool) => tool.name).sort(), expectedToolNames);
   const readTool = listed.tools.find((tool) => tool.name === "file.read");
   assert.equal(readTool._meta["pc.native/registry_digest"], TOOL_REGISTRY_DIGEST);
   assert.equal(readTool._meta["pc.native/protocol_version"], "pc.native.control.v1");
   assert.equal(readTool._meta["pc.native/executor_digest"], "executor-cap-v1");
   assert.equal(readTool.inputSchema.additionalProperties, false);
+  const compatReadTool = listed.tools.find((tool) => tool.name === "read_file");
+  assert.equal(
+    compatReadTool._meta["pc.desktop_commander/compat_registry_contract"],
+    "pc.desktop_commander.compat_registry.v1",
+  );
+  assert.equal(
+    compatReadTool._meta["pc.desktop_commander/compat_registry_digest"],
+    DC_COMPATIBILITY_REGISTRY_DIGEST,
+  );
+  assert.equal(compatReadTool._meta["pc.desktop_commander/native_registry_digest"], TOOL_REGISTRY_DIGEST);
+  assert.equal(compatReadTool._meta["pc.desktop_commander/executor_digest"], "executor-cap-v1");
+  assert.equal(compatReadTool._meta["pc.desktop_commander/available"], true);
+  assert.equal(compatReadTool.inputSchema.additionalProperties, false);
 
   const read = await client.callTool({
     name: "file.info",
@@ -135,6 +151,319 @@ test("official modern client negotiates 2026-07-28, lists exact native tools, an
   assert.equal(structured(first).status, "completed");
   assert.equal(structured(duplicate).status, "completed");
   assert.equal(sideEffects, 1);
+});
+
+
+test("official MCP client exercises observed Desktop Commander compatibility calls through the real host", async (t) => {
+  const readOrder = [];
+  let editCalls = 0;
+  let writeCalls = 0;
+  let processReadCalls = 0;
+  const h = await createHarness({
+    invoke: async (request) => {
+      switch (request.action) {
+        case "fs.read_text":
+          readOrder.push(request.params.path);
+          if (request.params.path.endsWith("missing.txt")) {
+            const error = new Error("ENOENT: no such file");
+            error.code = "ENOENT";
+            error.category = "filesystem";
+            error.dispatchState = "not_dispatched";
+            error.outcomeUncertain = false;
+            error.retryable = false;
+            throw error;
+          }
+          return success(request, {
+            path: request.params.path,
+            text: request.params.path.endsWith("b.txt") ? "B" : "A",
+            returned_bytes: 1,
+            next_cursor: null,
+          });
+        case "fs.hash":
+          return success(request, {
+            path: request.params.path,
+            sha256: "a".repeat(64),
+          });
+        case "fs.edit_text":
+          editCalls += 1;
+          return success(request, {
+            path: request.params.path,
+            replacements: request.params.expected_replacements,
+            bytes: 7,
+            sha256: "b".repeat(64),
+            atomic_replace: true,
+          });
+        case "fs.write_text":
+          writeCalls += 1;
+          return success(request, {
+            path: request.params.path,
+            bytes: Buffer.byteLength(request.params.text, "utf8"),
+            sha256: "c".repeat(64),
+          });
+        case "process.start":
+          return success(request, {
+            process_handle: "compat-proc-77",
+            pid: 77,
+            running: true,
+            returncode: null,
+          });
+        case "process.read":
+          processReadCalls += 1;
+          return processReadCalls === 1
+            ? success(request, {
+              output: "first chunk\n",
+              running: true,
+              returncode: null,
+              next_cursor: "compat-next-1",
+            })
+            : success(request, {
+              output: "second chunk\n",
+              running: false,
+              returncode: 0,
+              next_cursor: null,
+            });
+        case "process.list":
+          return success(request, {
+            items: [{ pid: 77, running: false }],
+            next_cursor: null,
+          });
+        case "process.terminate":
+          return success(request, {
+            terminated: true,
+            already_exited: true,
+            returncode: 0,
+          });
+        default:
+          return success(request, { ok: true });
+      }
+    },
+  });
+  t.after(h.close);
+
+  const { client, transport } = makeClient(h.http.url);
+  t.after(() => client.close());
+  await client.connect(transport);
+
+  const listed = await client.listTools();
+  const mandatory = [
+    "edit_block",
+    "read_file",
+    "read_multiple_files",
+    "write_file",
+    "start_process",
+    "read_process_output",
+    "list_sessions",
+    "force_terminate",
+  ];
+  for (const name of mandatory) {
+    const tool = listed.tools.find((item) => item.name === name);
+    assert.ok(tool, "missing compatibility tool " + name);
+    assert.equal(
+      tool._meta["pc.desktop_commander/compat_registry_digest"],
+      DC_COMPATIBILITY_REGISTRY_DIGEST,
+    );
+  }
+
+  const single = structured(await client.callTool({
+    name: "read_file",
+    arguments: {
+      request_id: "dc-read-one",
+      path: "C:\\tmp\\a.txt",
+      offset: 0,
+      length: 10,
+    },
+  }));
+  assert.equal(single.status, "completed");
+  assert.equal(single.data.content, "A");
+
+  const batch = structured(await client.callTool({
+    name: "read_multiple_files",
+    arguments: {
+      request_id: "dc-batch",
+      paths: ["C:\\tmp\\a.txt", "C:\\tmp\\missing.txt", "C:\\tmp\\b.txt"],
+    },
+  }));
+  assert.equal(batch.status, "completed");
+  assert.deepEqual(batch.data.results.map((item) => item.path), [
+    "C:\\tmp\\a.txt",
+    "C:\\tmp\\missing.txt",
+    "C:\\tmp\\b.txt",
+  ]);
+  assert.deepEqual(batch.data.results.map((item) => item.ok), [true, false, true]);
+  assert.equal(batch.data.results[1].error.code, "FILE_NOT_FOUND");
+  assert.deepEqual(readOrder.slice(-3), [
+    "C:\\tmp\\a.txt",
+    "C:\\tmp\\missing.txt",
+    "C:\\tmp\\b.txt",
+  ]);
+
+  const edit = structured(await client.callTool({
+    name: "edit_block",
+    arguments: {
+      request_id: "dc-edit",
+      path: "C:\\tmp\\edit.txt",
+      old_string: "before",
+      new_string: "after",
+      expected_replacements: 1,
+    },
+  }));
+  assert.equal(edit.status, "completed");
+  assert.equal(edit.data.replacements, 1);
+  assert.equal(editCalls, 1);
+
+  const writeArgs = {
+    request_id: "dc-write-once",
+    path: "C:\\tmp\\write.txt",
+    content: "hello",
+    mode: "rewrite",
+  };
+  const write1 = structured(await client.callTool({ name: "write_file", arguments: writeArgs }));
+  const write2 = structured(await client.callTool({ name: "write_file", arguments: writeArgs }));
+  assert.equal(write1.status, "completed");
+  assert.equal(write2.status, "completed");
+  assert.equal(writeCalls, 1);
+
+  const started = structured(await client.callTool({
+    name: "start_process",
+    arguments: { request_id: "dc-start", command: "mock-command" },
+  }));
+  assert.equal(started.status, "completed");
+  assert.equal(started.data.pid, 77);
+
+  const firstRead = structured(await client.callTool({
+    name: "read_process_output",
+    arguments: { request_id: "dc-proc-read-1", pid: 77, length: 10 },
+  }));
+  const secondRead = structured(await client.callTool({
+    name: "read_process_output",
+    arguments: { request_id: "dc-proc-read-2", pid: 77, length: 10 },
+  }));
+  assert.equal(firstRead.data.output, "first chunk\n");
+  assert.equal(firstRead.data.running, true);
+  assert.equal(secondRead.data.output, "second chunk\n");
+  assert.equal(secondRead.data.running, false);
+  const secondProviderRead = h.calls.filter((item) => item.request.action === "process.read")[1].request;
+  assert.equal(secondProviderRead.params.cursor, "compat-next-1");
+
+  const sessions = structured(await client.callTool({
+    name: "list_sessions",
+    arguments: { request_id: "dc-list-sessions" },
+  }));
+  assert.equal(sessions.status, "completed");
+  assert.equal(sessions.data.sessions[0].pid, 77);
+  assert.equal(sessions.data.sessions[0].status, "finished");
+
+  const terminated = structured(await client.callTool({
+    name: "force_terminate",
+    arguments: { request_id: "dc-terminate", pid: 77 },
+  }));
+  assert.equal(terminated.status, "completed");
+  assert.equal(terminated.data.terminated, true);
+});
+
+test("Desktop Commander MCP compatibility preserves reconciliation_required without replay", async (t) => {
+  let sideEffects = 0;
+  const h = await createHarness({
+    invoke: async (request) => {
+      sideEffects += 1;
+      return {
+        request_id: request.request_id,
+        action: request.action,
+        ok: false,
+        status: "timeout",
+        error: "result lost after dispatch",
+        error_kind: "timeout",
+        dry_run: false,
+      };
+    },
+    readEvidence: async () => ({ outcome: "unknown", source: "mock-journal" }),
+  });
+  t.after(h.close);
+  const { client, transport } = makeClient(h.http.url);
+  t.after(() => client.close());
+  await client.connect(transport);
+
+  const args = {
+    request_id: "dc-unknown-write",
+    path: "C:\\tmp\\uncertain-dc.txt",
+    content: "once",
+    mode: "rewrite",
+  };
+  const first = structured(await client.callTool({ name: "write_file", arguments: args }));
+  const second = structured(await client.callTool({ name: "write_file", arguments: args }));
+  assert.equal(first.status, "reconciliation_required");
+  assert.equal(second.status, "reconciliation_required");
+  assert.equal(sideEffects, 1);
+});
+
+
+test("Desktop Commander MCP cancellation reaches the facade and remains reconciliation-only", async (t) => {
+  let sideEffects = 0;
+  let started;
+  const startedPromise = new Promise((resolve) => { started = resolve; });
+  const h = await createHarness({
+    invoke: async (_request, context) => {
+      sideEffects += 1;
+      started();
+      return new Promise((_resolve, reject) => {
+        context.signal.addEventListener("abort", () => {
+          const error = new Error("cancelled after dispatch");
+          error.code = "CANCELLED";
+          error.dispatchState = "unknown";
+          error.outcomeUncertain = true;
+          reject(error);
+        }, { once: true });
+      });
+    },
+    readEvidence: async () => ({ outcome: "unknown", source: "mock-journal" }),
+  });
+  t.after(h.close);
+  const { client, transport } = makeClient(h.http.url);
+  t.after(() => client.close());
+  await client.connect(transport);
+
+  const args = {
+    request_id: "dc-cancel-write",
+    path: "C:\\tmp\\cancel-dc.txt",
+    content: "once",
+    mode: "rewrite",
+  };
+  const controller = new AbortController();
+  const pending = client.callTool({ name: "write_file", arguments: args }, { signal: controller.signal });
+  await startedPromise;
+  controller.abort();
+  await assert.rejects(pending);
+
+  for (let i = 0; i < 50; i += 1) {
+    const action = h.controlPlane.listActions().find((item) => item.correlationId === "dc-cancel-write");
+    if (action && ["uncertain_outcome", "reconciliation_wait", "reconciling"].includes(action.status)) break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  const retry = structured(await client.callTool({ name: "write_file", arguments: args }));
+  assert.equal(retry.status, "reconciliation_required");
+  assert.equal(sideEffects, 1);
+});
+
+test("Desktop Commander MCP protected path is rejected before provider dispatch", async (t) => {
+  const h = await createHarness();
+  t.after(h.close);
+  const { client, transport } = makeClient(h.http.url);
+  t.after(() => client.close());
+  await client.connect(transport);
+
+  const result = await client.callTool({
+    name: "read_file",
+    arguments: {
+      request_id: "dc-protected",
+      path: "E:\\manhwa\\never.txt",
+    },
+  });
+  const body = structured(result);
+  assert.equal(result.isError, true);
+  assert.equal(body.error.code, "PROTECTED_PATH_BLOCKED");
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.controlPlane.listActions().length, 0);
 });
 
 test("official 2025-era client follows SDK compatibility path over Streamable HTTP", async (t) => {

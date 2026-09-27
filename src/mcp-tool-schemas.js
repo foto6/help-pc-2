@@ -1,5 +1,6 @@
 import * as z from "zod/v4";
 import { TOOL_REGISTRY_LIST } from "./native-registry.js";
+import { DC_COMPATIBILITY_REGISTRY_LIST } from "./dc-compatibility-registry.js";
 
 const requestId = z.string().min(1).max(200).optional();
 const page = z.object({
@@ -198,3 +199,70 @@ export function mcpToolDescription(name) {
 
 export const MCP_TOOL_SCHEMAS = Object.freeze(schemas);
 export const MCP_TOOL_DESCRIPTIONS = Object.freeze(descriptions);
+
+const compatibilitySchemas = {
+  edit_block: strict({
+    path: textPath,
+    old_string: z.string().min(1),
+    new_string: z.string(),
+    expected_replacements: z.number().int().min(1).max(10000).optional(),
+    encoding: z.string().min(1).optional(),
+  }),
+  read_file: strict({
+    path: textPath,
+    offset: z.number().int().optional(),
+    length: z.number().int().min(1).max(1000).optional(),
+  }),
+  read_multiple_files: strict({
+    paths: z.array(textPath).min(1).max(64),
+  }),
+  write_file: strict({
+    path: textPath,
+    content: z.string(),
+    mode: z.enum(["rewrite", "append"]).optional(),
+  }),
+  start_process: strict({
+    command: z.string().min(1),
+    timeout_ms: z.number().int().min(0).max(600000).optional(),
+    shell: z.string().min(1).optional(),
+  }),
+  read_process_output: strict({
+    pid: z.number().int().positive(),
+    timeout_ms: z.number().int().min(0).max(10000).optional(),
+    offset: z.number().int().optional(),
+    length: z.number().int().min(1).max(1000).optional(),
+  }),
+  list_sessions: strict({}),
+  force_terminate: strict({
+    pid: z.number().int().positive(),
+  }),
+};
+
+const compatibilityDescriptions = Object.freeze(Object.fromEntries(
+  DC_COMPATIBILITY_REGISTRY_LIST.map((tool) => [
+    tool.name,
+    "Desktop Commander compatibility v1: " + tool.semantics,
+  ]),
+));
+
+for (const tool of DC_COMPATIBILITY_REGISTRY_LIST) {
+  if (!compatibilitySchemas[tool.name] || !compatibilityDescriptions[tool.name]) {
+    throw new Error("Missing MCP schema/description for Desktop Commander compatibility tool " + tool.name);
+  }
+}
+for (const name of Object.keys(compatibilitySchemas)) {
+  if (!DC_COMPATIBILITY_REGISTRY_LIST.some((tool) => tool.name === name)) {
+    throw new Error("MCP compatibility schema exists for unknown tool " + name);
+  }
+}
+
+export function mcpCompatibilityToolSchema(name) {
+  return compatibilitySchemas[name];
+}
+
+export function mcpCompatibilityToolDescription(name) {
+  return compatibilityDescriptions[name];
+}
+
+export const MCP_COMPATIBILITY_TOOL_SCHEMAS = Object.freeze(compatibilitySchemas);
+export const MCP_COMPATIBILITY_TOOL_DESCRIPTIONS = compatibilityDescriptions;
