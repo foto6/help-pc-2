@@ -46,11 +46,12 @@ function migrateSnapshot(raw) {
     action.retryDelayMs ??= 0; action.verificationDelayMs ??= 0; action.correlationId ??= action.id; action.verification ??= null;
     action.lanes ??= actionLanes(action.type, action.desktopId, action.resource); action.lease ??= null; action.nextAttemptAtMs ??= null; action.nextReconciliationAtMs ??= null; action.cancellationRequested ??= false;
     action.executionAttempts ??= action.attempts ?? 0; action.attempts = action.executionAttempts;
-    action.preflightAttempts ??= 0; action.observationAttempts ??= 0; action.verificationAttempts ??= 0; action.reconciliationAttempts ??= 0;
+    action.preflightAttempts ??= 0; action.observationAttempts ??= 0; action.contextBindingAttempts ??= 0; action.contextValidationAttempts ??= 0; action.verificationAttempts ??= 0; action.reconciliationAttempts ??= 0;
     action.maxPreflightAttempts ??= 3; action.maxVerificationAttempts ??= 3; action.maxReconciliationAttempts ??= 3;
     action.preflightDelayMs ??= 0; action.preflightTimeoutMs ??= null; action.nextPreflightAtMs ??= null;
     action.preflightRequired ??= false; action.preflightStatus ??= null; action.preflightResult ??= null;
     action.preflightAttestationDigest ??= null; action.preflightCapabilitiesDigest ??= null; action.preflightCapabilities ??= null; action.capabilityDriftCount ??= 0;
+    action.executionContextBinding ??= null; action.executionContextDigest ??= null; action.contextValidationResult ??= null;
     action.executionResult ??= action.result ?? null; action.executorEvidence ??= null; action.executionOutcome ??= action.result ? "succeeded" : null;
     action.executionCorrelation ??= null; action.uncertainty ??= null;
   }
@@ -104,6 +105,9 @@ export class ControlPlane {
     action.preflightAttestationDigest = null;
     action.preflightCapabilitiesDigest = null;
     action.preflightCapabilities = null;
+    action.executionContextBinding = null;
+    action.executionContextDigest = null;
+    action.contextValidationResult = null;
   }
   #schedulePreflight(action, reason, { error = null } = {}) {
     const now = this.#time();
@@ -171,12 +175,13 @@ export class ControlPlane {
       resource: spec.resource ?? null, lanes: actionLanes(spec.type, session.desktopId, spec.resource), permission: spec.permission, idempotencyKey: spec.idempotencyKey,
       maxAttempts: spec.maxAttempts, maxPreflightAttempts: spec.maxPreflightAttempts, maxVerificationAttempts: spec.maxVerificationAttempts, maxReconciliationAttempts: spec.maxReconciliationAttempts,
       retryDelayMs: spec.retryDelayMs, preflightDelayMs: spec.preflightDelayMs, preflightTimeoutMs: spec.preflightTimeoutMs, verificationDelayMs: spec.verificationDelayMs,
-      preflightAttempts: 0, observationAttempts: 0, executionAttempts: 0, verificationAttempts: 0, reconciliationAttempts: 0, attempts: 0,
+      preflightAttempts: 0, observationAttempts: 0, contextBindingAttempts: 0, contextValidationAttempts: 0, executionAttempts: 0, verificationAttempts: 0, reconciliationAttempts: 0, attempts: 0,
       confirmationRequired, confirmedBy: null, destructive: spec.destructive, requiresDesktop: spec.requiresDesktop, verification: spec.verification, metadata: spec.metadata,
       status: confirmationRequired ? "awaiting_confirmation" : "queued", cancellationRequested: false,
       createdAt: now.iso, createdAtMs: now.ms, updatedAt: now.iso, lease: null, nextAttemptAtMs: null, nextReconciliationAtMs: null,
       preflightRequired: actionProvider.supportsPreflight === true, preflightStatus: null, preflightResult: null, preflightAttestationDigest: null,
       preflightCapabilitiesDigest: null, preflightCapabilities: null, capabilityDriftCount: 0, nextPreflightAtMs: null,
+      executionContextBinding: null, executionContextDigest: null, contextValidationResult: null,
       result: null, executionResult: null, executorEvidence: null, executionOutcome: null, executionCorrelation: null, verificationResult: null, error: null, uncertainty: null,
     };
     this.actions.set(id, action); if (idemScope) this.idempotency.set(idemScope, id); if (action.status === "queued") this.#enqueueId(id);
@@ -334,6 +339,29 @@ export class ControlPlane {
       }
 
       if (result.status === "ready") {
+        if (provider.supportsExecutionContext === true) {
+          if (typeof provider.bindExecutionContext !== "function") {
+            this.#blockPreflight(action, "EXECUTION_CONTEXT_ADAPTER_UNAVAILABLE", "Required Executor execution-context binding adapter is unavailable.");
+            return;
+          }
+          action.contextBindingAttempts += 1;
+          this.metrics.increment("contextBindingAttempts");
+          const binding = await provider.bindExecutionContext(clone(action), {
+            signal: controller.signal,
+            preflightAttempt: action.preflightAttempts,
+            session: clone(session),
+          });
+          action.executionContextBinding = clone(binding);
+          action.executionContextDigest = binding.context_digest;
+          this.#auditEvent("action.execution_context_bound", {
+            actionId: action.id,
+            sessionId: action.sessionId,
+            correlationId: action.correlationId,
+            contextBindingAttempt: action.contextBindingAttempts,
+            contextDigest: action.executionContextDigest,
+            contextKind: binding.context_kind,
+          });
+        }
         action.status = "queued";
         action.error = null;
         this.#releaseLocks(action);
@@ -365,7 +393,7 @@ export class ControlPlane {
         action.status = "cancelled"; action.cancelledAt = end.iso; action.updatedAt = end.iso; action.error = null;
         this.#releaseLocks(action); this.#removeFromQueue(action.id);
         this.#auditEvent("action.cancelled", { actionId: action.id, sessionId: action.sessionId, correlationId: action.correlationId, reason: action.cancelReason ?? "cancelled_during_preflight", dispatchState: "not_dispatched" });
-      } else if (["capabilities_invalid", "preflight_invalid"].includes(error?.category)) {
+      } else if (["capabilities_invalid", "preflight_invalid", "context_binding_invalid"].includes(error?.category)) {
         this.#blockPreflight(action, error.code ?? "PREFLIGHT_INVALID", String(error?.message ?? error));
       } else if (action.preflightAttempts < action.maxPreflightAttempts) {
         this.#schedulePreflight(action, error?.category ?? "preflight_unavailable", { error: errorInfo(error) });
@@ -387,6 +415,10 @@ export class ControlPlane {
     }
     if (action.preflightStatus !== "ready" || !action.preflightCapabilitiesDigest || !action.preflightAttestationDigest) {
       this.#schedulePreflight(action, "missing_ready_attestation");
+      return false;
+    }
+    if (provider.supportsExecutionContext === true && (!action.executionContextBinding || !action.executionContextDigest)) {
+      this.#schedulePreflight(action, "missing_execution_context_binding");
       return false;
     }
     try {
@@ -599,6 +631,19 @@ export class ControlPlane {
         ? clone(provider.executionCorrelation(clone(action), action.executionAttempts))
         : { requestId: action.id, action: action.type, executionAttempt: action.executionAttempts };
       this.#auditEvent("action.executing", { actionId, sessionId: action.sessionId, correlationId: action.correlationId, executionAttempt: action.executionAttempts, executionCorrelation: action.executionCorrelation, workerId: action.lease.workerId }); this.#persist();
+      if (action.executionContextBinding) {
+        action.contextValidationAttempts += 1;
+        this.metrics.increment("contextValidationAttempts");
+        this.#auditEvent("action.execution_context_validation_attempt", {
+          actionId,
+          sessionId: action.sessionId,
+          correlationId: action.correlationId,
+          executionAttempt: action.executionAttempts,
+          contextValidationAttempt: action.contextValidationAttempts,
+          contextDigest: action.executionContextDigest,
+        });
+        this.#persist();
+      }
       const execution = await provider.execute(clone(action), { signal: controller.signal, executionAttempt: action.executionAttempts, session: clone(session) });
       now = this.#time(); this.metrics.recordDuration("executionLatency", Math.max(0, now.ms - executionStart)); executionStart = undefined;
       const wrapped = execution && typeof execution === "object" && Object.hasOwn(execution, "result") && Object.hasOwn(execution, "evidence");
@@ -620,7 +665,50 @@ export class ControlPlane {
       const now = this.#time(); if (executionStart !== undefined) this.metrics.recordDuration("executionLatency", Math.max(0, now.ms - executionStart));
       if (action.status === "uncertain_outcome" || action.status === "reconciliation_wait") { this.controllers.delete(action.id); this.#persist(); return clone(action); }
       const info = errorInfo(error); if (error?.executorEvidence) action.executorEvidence = clone(error.executorEvidence);
-      if (isPolicyBlocked(error)) {
+      if (error?.category === "execution_context_mismatch") {
+        action.contextValidationResult = clone(error.contextValidation ?? null);
+        action.observationAttempts += 1;
+        this.metrics.increment("observationAttempts");
+        if (action.cancellationRequested) {
+          action.status = "cancelled"; action.error = null; action.cancelledAt = now.iso; action.updatedAt = now.iso;
+          this.#releaseLocks(action); this.#removeFromQueue(action.id);
+          this.#auditEvent("action.cancelled", { actionId, sessionId: action.sessionId, correlationId: action.correlationId, reason: action.cancelReason ?? "cancelled_after_context_mismatch", dispatchState: "not_dispatched" });
+        } else {
+          const provider = this.providers.get(action.provider);
+          let journalEvidence = null;
+          try {
+            journalEvidence = typeof provider?.readOutcomeEvidence === "function"
+              ? await provider.readOutcomeEvidence(clone(action), { signal: controller.signal, reconciliationAttempt: action.reconciliationAttempts, session: clone(session), contextMismatch: true })
+              : null;
+          } catch (journalError) {
+            if (journalError?.category === "journal_evidence_invalid") {
+              this.#finishBlocked(action, errorInfo(journalError), "journal_evidence_invalid_after_context_mismatch");
+              journalEvidence = "__handled__";
+            }
+          }
+          if (journalEvidence !== "__handled__") {
+            if (journalEvidence?.outcome === "not_dispatched" && journalEvidence?.safeNotStarted === true) {
+              action.executorEvidence = clone(journalEvidence);
+              if (action.preflightAttempts < action.maxPreflightAttempts) {
+                this.#schedulePreflight(action, "execution_context_mismatch", { error: info });
+              } else {
+                this.#finishBlocked(action, info, "execution_context_mismatch_exhausted");
+              }
+            } else {
+              if (journalEvidence) action.executorEvidence = clone(journalEvidence);
+              if (journalEvidence?.outcome === "succeeded") action.executionOutcome = "succeeded";
+              const uncertain = Object.assign(new Error("Execution-context mismatch could not authorize replay because journal evidence was not safe not_started."), {
+                code: "CONTEXT_MISMATCH_JOURNAL_UNCERTAIN",
+                category: "uncertain_outcome",
+                outcomeUncertain: true,
+              });
+              this.#transitionUncertain(action, "context_mismatch_journal_not_safe_not_started", uncertain);
+            }
+          }
+        }
+      } else if (error?.category === "context_evidence_invalid") {
+        this.#finishBlocked(action, info, "execution_context_evidence_invalid");
+      } else if (isPolicyBlocked(error)) {
         action.status = "blocked"; action.error = info; action.blockedAt = now.iso; action.updatedAt = now.iso; this.#releaseLocks(action); this.#removeFromQueue(action.id); this.#auditEvent("action.blocked", { actionId, sessionId: action.sessionId, correlationId: action.correlationId, error: info });
       } else if (info.dispatchState === "not_dispatched") {
         if (action.cancellationRequested || info.category === "cancelled") { action.status = "cancelled"; action.error = null; action.cancelledAt = now.iso; action.updatedAt = now.iso; this.#releaseLocks(action); this.#removeFromQueue(action.id); this.#auditEvent("action.cancelled", { actionId, sessionId: action.sessionId, correlationId: action.correlationId, reason: action.cancelReason ?? info.message, dispatchState: "not_dispatched" }); }

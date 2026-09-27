@@ -7,6 +7,10 @@ import {
   ConformanceValidationError,
   executorJournalExecutionId,
 } from "./conformance.js";
+import {
+  parseExecutorExecutionContextBindingV1,
+  parseExecutorExecutionContextValidationV1,
+} from "./context-epoch.js";
 
 export class ProviderRegistry {
   #providers = new Map();
@@ -130,6 +134,32 @@ function invalidExecutorPreflight(error) {
   return wrapped;
 }
 
+function invalidExecutorContext(error, { category = "context_binding_invalid", code = null } = {}) {
+  const wrapped = new Error(`PC Executor execution context failed conformance: ${error?.message ?? error}`);
+  wrapped.name = "ProviderContextError";
+  wrapped.code = code ?? error?.code ?? "EXECUTOR_CONTEXT_INVALID";
+  wrapped.category = category;
+  wrapped.retryable = false;
+  wrapped.dispatchState = "not_dispatched";
+  wrapped.outcomeUncertain = false;
+  wrapped.cause = error;
+  return wrapped;
+}
+
+function executionContextMismatch(result, evidence, validation) {
+  const error = new Error(result.error ?? "PC Executor blocked because execution context changed.");
+  error.name = "ProviderContextMismatchError";
+  error.code = "EXECUTION_CONTEXT_MISMATCH";
+  error.category = "execution_context_mismatch";
+  error.retryable = true;
+  error.dispatchState = "not_dispatched";
+  error.outcomeUncertain = false;
+  error.executorEvidence = evidence;
+  error.contextValidation = validation;
+  error.providerResult = result;
+  return error;
+}
+
 function readOnlyProviderUnavailable(error, category) {
   if (error?.name === "AbortError" || error?.code === "CANCELLED") return error;
   const wrapped = new Error(String(error?.message ?? error ?? "read-only provider unavailable"));
@@ -168,20 +198,23 @@ function malformedExecutorResult() {
 }
 
 export class HelpPc1Adapter {
-  constructor({ invoke, dryRun = true, readEvidence = null, readCapabilities = null, preflight = null } = {}) {
+  constructor({ invoke, dryRun = true, readEvidence = null, readCapabilities = null, preflight = null, bindExecutionContext = null } = {}) {
     if (typeof invoke !== "function") throw new TypeError("invoke must be a function.");
     if (typeof dryRun !== "boolean") throw new TypeError("dryRun must be a boolean.");
     if (readEvidence !== null && typeof readEvidence !== "function") throw new TypeError("readEvidence must be a function when supplied.");
     if (readCapabilities !== null && typeof readCapabilities !== "function") throw new TypeError("readCapabilities must be a function when supplied.");
     if (preflight !== null && typeof preflight !== "function") throw new TypeError("preflight must be a function when supplied.");
     if ((readCapabilities === null) !== (preflight === null)) throw new TypeError("readCapabilities and preflight must be supplied together.");
+    if (bindExecutionContext !== null && typeof bindExecutionContext !== "function") throw new TypeError("bindExecutionContext must be a function when supplied.");
     this.name = "help-pc-1";
     this.invoke = invoke;
     this.dryRun = dryRun;
     this._readEvidence = readEvidence;
     this._readCapabilities = readCapabilities;
     this._preflight = preflight;
+    this._bindExecutionContext = bindExecutionContext;
     this.supportsPreflight = Boolean(readCapabilities && preflight);
+    this.supportsExecutionContext = Boolean(bindExecutionContext);
   }
   executionCorrelation(action, executionAttempt) {
     return Object.freeze({
@@ -241,11 +274,43 @@ export class HelpPc1Adapter {
     }
   }
 
+  async bindExecutionContext(action, context = {}) {
+    if (!this.supportsExecutionContext) return null;
+    let raw;
+    try {
+      raw = await this._bindExecutionContext({
+        request_id: action.id,
+        action: action.type,
+        params: structuredClone(action.input ?? {}),
+        dry_run: this.dryRun,
+      }, {
+        signal: context.signal,
+        preflightAttempt: context.preflightAttempt,
+        session: context.session,
+        preflightAttestationDigest: action.preflightAttestationDigest ?? null,
+        capabilitiesDigest: action.preflightCapabilitiesDigest ?? null,
+      });
+    } catch (error) {
+      if (error?.name === "AbortError" || error?.code === "CANCELLED") throw error;
+      const wrapped = readOnlyProviderUnavailable(error, error?.category ?? "context_binding_unavailable");
+      if (["stale_target", "ambiguous_target"].includes(error?.category ?? error?.code)) wrapped.category = error?.category ?? error?.code;
+      throw wrapped;
+    }
+    const payload = raw?.data?.execution_context_binding ?? raw?.execution_context_binding ?? raw;
+    try {
+      return parseExecutorExecutionContextBindingV1(payload, { requestId: action.id, action: action.type });
+    } catch (error) {
+      throw invalidExecutorContext(error);
+    }
+  }
+
   async execute(action, context) {
     let result;
     try {
+      const request = { request_id: action.id, action: action.type, params: structuredClone(action.input ?? {}), dry_run: this.dryRun };
+      if (action.executionContextBinding?.raw) request.execution_context_binding = structuredClone(action.executionContextBinding.raw);
       result = await this.invoke(
-        { request_id: action.id, action: action.type, params: structuredClone(action.input ?? {}), dry_run: this.dryRun },
+        request,
         { signal: context.signal, executionAttempt: context.executionAttempt, session: context.session },
       );
     } catch (error) {
@@ -267,6 +332,25 @@ export class HelpPc1Adapter {
       throw invalidExecutorOutcome(error);
     }
 
+    if (result.data?.execution_context_validation !== undefined) {
+      let validation;
+      try {
+        validation = parseExecutorExecutionContextValidationV1(result.data.execution_context_validation, {
+          bindingDigest: action.executionContextBinding?.context_digest ?? null,
+        });
+      } catch (error) {
+        throw invalidExecutorContext(error, { category: "context_evidence_invalid", code: "EXECUTOR_CONTEXT_VALIDATION_INVALID" });
+      }
+      if (validation.status === "blocked") {
+        if (evidence?.effectState !== "not_started" || evidence?.dispatchStarted !== false || evidence?.reexecutionSafe !== true) {
+          throw invalidExecutorContext(new ConformanceValidationError("context mismatch must carry safe not_started outcome evidence"), {
+            category: "context_evidence_invalid",
+            code: "EXECUTOR_CONTEXT_OUTCOME_INCONSISTENT",
+          });
+        }
+        throw executionContextMismatch(result, evidence, validation);
+      }
+    }
     if (result.ok === false || result.status === "blocked") throw executorProviderFailure(result, evidence);
     if (result.ok === true && typeof result.status === "string" && result.status.trim()) return { result, evidence };
     throw malformedExecutorResult();

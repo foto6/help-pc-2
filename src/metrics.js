@@ -13,6 +13,8 @@ export class RuntimeMetrics {
     this.observationAttempts = snapshot.observationAttempts ?? 0;
     this.capabilityChecks = snapshot.capabilityChecks ?? 0;
     this.capabilityDrifts = snapshot.capabilityDrifts ?? 0;
+    this.contextBindingAttempts = snapshot.contextBindingAttempts ?? 0;
+    this.contextValidationAttempts = snapshot.contextValidationAttempts ?? 0;
     this.executionAttempts = snapshot.executionAttempts ?? 0;
     this.verificationAttempts = snapshot.verificationAttempts ?? 0;
     this.reconciliationAttempts = snapshot.reconciliationAttempts ?? 0;
@@ -26,6 +28,7 @@ export class RuntimeMetrics {
       queueLatency: duration(this.queueLatency), preflightLatency: duration(this.preflightLatency), executionLatency: duration(this.executionLatency), verificationLatency: duration(this.verificationLatency), reconciliationLatency: duration(this.reconciliationLatency),
       retries: this.retries, cancellations: this.cancellations, leaseExpiries: this.leaseExpiries,
       preflightAttempts: this.preflightAttempts, observationAttempts: this.observationAttempts, capabilityChecks: this.capabilityChecks, capabilityDrifts: this.capabilityDrifts,
+      contextBindingAttempts: this.contextBindingAttempts, contextValidationAttempts: this.contextValidationAttempts,
       executionAttempts: this.executionAttempts, verificationAttempts: this.verificationAttempts, reconciliationAttempts: this.reconciliationAttempts, uncertainOutcomes: this.uncertainOutcomes,
     };
   }
@@ -34,6 +37,7 @@ export class RuntimeMetrics {
       queueLatency: { ...this.queueLatency }, preflightLatency: { ...this.preflightLatency }, executionLatency: { ...this.executionLatency }, verificationLatency: { ...this.verificationLatency }, reconciliationLatency: { ...this.reconciliationLatency },
       retries: this.retries, cancellations: this.cancellations, leaseExpiries: this.leaseExpiries,
       preflightAttempts: this.preflightAttempts, observationAttempts: this.observationAttempts, capabilityChecks: this.capabilityChecks, capabilityDrifts: this.capabilityDrifts,
+      contextBindingAttempts: this.contextBindingAttempts, contextValidationAttempts: this.contextValidationAttempts,
       executionAttempts: this.executionAttempts, verificationAttempts: this.verificationAttempts, reconciliationAttempts: this.reconciliationAttempts, uncertainOutcomes: this.uncertainOutcomes,
     };
   }

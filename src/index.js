@@ -51,3 +51,15 @@ export {
   parseVisionObservationConsistencyV1,
   VisionSensorReconciliationAdapter,
 } from "./sensor-reconciliation.js";
+
+export {
+  EXECUTOR_EXECUTION_CONTEXT_BINDING_V1,
+  EXECUTOR_EXECUTION_CONTEXT_VALIDATION_V1,
+  VISION_OBSERVATION_EPOCH_V1,
+  VISION_TARGET_LIVENESS_V1,
+  parseExecutorExecutionContextBindingV1,
+  parseExecutorExecutionContextValidationV1,
+  parseVisionObservationEpochV1,
+  parseVisionTargetLivenessV1,
+  validateVisionTargetLivenessV1,
+} from "./context-epoch.js";

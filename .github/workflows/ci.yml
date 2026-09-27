@@ -22,7 +22,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Focused E2E readiness
+      - name: Focused execution-context and Vision epoch reconciliation
+        run: npm run test:context-epoch
+      - name: Frozen Wave 8 E2E readiness
         run: npm run test:e2e
       - name: Focused Executor preflight admission
         run: npm run test:preflight

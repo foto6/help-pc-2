@@ -4,6 +4,11 @@ import {
   parseVisionVerificationInputV1,
   parseVisionVerificationResultV1,
 } from "./conformance.js";
+import {
+  parseVisionObservationEpochV1,
+  parseVisionTargetLivenessV1,
+  validateVisionTargetLivenessV1,
+} from "./context-epoch.js";
 
 export const VISION_SEMANTIC_UI_DELTA_V1 = "vision.semantic_ui_delta.v1";
 export const VISION_OBSERVATION_CONSISTENCY_V1 = "vision.observation_consistency.v1";
@@ -329,7 +334,17 @@ export class VisionSensorReconciliationAdapter {
     try {
       const input = parseVisionVerificationInputV1(verificationInput, { canonicalJsonText: verificationInputCanonicalJson });
       const bundle = object(await this.readEvidence(request, context), "vision sensor evidence bundle");
-      exactKeys(bundle, ["semanticDelta", "observationConsistency", "verificationResult"], "vision sensor evidence bundle");
+      const hasEpoch = Object.hasOwn(bundle, "observationEpoch") || Object.hasOwn(bundle, "targetLiveness");
+      const hasReacquiredTarget = Object.hasOwn(bundle, "groundedTarget");
+      exactKeys(
+        bundle,
+        hasEpoch
+          ? hasReacquiredTarget
+            ? ["groundedTarget", "semanticDelta", "observationConsistency", "observationEpoch", "targetLiveness", "verificationResult"]
+            : ["semanticDelta", "observationConsistency", "observationEpoch", "targetLiveness", "verificationResult"]
+          : ["semanticDelta", "observationConsistency", "verificationResult"],
+        "vision sensor evidence bundle",
+      );
 
       const delta = parseVisionSemanticUiDeltaV1(bundle.semanticDelta, { verificationInput, targetIdentity });
       const consistency = parseVisionObservationConsistencyV1(bundle.observationConsistency, {
@@ -339,13 +354,46 @@ export class VisionSensorReconciliationAdapter {
         targetIdentity,
       });
 
+      let epoch = null;
+      let liveness = null;
+      if (hasEpoch) {
+        epoch = parseVisionObservationEpochV1(bundle.observationEpoch, { snapshot: verificationInput.after });
+        parseVisionTargetLivenessV1(bundle.targetLiveness);
+        const groundedTarget = hasReacquiredTarget ? bundle.groundedTarget : request?.action?.input?.target ?? null;
+        if (!groundedTarget) throw new ConformanceValidationError("target liveness requires a grounded target", "VISION_LIVENESS_BINDING_MISMATCH");
+        if (hasReacquiredTarget) {
+          const grounded = object(groundedTarget, "reacquired grounded target");
+          if (text(grounded.contract_version, "reacquired grounded target.contract_version") !== "vision.grounded_target.v1") {
+            throw new ConformanceValidationError("unsupported reacquired grounded target version", "VISION_LIVENESS_BINDING_MISMATCH");
+          }
+          const identity = object(grounded.target, "reacquired grounded target.target");
+          const actualIdentity = {
+            element_id: text(identity.element_id, "reacquired grounded target.target.element_id"),
+            node_id: text(identity.node_id, "reacquired grounded target.target.node_id", { nullable: true }),
+            automation_id: text(identity.automation_id, "reacquired grounded target.target.automation_id", { nullable: true }),
+          };
+          assertExpectedTarget(actualIdentity, targetIdentity, "reacquired grounded target");
+        }
+        liveness = validateVisionTargetLivenessV1(bundle.targetLiveness, groundedTarget, bundle.observationEpoch, {
+          nowMs: context?.nowMs ?? null,
+        });
+      }
+
       const sensorBase = {
         semanticDeltaDigest: delta.canonicalDigest,
         observationConsistencyDigest: consistency.canonicalDigest,
         verificationInputDigest: input.canonicalDigest,
         consistencyStatus: consistency.status,
+        observationEpochDigest: epoch?.canonicalDigest ?? null,
+        observationEpochId: epoch?.epoch_id ?? null,
+        observationEpochRelation: epoch?.relation ?? null,
+        targetLivenessDigest: hasEpoch ? canonicalSha256(bundle.targetLiveness) : null,
+        targetLivenessStatus: liveness?.status ?? null,
       };
 
+      if (epoch?.relation === "stale" || liveness?.status === "stale") {
+        return { ok: false, conclusive: false, inconclusive: true, retryable: true, status: "stale", code: "VISION_EPOCH_STALE", category: "stale_observation", livenessReasons: liveness?.reasons ?? [], ...sensorBase };
+      }
       if (delta.summary.stale || consistency.status === "stale") {
         return { ok: false, conclusive: false, inconclusive: true, retryable: true, status: "stale", code: "VISION_SENSOR_STALE", category: "stale_observation", ...sensorBase };
       }
