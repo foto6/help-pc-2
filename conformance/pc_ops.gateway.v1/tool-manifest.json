@@ -230,8 +230,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "required": [
+          "path"
+        ]
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -254,8 +261,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "required": [
+          "path"
+        ]
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -278,8 +292,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "required": [
+          "path"
+        ]
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -302,8 +323,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "required": [
+          "path"
+        ]
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -326,8 +354,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "required": [
+          "path"
+        ]
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -350,8 +385,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "required": [
+          "path"
+        ]
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -390,8 +432,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "required": [
+          "path"
+        ]
       },
       "access": "effectful",
       "destructive_level": "mutating",
@@ -417,8 +466,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "required": [
+          "path"
+        ]
       },
       "access": "effectful",
       "destructive_level": "mutating",
@@ -441,8 +497,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "required": [
+          "path"
+        ]
       },
       "access": "effectful",
       "destructive_level": "mutating",
@@ -469,9 +532,14 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
+          "path",
           "destination"
         ]
       },
@@ -500,9 +568,14 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
+          "path",
           "destination"
         ]
       },
@@ -527,8 +600,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "required": [
+          "path"
+        ]
       },
       "access": "effectful",
       "destructive_level": "high",
@@ -551,8 +631,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "required": [
+          "path"
+        ]
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -575,8 +662,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "required": [
+          "path"
+        ]
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -599,8 +693,15 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 10000
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
           }
-        }
+        },
+        "required": [
+          "path"
+        ]
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -809,7 +910,7 @@
       "preflight": "not_required",
       "restart_semantics": "repeatable",
       "output_limit_bytes": 65536,
-      "scope": "system",
+      "scope": "desktop",
       "shell_fallback": false,
       "preferred_structured": true,
       "producer_requirement": "pc_relay.baseline.v2"
@@ -833,7 +934,7 @@
       "preflight": "not_required",
       "restart_semantics": "repeatable",
       "output_limit_bytes": 524288,
-      "scope": "system",
+      "scope": "desktop",
       "shell_fallback": false,
       "preferred_structured": true,
       "producer_requirement": "pc_relay.baseline.v2"
@@ -857,7 +958,7 @@
       "preflight": "not_required",
       "restart_semantics": "repeatable",
       "output_limit_bytes": 65536,
-      "scope": "system",
+      "scope": "desktop",
       "shell_fallback": false,
       "preferred_structured": true,
       "producer_requirement": "pc_relay.baseline.v2"
@@ -881,7 +982,7 @@
       "preflight": "not_required",
       "restart_semantics": "repeatable",
       "output_limit_bytes": 65536,
-      "scope": "system",
+      "scope": "desktop",
       "shell_fallback": false,
       "preferred_structured": true,
       "producer_requirement": "pc_relay.baseline.v2"
@@ -905,7 +1006,7 @@
       "preflight": "required",
       "restart_semantics": "reconcile_before_replay",
       "output_limit_bytes": 65536,
-      "scope": "system",
+      "scope": "desktop",
       "shell_fallback": false,
       "preferred_structured": true,
       "producer_requirement": "pc_relay.structured_ops.v1"
@@ -929,7 +1030,7 @@
       "preflight": "required",
       "restart_semantics": "reconcile_before_replay",
       "output_limit_bytes": 65536,
-      "scope": "system",
+      "scope": "desktop",
       "shell_fallback": false,
       "preferred_structured": true,
       "producer_requirement": "pc_relay.structured_ops.v1"
@@ -953,7 +1054,7 @@
       "preflight": "required",
       "restart_semantics": "reconcile_before_replay",
       "output_limit_bytes": 65536,
-      "scope": "system",
+      "scope": "desktop",
       "shell_fallback": false,
       "preferred_structured": true,
       "producer_requirement": "pc_relay.structured_ops.v1"
@@ -977,7 +1078,7 @@
       "preflight": "not_required",
       "restart_semantics": "repeatable",
       "output_limit_bytes": 65536,
-      "scope": "system",
+      "scope": "desktop",
       "shell_fallback": false,
       "preferred_structured": true,
       "producer_requirement": "pc_relay.baseline.v2"
@@ -1001,7 +1102,7 @@
       "preflight": "required",
       "restart_semantics": "reconcile_before_replay",
       "output_limit_bytes": 65536,
-      "scope": "system",
+      "scope": "desktop",
       "shell_fallback": false,
       "preferred_structured": true,
       "producer_requirement": "pc_relay.structured_ops.v1"
