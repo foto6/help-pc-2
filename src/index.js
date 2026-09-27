@@ -16,6 +16,26 @@ export { JsonStateStore, JsonlAuditTimeline, StateCorruptionError, redactMetadat
 export { RuntimeMetrics } from "./metrics.js";
 export { createSimulationRuntime } from "./simulation.js";
 export {
+  NATIVE_CONTROL_PROTOCOL_V1,
+  NATIVE_TOOL_REGISTRY_V1,
+  NATIVE_RESPONSE_V1,
+  DEFAULT_NATIVE_LIMITS,
+  TOOL_REGISTRY,
+  TOOL_REGISTRY_LIST,
+  TOOL_REGISTRY_DIGEST,
+  nativeCapabilityManifestV1,
+  assertCapabilityNegotiation,
+  toolDefinition,
+} from "./native-registry.js";
+export {
+  NativeControlFacade,
+  NativeFacadeError,
+  JsonFacadeStateStore,
+  responseEnvelope,
+  errorEnvelope,
+} from "./native-facade.js";
+export { LocalNativeHttpTransport } from "./native-http.js";
+export {
   EXECUTOR_OUTCOME_V1,
   EXECUTOR_OUTCOME_JOURNAL_RECORD_V1,
   EXECUTOR_OUTCOME_JOURNAL_LOOKUP_V1,
