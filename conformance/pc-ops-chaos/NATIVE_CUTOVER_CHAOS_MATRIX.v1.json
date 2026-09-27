@@ -1,0 +1,182 @@
+{
+  "version": "pc_ops.native_cutover_chaos_matrix.v1",
+  "scope": "independent_validation_only",
+  "cutover_readiness_claim": false,
+  "starting_head": "53bf83a63cb4137c5e41fbd06cd18863f890d730",
+  "generated_from": {
+    "control_mcp_gateway": {
+      "head": "5495c320304860bf190476833177f716fe9ad960",
+      "ci_run": 36318885810,
+      "conclusion": "success"
+    },
+    "control_plane": {
+      "head": "801d024a4e9bf71eda0e362c64ec719efb869ddc",
+      "ci_run": 36325018742,
+      "conclusion": "success"
+    },
+    "ops_gateway": {
+      "head": "732f0f5e6482f6bb96f0dfa582dc1c0fe2ea712e",
+      "ci_run": 36330547286,
+      "conclusion": "success"
+    },
+    "executor": {
+      "head": "2cc1e40f792a3d74560b726a0d246c90b7f077e9",
+      "ci_run": 36318986551,
+      "conclusion": "success"
+    },
+    "relay": {
+      "head": "58bad1bc60f7d4d26d03223c8f0bea5f138f49a6",
+      "ci_run": 36330545372,
+      "conclusion": "success",
+      "structured_ops_fixture_pack": "present"
+    },
+    "vision": {
+      "head": "bdfa71226a9265f9ac052ef576a6d18cada80b84",
+      "ci_run": 36328030126,
+      "conclusion": "success"
+    }
+  },
+  "invariants": [
+    "fail_closed_across_disconnect_restart_and_reconnect",
+    "at_most_one_observed_side_effect_per_logical_request",
+    "unknown_outcome_never_grants_replay_authority",
+    "only_durable_not_started_can_authorize_one_bounded_redispatch",
+    "duplicate_request_id_same_payload_is_idempotent",
+    "duplicate_request_id_different_payload_conflicts",
+    "stale_execution_context_rejected_before_side_effect",
+    "completed_effect_plus_observation_epoch_change_reverifies_only",
+    "managed_process_or_session_start_not_duplicated_after_restart",
+    "protected_e_manhwa_rejected_before_dispatch_and_never_accessed"
+  ],
+  "summary": {
+    "PASS": 11,
+    "PENDING": 0,
+    "BLOCKED": 0
+  },
+  "cases": [
+    {
+      "id": "native.mcp_disconnect_after_dispatch",
+      "fault": "MCP transport disconnect after side-effect dispatch",
+      "status": "PASS",
+      "expected": "reconcile_only; no blind replay; effect_count<=1",
+      "producer_evidence": [
+        "control-mcp-gateway@5495c320:test/mcp-gateway.test.js",
+        "control-plane@801d024:test/conformance/restart-state-machine.test.js",
+        "executor@2cc1e40:outcome_journal_v1"
+      ],
+      "local_test": "native MCP disconnect after dispatch never blind replays uncertain effect"
+    },
+    {
+      "id": "native.control_plane_restart",
+      "fault": "Control Plane restart after dispatch_started before terminal result",
+      "status": "PASS",
+      "expected": "durable boundary survives restart; unknown => reconcile_only",
+      "producer_evidence": [
+        "control-plane@801d024:test/conformance/restart-state-machine.test.js",
+        "control-plane@801d024:test/executor-journal-recovery.test.js"
+      ],
+      "local_test": "Control Plane restart preserves dispatch boundary and journal unknown fails closed"
+    },
+    {
+      "id": "native.executor_restart",
+      "fault": "Executor restart after dispatch attempt",
+      "status": "PASS",
+      "expected": "only durable not_started authorizes one bounded redispatch; observed effect_count<=1",
+      "producer_evidence": [
+        "executor@2cc1e40:outcome_journal_v1",
+        "control-plane@801d024:test/executor-journal-recovery.test.js"
+      ],
+      "local_test": "Executor restart permits one bounded redispatch only after durable not_started evidence"
+    },
+    {
+      "id": "native.stale_context_binding",
+      "fault": "execution context digest changes before side-effect adapter dispatch",
+      "status": "PASS",
+      "expected": "fail closed before side effect",
+      "producer_evidence": [
+        "executor@2cc1e40:execution_context_binding_v1",
+        "control-plane@801d024:context-epoch-e2e-v1"
+      ],
+      "local_test": "stale execution context binding rejects before side-effect dispatch"
+    },
+    {
+      "id": "native.duplicate_request_id",
+      "fault": "duplicate logical request id across reconnect",
+      "status": "PASS",
+      "expected": "same payload idempotent; changed payload conflicts",
+      "producer_evidence": [
+        "control-mcp-gateway@5495c320:test/mcp-gateway.test.js",
+        "relay@58bad1b:tests/test_pc_relay.py"
+      ],
+      "local_test": "native duplicate request id is idempotent only for identical canonical payload"
+    },
+    {
+      "id": "native.journal_unknown",
+      "fault": "outcome journal returns unknown",
+      "status": "PASS",
+      "expected": "reconciliation only; no redispatch authority",
+      "producer_evidence": [
+        "executor@2cc1e40:outcome_journal_v1",
+        "control-plane@801d024:context-epoch-e2e-v1"
+      ],
+      "local_test": "journal unknown never grants replay authority"
+    },
+    {
+      "id": "native.result_lost_after_side_effect",
+      "fault": "side effect observed but MCP/gateway result lost before caller receives it",
+      "status": "PASS",
+      "expected": "completed/unknown evidence reconciles; side effect not repeated",
+      "producer_evidence": [
+        "relay@58bad1b:tests/test_pc_relay.py",
+        "control-plane@801d024:test/conformance/restart-state-machine.test.js"
+      ],
+      "local_test": "result lost after side effect reconciles completed without a second effect"
+    },
+    {
+      "id": "native.managed_process_reconnect",
+      "fault": "gateway/control restart after managed process start",
+      "status": "PASS",
+      "expected": "reuse durable operation/action/remote handle; never start duplicate process",
+      "producer_evidence": [
+        "ops-gateway@732f0f5:test/pc-ops-gateway.test.js",
+        "relay@58bad1b:pc_ops_v1 structured process contracts"
+      ],
+      "local_test": "managed process reconnect reuses durable operation and remote handle"
+    },
+    {
+      "id": "native.managed_session_reconnect",
+      "fault": "gateway/control restart after managed shell session start",
+      "status": "PASS",
+      "expected": "reuse durable operation/action/session handle; never start duplicate session",
+      "producer_evidence": [
+        "ops-gateway@732f0f5:test/pc-ops-gateway.test.js",
+        "relay@58bad1b:pc_ops_v1 structured session contracts"
+      ],
+      "local_test": "managed shell.session reconnect reuses durable operation and remote handle"
+    },
+    {
+      "id": "native.ui_observation_epoch_change",
+      "fault": "UI observation epoch changes before dispatch or after completed side effect",
+      "status": "PASS",
+      "expected": "pre-dispatch stale epoch fails closed; post-effect epoch change recaptures/reverifies only",
+      "producer_evidence": [
+        "vision@bdfa712:observation_epoch_v1",
+        "control-plane@801d024:context-epoch-e2e-v1"
+      ],
+      "local_test": "UI observation epoch change before/after dispatch"
+    },
+    {
+      "id": "safety.protected_e_manhwa_pre_dispatch",
+      "fault": "native structured path/cwd targets E:\\manhwa root or descendant",
+      "status": "PASS",
+      "expected": "reject before dispatch and before any path access callback",
+      "producer_evidence": [
+        "ops-gateway@732f0f5:test/pc-ops-gateway.test.js",
+        "relay@58bad1b:protected-path transport policy"
+      ],
+      "local_test": "E:\\manhwa protected root and descendants reject before dispatch and are never accessed",
+      "limitation": "lexical root/descendant/traversal validation only; existing junction/reparse alias blocker remains outside this PASS"
+    }
+  ],
+  "matrix_sha256": "dbc9207982999ab8850989d6e02677c6402ecaaa1604dbd0fed80c3c26c95726"
+}

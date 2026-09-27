@@ -1,0 +1,138 @@
+{
+  "version": "pc_ops.native_cutover_provenance.v1",
+  "scope": "independent_validation_only",
+  "starting_branch": "agent/pc-ops-chaos",
+  "starting_head": "53bf83a63cb4137c5e41fbd06cd18863f890d730",
+  "cutover_readiness_claim": false,
+  "primary_gateway_policy_modified": false,
+  "binding_policy": "Only exact-head green producer contracts/evidence are admissible. Validation PASS does not imply migration readiness.",
+  "producers": {
+    "control_mcp_gateway": {
+      "repository": "foto6/help-pc-2",
+      "branch": "agent/pc-control-mcp-gateway",
+      "head": "5495c320304860bf190476833177f716fe9ad960",
+      "ci": {
+        "run_id": 36318885810,
+        "conclusion": "success",
+        "checks": [
+          "test (ubuntu-latest)",
+          "test (windows-latest)"
+        ]
+      },
+      "files": {
+        "src/mcp-gateway.js": "f7bff77936733347071c10bb48f7f6d1ed2f9388",
+        "test/mcp-gateway.test.js": "0d52d2c976e693b7f82f1eee2600b14b5a1dddec"
+      }
+    },
+    "control_plane": {
+      "repository": "foto6/help-pc-2",
+      "branch": "agent/pc-control-plane",
+      "head": "801d024a4e9bf71eda0e362c64ec719efb869ddc",
+      "ci": {
+        "run_id": 36325018742,
+        "conclusion": "success",
+        "checks": [
+          "test (ubuntu-latest)",
+          "test (windows-latest)"
+        ]
+      },
+      "files": {
+        "conformance/CONTEXT_EPOCH_PROVENANCE.json": "f669c4e0846a145aee75ffc0ecccee6b7fb7d7c7",
+        "conformance/reports/context-epoch-e2e-v1.json": "ef0406f162556f87d2d04393e38ff298a54d4936",
+        "test/conformance/restart-state-machine.test.js": "6b61ba990dd2c6cf5b639ddf1bab8547838ea678",
+        "test/executor-journal-recovery.test.js": "c2924a98b3b2b807351bb7c82a32812f75ef3df9",
+        "test/context-epoch-e2e.test.js": "0c323f5b5694c55bbb7aa069e950394fefec66fe"
+      }
+    },
+    "ops_gateway": {
+      "repository": "foto6/help-pc-2",
+      "branch": "agent/pc-ops-gateway",
+      "head": "732f0f5e6482f6bb96f0dfa582dc1c0fe2ea712e",
+      "ci": {
+        "run_id": 36330547286,
+        "conclusion": "success",
+        "checks": [
+          "test"
+        ]
+      },
+      "files": {
+        "conformance/pc_ops.gateway.v1/e2e-scenarios.json": "ac6d7d570806ac016db53c2499e87665011032ad",
+        "conformance/pc_ops.gateway.v1/tool-manifest.json": "0ff82236ae77ef700dc12bb0b18f96e087966f6b",
+        "test/pc-ops-gateway.test.js": "28d7f0ec7efae27489422d57eb83637836d46a37"
+      }
+    },
+    "executor": {
+      "repository": "foto6/help-pc-1",
+      "branch": "agent/pc-executor",
+      "head": "2cc1e40f792a3d74560b726a0d246c90b7f077e9",
+      "ci": {
+        "run_id": 36318986551,
+        "conclusion": "success",
+        "checks": [
+          "test (ubuntu-latest)",
+          "test (windows-latest)"
+        ]
+      },
+      "files": {
+        "tests/fixtures/outcome_journal_v1/manifest.json": "126f9a11011622553d78d8d92dd741f4c101a5db",
+        "tests/fixtures/execution_context_binding_v1/manifest.json": "3529d6952d42b291b6a20671aaf0bfe25f221d5d"
+      }
+    },
+    "relay": {
+      "repository": "foto6/help-pc-1",
+      "branch": "agent/pc-relay-hardening",
+      "head": "58bad1bc60f7d4d26d03223c8f0bea5f138f49a6",
+      "ci": {
+        "run_id": 36330545372,
+        "conclusion": "success",
+        "checks": [
+          "evidence",
+          "relay (ubuntu-latest)",
+          "relay (windows-latest)"
+        ]
+      },
+      "files": {
+        "tests/fixtures/pc_ops_v1/manifest.json": "56f4f328138ae922eef9405bdfc480a279d3e5a2",
+        "tests/test_pc_relay.py": "b293591fef1b1a7d83acab7057647ac031e91948",
+        "tests/test_pc_relay_migration.py": "d0b73f13c4f0eee9014e4640f8747326971a7610"
+      },
+      "structured_ops_fixture_pack": "present",
+      "fixture_manifest_declared_source_head": "e0e290403a6e61fa2e4dd9ca063e7c333f5cfa4b"
+    },
+    "vision": {
+      "repository": "foto6/vision-2",
+      "branch": "agent/vision",
+      "head": "bdfa71226a9265f9ac052ef576a6d18cada80b84",
+      "ci": {
+        "run_id": 36328030126,
+        "conclusion": "success",
+        "checks": [
+          "test"
+        ]
+      },
+      "files": {
+        "tests/fixtures/observation_epoch_v1/scenarios.json": "8b4355f27f6ffe85d4eb38e22e337ac222939dbe",
+        "tests/fixtures/observation_epoch_v1/target_liveness.json": "f2c59bcd535aeddc47939b91d5614a5e9efbff26",
+        "tests/test_observation_epoch_v1.py": "208c5cf46fb6399b219ad8cad24e68314a842a15"
+      }
+    }
+  },
+  "frozen_evidence": [
+    "relay/58bad1bc60f7d4d26d03223c8f0bea5f138f49a6/tests/fixtures/pc_ops_v1/manifest.json",
+    "relay/58bad1bc60f7d4d26d03223c8f0bea5f138f49a6/tests/fixtures/pc_ops_v1/action_inventory.json",
+    "relay/58bad1bc60f7d4d26d03223c8f0bea5f138f49a6/tests/fixtures/pc_ops_v1/outcome_examples.json",
+    "control-plane/801d024a4e9bf71eda0e362c64ec719efb869ddc/conformance/reports/context-epoch-e2e-v1.json",
+    "vision/bdfa71226a9265f9ac052ef576a6d18cada80b84/tests/fixtures/observation_epoch_v1/scenarios.json",
+    "vision/bdfa71226a9265f9ac052ef576a6d18cada80b84/tests/fixtures/observation_epoch_v1/target_liveness.json",
+    "ops-gateway/732f0f5e6482f6bb96f0dfa582dc1c0fe2ea712e/conformance/pc_ops.gateway.v1/e2e-scenarios.json"
+  ],
+  "explicit_non_claims": [
+    "no merge",
+    "no release",
+    "no cutover",
+    "no migration readiness claim",
+    "no primary gateway policy change",
+    "no junction/reparse-point alias safety claim for E:\\manhwa"
+  ],
+  "provenance_sha256": "701d2ed6ad536435fe9b6d0918ab59af1ec81b68bacc67e95bc01dfbe0d4eabc"
+}
