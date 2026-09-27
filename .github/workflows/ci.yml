@@ -5,6 +5,7 @@ on:
     branches:
       - agent/pc-control-plane
       - agent/pc-native-mcp
+      - agent/pc-native-relay-server
   pull_request:
 
 permissions:
@@ -23,8 +24,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Install dependencies
+        run: npm ci
       - name: Native MCP/control facade
         run: npm run test:native-mcp
+      - name: Native remote relay
+        run: npm run test:relay
       - name: Focused execution-context and Vision epoch reconciliation
         run: npm run test:context-epoch
       - name: Frozen Wave 8 E2E readiness

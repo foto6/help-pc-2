@@ -83,3 +83,26 @@ export {
   parseVisionTargetLivenessV1,
   validateVisionTargetLivenessV1,
 } from "./context-epoch.js";
+
+export {
+  REMOTE_FRAME_VERSION,
+  DEFAULT_RELAY_LIMITS,
+  REMOTE_FRAME_TYPES,
+  RelayProtocolError,
+  RelayAuthenticationError,
+  RelayReplayError,
+  RelayStaleEpochError,
+  ReplayGuard,
+  StreamAssembler,
+  canonicalJson as canonicalRelayJson,
+  sha256Hex as relaySha256Hex,
+  digestJson as relayDigestJson,
+  encodeRelayFrame,
+  decodeRelayFrame,
+  parseRelayEnvelope,
+  validateRequestPayload,
+  requestFingerprint,
+  assertHelloPayload,
+} from "./native-relay-protocol.js";
+export { JsonRelayStateStore, NativeRelayState, RelayStateError } from "./native-relay-state.js";
+export { NativeRelayServer, NativeRelayServerError } from "./native-relay-server.js";
