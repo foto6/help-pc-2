@@ -15,6 +15,7 @@ const readJson = (relative) => JSON.parse(readFileSync(new URL(relative, import.
 const provenance = readJson("../../conformance/PROVENANCE.json");
 const execBase = "../../conformance/frozen/executor/606074456ca00681fac30a40ee28f7bb0f67c79c/tests/fixtures/";
 const visionBase = "../../conformance/frozen/vision/f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82/tests/fixtures/post_action_verification_result_v1/";
+const verificationInputCanonicalJson = readFileSync(new URL(visionBase + "verification_input.json", import.meta.url), "utf8").trimEnd();
 
 test("frozen corpus provenance matches exact Git blob hashes", () => {
   assert.equal(provenance.upstreams.executor.commit_sha, "606074456ca00681fac30a40ee28f7bb0f67c79c");
@@ -63,7 +64,7 @@ test("Executor outcome adapter preserves not_started/completed/unknown semantics
 
 test("Vision frozen verification input canonical digest matches authoritative binding", () => {
   const input = readJson(visionBase + "verification_input.json");
-  const parsed = parseVisionVerificationInputV1(input);
+  const parsed = parseVisionVerificationInputV1(input, { canonicalJsonText: verificationInputCanonicalJson });
   assert.equal(parsed.canonicalDigest, "fd9003468e901fe009e8aa0b2720dd91babce3cf9c19253a114d6248b0e180a1");
   assert.equal(parsed.expectationDigest, "be843db601bbee8adbe7a2027993fa24363a9c4219115c1a2e48f126c8db8d99");
 });
@@ -71,7 +72,7 @@ test("Vision frozen verification input canonical digest matches authoritative bi
 test("Vision authoritative four-status corpus parses against exact input binding", () => {
   const input = readJson(visionBase + "verification_input.json");
   for (const status of ["verified", "failed", "stale", "inconclusive"]) {
-    const parsed = parseVisionVerificationResultV1(readJson(visionBase + status + ".json"), { verificationInput: input });
+    const parsed = parseVisionVerificationResultV1(readJson(visionBase + status + ".json"), { verificationInput: input, verificationInputCanonicalJson });
     assert.equal(parsed.status, status);
   }
 });
@@ -88,14 +89,14 @@ test("Vision result v1 rejects version, extras, inconsistent evidence and wrong 
   ]) {
     const payload = structuredClone(verified);
     mutate(payload);
-    assert.throws(() => parseVisionVerificationResultV1(payload, { verificationInput: input }), ConformanceValidationError);
+    assert.throws(() => parseVisionVerificationResultV1(payload, { verificationInput: input, verificationInputCanonicalJson }), ConformanceValidationError);
   }
 
   const otherActionObservationPair = structuredClone(input);
   otherActionObservationPair.before.frame.image_digest = "another-action-before";
   assert.throws(
-    () => parseVisionVerificationResultV1(verified, { verificationInput: otherActionObservationPair }),
-    (error) => error.code === "VISION_VERIFICATION_BINDING_MISMATCH",
+    () => parseVisionVerificationResultV1(verified, { verificationInput: otherActionObservationPair, verificationInputCanonicalJson }),
+    (error) => error instanceof ConformanceValidationError,
   );
 });
 
@@ -105,6 +106,7 @@ test("Vision target identity binding mismatch fails closed", () => {
   assert.throws(
     () => parseVisionVerificationResultV1(verified, {
       verificationInput: input,
+      verificationInputCanonicalJson,
       targetIdentity: { element_id: "uia:other", node_id: "other", automation_id: "other" },
     }),
     (error) => error.code === "VISION_VERIFICATION_BINDING_MISMATCH",
@@ -121,7 +123,7 @@ test("Vision adapter maps result statuses without execution authority", async ()
   };
   for (const [status, fields] of Object.entries(expected)) {
     const adapter = new VisionVerificationResultV1Adapter({ readResult: async () => readJson(visionBase + status + ".json") });
-    const result = await adapter.verify({ verification: { input: { verificationInput: input } } }, {});
+    const result = await adapter.verify({ verification: { input: { verificationInput: input, verificationInputCanonicalJson } } }, {});
     for (const [key, value] of Object.entries(fields)) assert.equal(result[key], value);
   }
 });

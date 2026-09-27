@@ -11,6 +11,7 @@ const readJson = (relative) => JSON.parse(readFileSync(new URL(relative, import.
 const execBase = "../../conformance/frozen/executor/606074456ca00681fac30a40ee28f7bb0f67c79c/tests/fixtures/";
 const visionBase = "../../conformance/frozen/vision/f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82/tests/fixtures/post_action_verification_result_v1/";
 const verificationInput = readJson(visionBase + "verification_input.json");
+const verificationInputCanonicalJson = readFileSync(new URL(visionBase + "verification_input.json", import.meta.url), "utf8").trimEnd();
 
 function ids() {
   let n = 0;
@@ -59,7 +60,7 @@ function spec(extra = {}) {
     verification: {
       provider: "vision-2",
       type: "post_action.verify",
-      input: { verificationInput },
+      input: { verificationInput, verificationInputCanonicalJson },
     },
     ...extra,
   };

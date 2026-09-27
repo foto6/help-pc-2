@@ -206,7 +206,16 @@ function parseFrame(snapshot, where) {
   };
 }
 
-export function parseVisionVerificationInputV1(payload) {
+function canonicalTextDigest(payload, canonicalJsonText) {
+  if (typeof canonicalJsonText !== "string" || !canonicalJsonText.trim()) throw new ConformanceValidationError("canonical verification input JSON must be a non-empty string");
+  const text = canonicalJsonText.trimEnd();
+  let parsed;
+  try { parsed = JSON.parse(text); } catch (error) { throw new ConformanceValidationError(`canonical verification input JSON is invalid: ${error.message}`); }
+  if (canonicalJson(parsed) !== canonicalJson(payload)) throw new ConformanceValidationError("canonical verification input JSON does not match verification input object");
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+export function parseVisionVerificationInputV1(payload, { canonicalJsonText = null } = {}) {
   const root = object(payload, "verification input");
   exactKeys(root, ["contract_version", "before", "after", "expectation"], "verification input");
   if (string(root.contract_version, "verification input.contract_version") !== VISION_VERIFICATION_INPUT_V1) throw new ConformanceValidationError("unsupported Vision verification input version");
@@ -226,7 +235,7 @@ export function parseVisionVerificationInputV1(payload) {
 
   return Object.freeze({
     payload: structuredClone(root),
-    canonicalDigest: canonicalSha256(root),
+    canonicalDigest: canonicalJsonText === null ? canonicalSha256(root) : canonicalTextDigest(root, canonicalJsonText),
     expectationDigest: canonicalSha256({
       require_visual_change: requireVisualChange,
       min_changed_ratio: min,
@@ -266,7 +275,7 @@ function sameFrame(left, right) {
   return left.frame_id === right.frame_id && left.sequence === right.sequence && left.image_digest === right.image_digest;
 }
 
-export function parseVisionVerificationResultV1(payload, { verificationInput = null, targetIdentity = null } = {}) {
+export function parseVisionVerificationResultV1(payload, { verificationInput = null, verificationInputCanonicalJson = null, targetIdentity = null } = {}) {
   const root = object(payload, "verification result");
   exactKeys(root, ["contract_version", "status", "binding", "evidence", "target"], "verification result");
   if (string(root.contract_version, "verification result.contract_version") !== VISION_VERIFICATION_RESULT_V1) throw new ConformanceValidationError("unsupported Vision verification result version");
@@ -322,7 +331,7 @@ export function parseVisionVerificationResultV1(payload, { verificationInput = n
   }
 
   if (verificationInput !== null) {
-    const input = parseVisionVerificationInputV1(verificationInput);
+    const input = parseVisionVerificationInputV1(verificationInput, { canonicalJsonText: verificationInputCanonicalJson });
     if (parsedBinding.verification_input_digest !== input.canonicalDigest) throw new ConformanceValidationError("verification result is bound to a different canonical input", "VISION_VERIFICATION_BINDING_MISMATCH");
     if (parsedBinding.expectation_digest !== input.expectationDigest) throw new ConformanceValidationError("verification result expectation binding mismatch", "VISION_VERIFICATION_BINDING_MISMATCH");
     if (!sameFrame(parsedBinding.before, input.before)) throw new ConformanceValidationError("verification result before-frame binding mismatch", "VISION_VERIFICATION_BINDING_MISMATCH");
@@ -376,11 +385,12 @@ export class VisionVerificationResultV1Adapter {
     const verificationInput = this.verificationInputResolver
       ? await this.verificationInputResolver(request, context)
       : request?.verification?.input?.verificationInput ?? null;
+    const verificationInputCanonicalJson = request?.verification?.input?.verificationInputCanonicalJson ?? null;
     const targetIdentity = this.targetIdentityResolver
       ? await this.targetIdentityResolver(request, context)
       : request?.verification?.input?.targetIdentity ?? null;
-    if (!verificationInput) throw new ConformanceValidationError("Vision verification-result v1 requires the exact expected verification input");
-    const parsed = parseVisionVerificationResultV1(raw, { verificationInput, targetIdentity });
+    if (!verificationInput || !verificationInputCanonicalJson) throw new ConformanceValidationError("Vision verification-result v1 requires the exact expected verification input and canonical JSON transport");
+    const parsed = parseVisionVerificationResultV1(raw, { verificationInput, verificationInputCanonicalJson, targetIdentity });
     const base = {
       contractVersion: parsed.contract_version,
       status: parsed.status,
