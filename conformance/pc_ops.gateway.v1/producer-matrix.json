@@ -1,0 +1,46 @@
+{
+  "version": "pc_ops.gateway.producer_matrix.v1",
+  "generated_from_exact_evidence": true,
+  "ready_to_migrate": false,
+  "producers": [
+    {
+      "role": "control_plane_base",
+      "repository": "foto6/help-pc-2",
+      "branch": "agent/pc-ops-gateway",
+      "sha": "f082a7e837392240788d7474123c90095891e153",
+      "ci_run": 36317766821,
+      "ci_conclusion": "success",
+      "fixture_status": "wave8_green"
+    },
+    {
+      "role": "executor",
+      "repository": "foto6/help-pc-1",
+      "branch": "agent/pc-executor",
+      "sha": "2cc1e40f792a3d74560b726a0d246c90b7f077e9",
+      "ci_run": 36318986551,
+      "ci_conclusion": "success",
+      "fixture_status": "green"
+    },
+    {
+      "role": "relay",
+      "repository": "foto6/help-pc-1",
+      "branch": "agent/pc-relay-hardening",
+      "sha": "fcea28ec18a7e3a72e43a62c2782b5a51414a32f",
+      "ci_run": 36326683913,
+      "ci_conclusion": "success",
+      "fixture_status": "transport_green_structured_ops_absent"
+    },
+    {
+      "role": "vision",
+      "repository": "foto6/vision-2",
+      "branch": "agent/vision",
+      "sha": "51b96fb41cb72cdfc4a03129d14b9afc5fe750fd",
+      "ci_run": 36317785328,
+      "ci_conclusion": "success",
+      "fixture_status": "green"
+    }
+  ],
+  "missing_required_fixture_packs": [
+    "pc_relay.structured_ops.v1"
+  ]
+}

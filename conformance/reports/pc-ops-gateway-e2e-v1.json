@@ -1,0 +1,83 @@
+{
+  "version": "pc_ops.gateway.e2e_report.v1",
+  "ready_to_migrate": false,
+  "decision": "PENDING_PRODUCER",
+  "producer_gate": {
+    "relay_structured_ops_fixture_pack": "pending",
+    "relay_exact_green_sha": "fcea28ec18a7e3a72e43a62c2782b5a51414a32f"
+  },
+  "scenarios": [
+    {
+      "id": "read-edit-verify",
+      "status": "pending_producer_fixture",
+      "requires": [
+        "fs.read_text",
+        "fs.hash",
+        "fs.write_text"
+      ]
+    },
+    {
+      "id": "log-process-lifecycle",
+      "status": "pending_producer_fixture",
+      "requires": [
+        "log.tail",
+        "process.start",
+        "process.read_output",
+        "process.terminate"
+      ]
+    },
+    {
+      "id": "long-powershell-session",
+      "status": "pending_producer_fixture",
+      "requires": [
+        "shell.session.start",
+        "shell.session.read",
+        "shell.session.write_stdin",
+        "shell.session.terminate"
+      ]
+    },
+    {
+      "id": "git-repo-status-structured",
+      "status": "pending_producer_fixture",
+      "requires": [
+        "process.start",
+        "process.read_output"
+      ]
+    },
+    {
+      "id": "screenshot-uia-observation",
+      "status": "contract_ready_producer_green",
+      "requires": [
+        "screenshot.capture",
+        "uia.snapshot",
+        "uia.inspect"
+      ]
+    },
+    {
+      "id": "restart-durable-boundaries",
+      "status": "gateway_unit_ready_producer_e2e_pending",
+      "requires": [
+        "managed_operation_store",
+        "control_plane_restart_reconciliation"
+      ]
+    },
+    {
+      "id": "protected-path-rejection",
+      "status": "gateway_unit_ready",
+      "requires": [
+        "pc_ops.path_policy.v1"
+      ]
+    },
+    {
+      "id": "unknown-outcome-reconciliation",
+      "status": "control_plane_wave8_green_relay_transport_green",
+      "requires": [
+        "outcome.lookup",
+        "control_plane_uncertain_outcome"
+      ]
+    }
+  ],
+  "blockers": [
+    "Exact-green relay head has no structured fs/log/process/session/system-resource fixture pack; migration support is not fabricated."
+  ]
+}

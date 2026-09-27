@@ -1,0 +1,1106 @@
+{
+  "version": "pc_ops.gateway.v1",
+  "selection_policy": {
+    "structured_before_shell": true,
+    "shell_run_role": "fallback"
+  },
+  "tools": [
+    {
+      "name": "health.get",
+      "description": "Read gateway, relay and producer health without causing a PC effect.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "gateway",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "gateway.local.v1"
+    },
+    {
+      "name": "capabilities.get",
+      "description": "Read Executor capabilities and policy limits.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.baseline.v2"
+    },
+    {
+      "name": "shell.run",
+      "description": "Fallback bounded command execution; prefer structured file, log and process tools.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "argv": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "argv"
+        ]
+      },
+      "access": "effectful",
+      "destructive_level": "mutating",
+      "preflight": "required",
+      "restart_semantics": "reconcile_before_replay",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": true,
+      "preferred_structured": false,
+      "producer_requirement": "pc_relay.baseline.v2"
+    },
+    {
+      "name": "shell.session.start",
+      "description": "Start a durable long-running shell session.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "operation_id"
+        ]
+      },
+      "access": "effectful",
+      "destructive_level": "mutating",
+      "preflight": "required",
+      "restart_semantics": "no_duplicate_start",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "shell.session.read",
+      "description": "Read shell-session output from a cursor.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "operation_id"
+        ]
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "cursor_resume",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "shell.session.write_stdin",
+      "description": "Write bounded stdin to a managed shell session.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "data": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "operation_id",
+          "data"
+        ]
+      },
+      "access": "effectful",
+      "destructive_level": "mutating",
+      "preflight": "required",
+      "restart_semantics": "reconcile_before_replay",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "shell.session.terminate",
+      "description": "Terminate a managed shell session.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "operation_id"
+        ]
+      },
+      "access": "effectful",
+      "destructive_level": "medium",
+      "preflight": "required",
+      "restart_semantics": "reconcile_before_replay",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "fs.list",
+      "description": "List a directory with bounded result count.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "fs.stat",
+      "description": "Read file or directory metadata.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "fs.read_text",
+      "description": "Read bounded UTF-8 text by line/range and byte limits.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "fs.read_bytes",
+      "description": "Read bounded bytes encoded as base64.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 1048576,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "fs.hash",
+      "description": "Compute a file digest without returning file contents.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "fs.find",
+      "description": "Find or glob paths with a bounded result count.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "fs.write_text",
+      "description": "Write text with expected-current-hash, create-only or overwrite semantics.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "expected_current_hash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "create_only": {
+            "type": "boolean"
+          },
+          "overwrite": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "effectful",
+      "destructive_level": "mutating",
+      "preflight": "required",
+      "restart_semantics": "reconcile_before_replay",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "fs.append_text",
+      "description": "Append bounded text through Executor policy.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "effectful",
+      "destructive_level": "mutating",
+      "preflight": "required",
+      "restart_semantics": "reconcile_before_replay",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "fs.mkdir",
+      "description": "Create a directory through Executor policy.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "effectful",
+      "destructive_level": "mutating",
+      "preflight": "required",
+      "restart_semantics": "reconcile_before_replay",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "fs.copy",
+      "description": "Copy a path through Executor policy.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "destination": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "destination"
+        ]
+      },
+      "access": "effectful",
+      "destructive_level": "mutating",
+      "preflight": "required",
+      "restart_semantics": "reconcile_before_replay",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "fs.move",
+      "description": "Move a path through Executor policy.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "destination": {
+            "type": "string",
+            "minLength": 1
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "destination"
+        ]
+      },
+      "access": "effectful",
+      "destructive_level": "mutating",
+      "preflight": "required",
+      "restart_semantics": "reconcile_before_replay",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "fs.delete",
+      "description": "Delete only with explicit policy classification; protected paths always fail closed.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "effectful",
+      "destructive_level": "high",
+      "preflight": "required",
+      "restart_semantics": "reconcile_before_replay",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "log.tail",
+      "description": "Read a bounded tail of a log file.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "cursor_resume",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "log.read_since",
+      "description": "Read bounded log records since a cursor or timestamp.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "cursor_resume",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "log.search",
+      "description": "Search logs with bounded matches and output.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "process.list",
+      "description": "List processes with bounded fields and result count.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "process.inspect",
+      "description": "Inspect one process without changing it.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "process.start",
+      "description": "Start one durable managed process exactly once per operation identity.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "argv": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "argv"
+        ]
+      },
+      "access": "effectful",
+      "destructive_level": "mutating",
+      "preflight": "required",
+      "restart_semantics": "no_duplicate_start",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "process.status",
+      "description": "Read managed-process status.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "operation_id"
+        ]
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "process.read_output",
+      "description": "Read managed-process output from a cursor.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "operation_id"
+        ]
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "cursor_resume",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "process.terminate",
+      "description": "Terminate a managed process through policy.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "operation_id"
+        ]
+      },
+      "access": "effectful",
+      "destructive_level": "medium",
+      "preflight": "required",
+      "restart_semantics": "reconcile_before_replay",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "windows.list",
+      "description": "List visible top-level windows.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.baseline.v2"
+    },
+    {
+      "name": "screenshot.capture",
+      "description": "Capture an observation through the existing Executor/Vision stack.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 524288,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.baseline.v2"
+    },
+    {
+      "name": "uia.snapshot",
+      "description": "Capture a bounded UI Automation snapshot.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.baseline.v2"
+    },
+    {
+      "name": "uia.inspect",
+      "description": "Inspect a UI Automation element.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.baseline.v2"
+    },
+    {
+      "name": "uia.invoke",
+      "description": "Invoke a UI Automation element through preflight/context binding.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "effectful",
+      "destructive_level": "mutating",
+      "preflight": "required",
+      "restart_semantics": "reconcile_before_replay",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "uia.focus",
+      "description": "Focus a UI Automation element through preflight/context binding.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "effectful",
+      "destructive_level": "mutating",
+      "preflight": "required",
+      "restart_semantics": "reconcile_before_replay",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "uia.set_value",
+      "description": "Set a UI Automation value through preflight/context binding.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "effectful",
+      "destructive_level": "mutating",
+      "preflight": "required",
+      "restart_semantics": "reconcile_before_replay",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "clipboard.get",
+      "description": "Read clipboard content subject to Executor policy.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.baseline.v2"
+    },
+    {
+      "name": "clipboard.set",
+      "description": "Set clipboard content subject to Executor policy.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "effectful",
+      "destructive_level": "mutating",
+      "preflight": "required",
+      "restart_semantics": "reconcile_before_replay",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "action.preflight",
+      "description": "Run the Executor read-only preflight contract.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.baseline.v2"
+    },
+    {
+      "name": "outcome.lookup",
+      "description": "Read durable Executor outcome evidence for reconciliation.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.baseline.v2"
+    },
+    {
+      "name": "system.info",
+      "description": "Read bounded operating-system and host information.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    },
+    {
+      "name": "system.resources",
+      "description": "Read bounded CPU, memory, disk and runtime resource information.",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        }
+      },
+      "access": "read_only",
+      "destructive_level": "none",
+      "preflight": "not_required",
+      "restart_semantics": "repeatable",
+      "output_limit_bytes": 65536,
+      "scope": "system",
+      "shell_fallback": false,
+      "preferred_structured": true,
+      "producer_requirement": "pc_relay.structured_ops.v1"
+    }
+  ]
+}
