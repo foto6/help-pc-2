@@ -10,6 +10,7 @@
     "test:preflight": "node --test test/conformance/preflight-contracts.test.js test/preflight-admission.test.js",
     "test:e2e": "node --test test/conformance/sensor-reconciliation.test.js test/e2e-readiness.test.js",
     "test:context-epoch": "node --test test/conformance/context-epoch-contracts.test.js test/context-epoch-e2e.test.js",
+    "test:native-mcp": "node --test test/native-facade.test.js test/native-http.test.js",
     "test:soak": "node --test test/control-state-machine-soak.test.js"
   },
   "engines": {"node": ">=20"}
