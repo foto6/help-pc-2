@@ -2,12 +2,15 @@
   "version": "pc_ops.gateway.producer_matrix.v1",
   "generated_from_exact_evidence": true,
   "ready_to_migrate": false,
+  "producer_fixture_pins": {
+    "path": "conformance/pc_ops.gateway.v1/producer-fixture-pins.json",
+    "sha256": "61a172fe3b65137c37b197786d57633185a3d73ad613b4f1d7be36903c3dc693"
+  },
   "producers": [
     {
       "role": "control_plane_base",
       "repository": "foto6/help-pc-2",
-      "branch": "agent/pc-ops-gateway",
-      "sha": "f082a7e837392240788d7474123c90095891e153",
+      "base_sha": "f082a7e837392240788d7474123c90095891e153",
       "ci_run": 36317766821,
       "ci_conclusion": "success",
       "fixture_status": "wave8_green"
@@ -19,7 +22,7 @@
       "sha": "2cc1e40f792a3d74560b726a0d246c90b7f077e9",
       "ci_run": 36318986551,
       "ci_conclusion": "success",
-      "fixture_status": "green"
+      "fixture_status": "exact_fixture_pack_pinned"
     },
     {
       "role": "relay",
@@ -37,7 +40,7 @@
       "sha": "51b96fb41cb72cdfc4a03129d14b9afc5fe750fd",
       "ci_run": 36317785328,
       "ci_conclusion": "success",
-      "fixture_status": "green"
+      "fixture_status": "exact_fixture_pack_pinned"
     }
   ],
   "missing_required_fixture_packs": [
