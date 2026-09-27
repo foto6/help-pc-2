@@ -46,13 +46,16 @@ function migrateSnapshot(raw) {
     action.retryDelayMs ??= 0; action.verificationDelayMs ??= 0; action.correlationId ??= action.id; action.verification ??= null;
     action.lanes ??= actionLanes(action.type, action.desktopId, action.resource); action.lease ??= null; action.nextAttemptAtMs ??= null; action.nextReconciliationAtMs ??= null; action.cancellationRequested ??= false;
     action.executionAttempts ??= action.attempts ?? 0; action.attempts = action.executionAttempts;
-    action.verificationAttempts ??= 0; action.reconciliationAttempts ??= 0;
-    action.maxVerificationAttempts ??= 3; action.maxReconciliationAttempts ??= 3;
+    action.preflightAttempts ??= 0; action.observationAttempts ??= 0; action.verificationAttempts ??= 0; action.reconciliationAttempts ??= 0;
+    action.maxPreflightAttempts ??= 3; action.maxVerificationAttempts ??= 3; action.maxReconciliationAttempts ??= 3;
+    action.preflightDelayMs ??= 0; action.preflightTimeoutMs ??= null; action.nextPreflightAtMs ??= null;
+    action.preflightRequired ??= false; action.preflightStatus ??= null; action.preflightResult ??= null;
+    action.preflightAttestationDigest ??= null; action.preflightCapabilitiesDigest ??= null; action.preflightCapabilities ??= null; action.capabilityDriftCount ??= 0;
     action.executionResult ??= action.result ?? null; action.executorEvidence ??= null; action.executionOutcome ??= action.result ? "succeeded" : null;
     action.executionCorrelation ??= null; action.uncertainty ??= null;
   }
   const schedulable = new Set(snapshot.queue);
-  for (const action of snapshot.actions) if (["queued", "retry_wait", "uncertain_outcome", "reconciliation_wait"].includes(action.status)) schedulable.add(action.id);
+  for (const action of snapshot.actions) if (["queued", "preflight_wait", "retry_wait", "uncertain_outcome", "reconciliation_wait"].includes(action.status)) schedulable.add(action.id);
   snapshot.queue = [...schedulable];
   return snapshot;
 }
@@ -66,6 +69,12 @@ export class ControlPlane {
     this.controllers = new Map(); this.sessions = new Map(); this.desktopOwners = new Map(); this.actions = new Map(); this.queue = []; this.idempotency = new Map(); this.resourceLocks = new Map(); this.audit = []; this.auditSequence = 0; this.metrics = new RuntimeMetrics();
     const loaded = snapshot ?? this.store?.load?.() ?? null;
     if (loaded) this.#loadSnapshot(migrateSnapshot(loaded));
+    if (loaded) {
+      for (const action of this.actions.values()) {
+        const provider = this.providers.get(action.provider);
+        if (provider?.supportsPreflight === true && !TERMINAL_ACTION_STATUSES.has(action.status)) action.preflightRequired = true;
+      }
+    }
     if (loaded && recoverOnStart) this.#recoverInFlight("process_restart");
     this.#persist();
   }
@@ -88,6 +97,52 @@ export class ControlPlane {
   #locksAvailable(lanes) { return lanes.every((lane) => !this.resourceLocks.has(lane)); }
   #lock(action, lanes) { for (const lane of lanes) this.resourceLocks.set(lane, action.id); }
 
+  #invalidatePreflight(action) {
+    if (!action.preflightRequired) return;
+    action.preflightStatus = null;
+    action.preflightResult = null;
+    action.preflightAttestationDigest = null;
+    action.preflightCapabilitiesDigest = null;
+    action.preflightCapabilities = null;
+  }
+  #schedulePreflight(action, reason, { error = null } = {}) {
+    const now = this.#time();
+    this.#invalidatePreflight(action);
+    action.status = "preflight_wait";
+    action.updatedAt = now.iso;
+    action.nextPreflightAtMs = now.ms + action.preflightDelayMs;
+    if (error) action.error = clone(error);
+    this.#releaseLocks(action);
+    this.#enqueueId(action.id);
+    this.#auditEvent("action.preflight_wait", {
+      actionId: action.id,
+      sessionId: action.sessionId,
+      correlationId: action.correlationId,
+      reason,
+      preflightAttempts: action.preflightAttempts,
+      observationAttempts: action.observationAttempts,
+      nextPreflightAtMs: action.nextPreflightAtMs,
+    });
+  }
+  #blockPreflight(action, code, message, detail = null) {
+    const now = this.#time();
+    action.status = "blocked";
+    action.error = { code, category: "preflight_blocked", message, retryable: false, ...(detail ? { detail: redactMetadata(detail) } : {}) };
+    action.blockedAt = now.iso;
+    action.updatedAt = now.iso;
+    this.#releaseLocks(action);
+    this.#removeFromQueue(action.id);
+    this.#auditEvent("action.blocked", {
+      actionId: action.id,
+      sessionId: action.sessionId,
+      correlationId: action.correlationId,
+      reason: "preflight",
+      preflightStatus: action.preflightStatus,
+      preflightAttempts: action.preflightAttempts,
+      error: action.error,
+    });
+  }
+
   createSession({ desktopId, principal = "anonymous", permissions, claimDesktop = true } = {}) {
     if (typeof desktopId !== "string" || !desktopId.trim()) throw new ValidationError("desktopId is required.");
     const granted = new Set(permissions ?? [...this.policy.permissions]); for (const permission of granted) if (!this.policy.permissions.has(permission)) throw new ControlPlaneError(`Permission '${permission}' is not allowed by policy.`, "PERMISSION_DENIED");
@@ -105,7 +160,8 @@ export class ControlPlane {
     if (!session.permissions.includes(spec.permission) || !this.policy.permissions.has(spec.permission)) throw new ControlPlaneError(`Permission '${spec.permission}' is required.`, "PERMISSION_DENIED");
     if (spec.destructive && (!this.policy.allowDestructive || !session.permissions.includes("destructive"))) throw new ControlPlaneError("Destructive actions are disabled by default policy.", "DESTRUCTIVE_DISABLED");
     if (spec.requiresDesktop && this.desktopOwners.get(session.desktopId) !== sessionId) throw new ControlPlaneError("Session does not own its desktop.", "DESKTOP_NOT_OWNED");
-    if (!this.providers.get(spec.provider)) throw new ControlPlaneError(`Provider '${spec.provider}' is not registered.`, "PROVIDER_NOT_FOUND");
+    const actionProvider = this.providers.get(spec.provider);
+    if (!actionProvider) throw new ControlPlaneError(`Provider '${spec.provider}' is not registered.`, "PROVIDER_NOT_FOUND");
     if (spec.verification && !this.verificationProviders.get(spec.verification.provider)) throw new ControlPlaneError(`Verification provider '${spec.verification.provider}' is not registered.`, "VERIFIER_NOT_FOUND");
     const idemScope = spec.idempotencyKey ? `${sessionId}:${spec.idempotencyKey}` : null;
     if (idemScope && this.idempotency.has(idemScope)) { const existing = this.#action(this.idempotency.get(idemScope)); this.#auditEvent("action.deduplicated", { actionId: existing.id, sessionId, correlationId: existing.correlationId, idempotencyKey: spec.idempotencyKey }); this.#persist(); return clone(existing); }
@@ -113,11 +169,14 @@ export class ControlPlane {
     const action = {
       id, correlationId: spec.correlationId ?? id, sessionId, desktopId: session.desktopId, provider: spec.provider, type: spec.type, input: spec.input,
       resource: spec.resource ?? null, lanes: actionLanes(spec.type, session.desktopId, spec.resource), permission: spec.permission, idempotencyKey: spec.idempotencyKey,
-      maxAttempts: spec.maxAttempts, maxVerificationAttempts: spec.maxVerificationAttempts, maxReconciliationAttempts: spec.maxReconciliationAttempts, retryDelayMs: spec.retryDelayMs, verificationDelayMs: spec.verificationDelayMs,
-      executionAttempts: 0, verificationAttempts: 0, reconciliationAttempts: 0, attempts: 0,
+      maxAttempts: spec.maxAttempts, maxPreflightAttempts: spec.maxPreflightAttempts, maxVerificationAttempts: spec.maxVerificationAttempts, maxReconciliationAttempts: spec.maxReconciliationAttempts,
+      retryDelayMs: spec.retryDelayMs, preflightDelayMs: spec.preflightDelayMs, preflightTimeoutMs: spec.preflightTimeoutMs, verificationDelayMs: spec.verificationDelayMs,
+      preflightAttempts: 0, observationAttempts: 0, executionAttempts: 0, verificationAttempts: 0, reconciliationAttempts: 0, attempts: 0,
       confirmationRequired, confirmedBy: null, destructive: spec.destructive, requiresDesktop: spec.requiresDesktop, verification: spec.verification, metadata: spec.metadata,
       status: confirmationRequired ? "awaiting_confirmation" : "queued", cancellationRequested: false,
       createdAt: now.iso, createdAtMs: now.ms, updatedAt: now.iso, lease: null, nextAttemptAtMs: null, nextReconciliationAtMs: null,
+      preflightRequired: actionProvider.supportsPreflight === true, preflightStatus: null, preflightResult: null, preflightAttestationDigest: null,
+      preflightCapabilitiesDigest: null, preflightCapabilities: null, capabilityDriftCount: 0, nextPreflightAtMs: null,
       result: null, executionResult: null, executorEvidence: null, executionOutcome: null, executionCorrelation: null, verificationResult: null, error: null, uncertainty: null,
     };
     this.actions.set(id, action); if (idemScope) this.idempotency.set(idemScope, id); if (action.status === "queued") this.#enqueueId(id);
@@ -128,7 +187,10 @@ export class ControlPlane {
 
   cancelAction(actionId, reason = "user_requested", { persist = true } = {}) {
     const action = this.#action(actionId); if (TERMINAL_ACTION_STATUSES.has(action.status)) return clone(action); const now = this.#time(); action.cancellationRequested = true; action.cancelReason = reason; action.updatedAt = now.iso; this.metrics.increment("cancellations");
-    if (action.status === "executing") {
+    if (action.status === "preflighting") {
+      this.controllers.get(action.id)?.abort(Object.assign(new Error(reason), { code: "CANCELLED", category: "cancelled" }));
+      this.#auditEvent("action.cancellation_requested", { actionId, sessionId: action.sessionId, correlationId: action.correlationId, reason, dispatchState: "not_dispatched", preflight: true });
+    } else if (action.status === "executing") {
       this.controllers.get(action.id)?.abort(Object.assign(new Error(reason), { code: "CANCELLED", category: "cancelled" }));
       this.#auditEvent("action.cancellation_requested", { actionId, sessionId: action.sessionId, correlationId: action.correlationId, reason, outcome: "uncertain_until_reconciled" });
     } else if (["verifying", "reconciling"].includes(action.status)) {
@@ -146,7 +208,14 @@ export class ControlPlane {
   }
 
   getAction(actionId) { return clone(this.#action(actionId)); }
-  getActionStatus(actionId) { const action = this.#action(actionId); return clone({ id: action.id, correlationId: action.correlationId, status: action.status, attempts: action.executionAttempts, executionAttempts: action.executionAttempts, verificationAttempts: action.verificationAttempts, reconciliationAttempts: action.reconciliationAttempts, error: action.error, uncertainty: action.uncertainty, lease: action.lease }); }
+  getActionStatus(actionId) { const action = this.#action(actionId); return clone({
+    id: action.id, correlationId: action.correlationId, status: action.status, attempts: action.executionAttempts,
+    preflightAttempts: action.preflightAttempts, observationAttempts: action.observationAttempts, executionAttempts: action.executionAttempts,
+    verificationAttempts: action.verificationAttempts, reconciliationAttempts: action.reconciliationAttempts,
+    preflightStatus: action.preflightStatus, preflightAttestationDigest: action.preflightAttestationDigest,
+    preflightCapabilitiesDigest: action.preflightCapabilitiesDigest, capabilityDriftCount: action.capabilityDriftCount,
+    error: action.error, uncertainty: action.uncertainty, lease: action.lease,
+  }); }
   listActions({ sessionId, status } = {}) { return [...this.actions.values()].filter((action) => (!sessionId || action.sessionId === sessionId) && (!status || action.status === status)).map(clone); }
 
   #transitionUncertain(action, reason, error = null) {
@@ -159,14 +228,19 @@ export class ControlPlane {
   recoverExpiredLeases() {
     const now = this.#time(); const recovered = [];
     for (const action of this.actions.values()) {
-      if (!["leased", "executing", "verifying", "reconciling"].includes(action.status) || !action.lease || action.lease.expiresAtMs > now.ms) continue;
+      if (!["leased", "preflighting", "executing", "verifying", "reconciling"].includes(action.status) || !action.lease || action.lease.expiresAtMs > now.ms) continue;
       const previous = action.status; const mode = action.lease.mode;
       this.controllers.get(action.id)?.abort(Object.assign(new Error("lease expired"), { code: "LEASE_EXPIRED", category: "lease_expired" })); this.controllers.delete(action.id); this.metrics.increment("leaseExpiries");
       if (previous === "leased") {
         this.#releaseLocks(action);
-        action.status = mode === "reconcile" ? "reconciliation_wait" : "queued";
-        if (mode === "reconcile") action.nextReconciliationAtMs = now.ms; else action.nextAttemptAtMs = now.ms;
+        action.status = mode === "reconcile" ? "reconciliation_wait" : mode === "preflight" ? "preflight_wait" : "queued";
+        if (mode === "reconcile") action.nextReconciliationAtMs = now.ms;
+        else if (mode === "preflight") action.nextPreflightAtMs = now.ms;
+        else action.nextAttemptAtMs = now.ms;
         this.#enqueueId(action.id);
+      } else if (previous === "preflighting") {
+        this.#releaseLocks(action); action.status = "preflight_wait"; action.nextPreflightAtMs = now.ms; action.updatedAt = now.iso; this.#enqueueId(action.id);
+        this.#auditEvent("action.preflight_interrupted", { actionId: action.id, sessionId: action.sessionId, correlationId: action.correlationId, reason: "lease_expired" });
       } else if (previous === "executing") {
         this.#transitionUncertain(action, "lease_expired_during_execution", Object.assign(new Error("Execution lease expired after dispatch may have begun."), { code: "LEASE_EXPIRED", category: "uncertain_outcome" }));
       } else {
@@ -184,10 +258,22 @@ export class ControlPlane {
     for (let i = 0; i < this.queue.length; i += 1) {
       const action = this.actions.get(this.queue[i]); if (!action) continue;
       if (action.status === "retry_wait") { if ((action.nextAttemptAtMs ?? 0) > now.ms) continue; action.status = "queued"; }
+      if (action.status === "preflight_wait") { if ((action.nextPreflightAtMs ?? 0) > now.ms) continue; action.status = "queued"; }
       if (action.status === "reconciliation_wait") { if ((action.nextReconciliationAtMs ?? 0) > now.ms) continue; action.status = "uncertain_outcome"; }
-      const mode = action.status === "queued" ? "execute" : action.status === "uncertain_outcome" ? "reconcile" : null;
+      let mode = null;
+      if (action.status === "queued") {
+        if (action.preflightRequired) {
+          const provider = this.providers.get(action.provider);
+          if (!provider?.supportsPreflight) {
+            this.#blockPreflight(action, "PREFLIGHT_ADAPTER_UNAVAILABLE", "Required Executor preflight adapter is unavailable.");
+            i -= 1;
+            continue;
+          }
+          mode = action.preflightStatus === "ready" ? "execute" : "preflight";
+        } else mode = "execute";
+      } else if (action.status === "uncertain_outcome") mode = "reconcile";
       if (!mode) continue;
-      const lanes = mode === "execute" ? action.lanes : reconciliationLanes(action);
+      const lanes = mode === "reconcile" ? reconciliationLanes(action) : action.lanes;
       if (!this.#locksAvailable(lanes)) continue;
       if (action.requiresDesktop && this.desktopOwners.get(action.desktopId) !== action.sessionId) {
         action.status = "blocked"; action.error = { code: "DESKTOP_NOT_OWNED", category: "policy_blocked", message: "Desktop ownership was lost before leasing.", retryable: false }; this.queue.splice(i, 1); i -= 1;
@@ -199,6 +285,141 @@ export class ControlPlane {
       this.#auditEvent("action.leased", { actionId: action.id, sessionId: action.sessionId, correlationId: action.correlationId, mode, workerId, lanes, expiresAt: action.lease.expiresAt }); this.#persist(); return clone(action);
     }
     return null;
+  }
+
+
+  async #preflightLeased(action, session, controller) {
+    const start = this.#time();
+    action.status = "preflighting";
+    action.preflightAttempts += 1;
+    this.metrics.increment("preflightAttempts");
+    action.updatedAt = start.iso;
+    this.#auditEvent("action.preflight_attempt", {
+      actionId: action.id, sessionId: action.sessionId, correlationId: action.correlationId,
+      preflightAttempt: action.preflightAttempts, maxPreflightAttempts: action.maxPreflightAttempts,
+    });
+    this.#persist();
+    const provider = this.providers.get(action.provider);
+    try {
+      if (!provider?.supportsPreflight || typeof provider.readCapabilities !== "function" || typeof provider.preflightAction !== "function") {
+        this.#blockPreflight(action, "PREFLIGHT_ADAPTER_UNAVAILABLE", "Required Executor preflight adapter is unavailable.");
+        return;
+      }
+      this.metrics.increment("capabilityChecks");
+      const capabilities = await provider.readCapabilities(clone(action), {
+        signal: controller.signal, preflightAttempt: action.preflightAttempts, session: clone(session),
+      });
+      const result = await provider.preflightAction(clone(action), {
+        signal: controller.signal, preflightAttempt: action.preflightAttempts, session: clone(session),
+        capabilitiesDigest: capabilities.digest,
+      });
+      const end = this.#time();
+      this.metrics.recordDuration("preflightLatency", Math.max(0, end.ms - start.ms));
+      action.preflightCapabilities = clone(capabilities);
+      action.preflightCapabilitiesDigest = capabilities.digest;
+      action.preflightResult = clone(result);
+      action.preflightAttestationDigest = result.attestationDigest;
+      action.preflightStatus = result.status;
+      action.updatedAt = end.iso;
+      action.nextPreflightAtMs = null;
+
+      if (action.cancellationRequested || controller.signal.aborted) {
+        action.status = "cancelled";
+        action.cancelledAt = end.iso;
+        action.error = null;
+        this.#releaseLocks(action);
+        this.#removeFromQueue(action.id);
+        this.#auditEvent("action.cancelled", { actionId: action.id, sessionId: action.sessionId, correlationId: action.correlationId, reason: action.cancelReason ?? "cancelled_during_preflight", dispatchState: "not_dispatched" });
+        return;
+      }
+
+      if (result.status === "ready") {
+        action.status = "queued";
+        action.error = null;
+        this.#releaseLocks(action);
+        this.#enqueueId(action.id);
+        this.#auditEvent("action.preflight_ready", {
+          actionId: action.id, sessionId: action.sessionId, correlationId: action.correlationId,
+          preflightAttempt: action.preflightAttempts, capabilitiesDigest: action.preflightCapabilitiesDigest,
+          attestationDigest: action.preflightAttestationDigest,
+        });
+        return;
+      }
+
+      if (["stale_observation", "ambiguous_target"].includes(result.status)) {
+        action.observationAttempts += 1;
+        this.metrics.increment("observationAttempts");
+        if (action.preflightAttempts < action.maxPreflightAttempts) {
+          this.#schedulePreflight(action, result.status, { error: { code: `PREFLIGHT_${result.status.toUpperCase()}`, category: result.status, message: result.reasons.map((item) => item.message).join("; "), retryable: true } });
+        } else {
+          this.#blockPreflight(action, "PREFLIGHT_RETRY_EXHAUSTED", "Read-only preflight remained stale or ambiguous within the bounded attempt budget.", result);
+        }
+        return;
+      }
+
+      this.#blockPreflight(action, `PREFLIGHT_${result.status.toUpperCase()}`, result.reasons.map((item) => item.message).join("; ") || `Executor preflight status: ${result.status}`, result);
+    } catch (error) {
+      const end = this.#time();
+      this.metrics.recordDuration("preflightLatency", Math.max(0, end.ms - start.ms));
+      if (action.cancellationRequested || controller.signal.aborted || error?.code === "CANCELLED") {
+        action.status = "cancelled"; action.cancelledAt = end.iso; action.updatedAt = end.iso; action.error = null;
+        this.#releaseLocks(action); this.#removeFromQueue(action.id);
+        this.#auditEvent("action.cancelled", { actionId: action.id, sessionId: action.sessionId, correlationId: action.correlationId, reason: action.cancelReason ?? "cancelled_during_preflight", dispatchState: "not_dispatched" });
+      } else if (["capabilities_invalid", "preflight_invalid"].includes(error?.category)) {
+        this.#blockPreflight(action, error.code ?? "PREFLIGHT_INVALID", String(error?.message ?? error));
+      } else if (action.preflightAttempts < action.maxPreflightAttempts) {
+        this.#schedulePreflight(action, error?.category ?? "preflight_unavailable", { error: errorInfo(error) });
+      } else {
+        this.#blockPreflight(action, "PREFLIGHT_UNAVAILABLE", "Executor preflight remained unavailable within the bounded attempt budget.", errorInfo(error));
+      }
+    } finally {
+      this.controllers.delete(action.id);
+      this.#persist();
+    }
+  }
+
+  async #ensurePreflightCurrent(action, session, controller) {
+    if (!action.preflightRequired) return true;
+    const provider = this.providers.get(action.provider);
+    if (!provider?.supportsPreflight || typeof provider.readCapabilities !== "function") {
+      this.#blockPreflight(action, "PREFLIGHT_ADAPTER_UNAVAILABLE", "Required Executor preflight adapter is unavailable before execution.");
+      return false;
+    }
+    if (action.preflightStatus !== "ready" || !action.preflightCapabilitiesDigest || !action.preflightAttestationDigest) {
+      this.#schedulePreflight(action, "missing_ready_attestation");
+      return false;
+    }
+    try {
+      this.metrics.increment("capabilityChecks");
+      const capabilities = await provider.readCapabilities(clone(action), {
+        signal: controller.signal, preflightAttempt: action.preflightAttempts, session: clone(session), beforeExecution: true,
+      });
+      if (capabilities.digest !== action.preflightCapabilitiesDigest) {
+        action.capabilityDriftCount += 1;
+        this.metrics.increment("capabilityDrifts");
+        if (action.preflightAttempts < action.maxPreflightAttempts) {
+          this.#schedulePreflight(action, "capability_drift");
+        } else {
+          this.#blockPreflight(action, "PREFLIGHT_CAPABILITY_DRIFT", "Executor capability attestation drifted and the bounded re-preflight budget is exhausted.");
+        }
+        return false;
+      }
+      return true;
+    } catch (error) {
+      if (action.cancellationRequested || controller.signal.aborted || error?.code === "CANCELLED") {
+        const now = this.#time();
+        action.status = "cancelled"; action.cancelledAt = now.iso; action.updatedAt = now.iso; action.error = null;
+        this.#releaseLocks(action); this.#removeFromQueue(action.id);
+        this.#auditEvent("action.cancelled", { actionId: action.id, sessionId: action.sessionId, correlationId: action.correlationId, reason: action.cancelReason ?? "cancelled_before_execution", dispatchState: "not_dispatched" });
+      } else if (["capabilities_invalid", "preflight_invalid"].includes(error?.category)) {
+        this.#blockPreflight(action, error.code ?? "PREFLIGHT_INVALID", String(error?.message ?? error));
+      } else if (action.preflightAttempts < action.maxPreflightAttempts) {
+        this.#schedulePreflight(action, error?.category ?? "capabilities_unavailable", { error: errorInfo(error) });
+      } else {
+        this.#blockPreflight(action, "PREFLIGHT_CAPABILITIES_UNAVAILABLE", "Executor capabilities could not be re-attested within the bounded preflight budget.", errorInfo(error));
+      }
+      return false;
+    }
   }
 
   async #runVerification(action, session, controller, { reconciliation = false } = {}) {
@@ -264,6 +485,7 @@ export class ControlPlane {
           return;
         }
         if (action.executionAttempts < action.maxAttempts) {
+          this.#invalidatePreflight(action);
           action.status = "retry_wait";
           action.error = {
             code: "JOURNAL_CONFIRMED_NOT_STARTED",
@@ -343,6 +565,8 @@ export class ControlPlane {
     const action = this.#action(actionId); if (action.status !== "leased" || !action.lease) throw new ControlPlaneError("Action is not leased.", "ACTION_NOT_LEASED", { actionId }); if (workerId && action.lease.workerId !== workerId) throw new ControlPlaneError("Lease is owned by another worker.", "LEASE_OWNED", { actionId, owner: action.lease.workerId });
     const session = this.#session(action.sessionId); const controller = new AbortController(); this.controllers.set(action.id, controller); const mode = action.lease.mode;
     if (mode === "reconcile") { await this.#reconcileLeased(action, session, controller); return clone(action); }
+    if (mode === "preflight") { await this.#preflightLeased(action, session, controller); return clone(action); }
+    if (mode === "execute" && !(await this.#ensurePreflightCurrent(action, session, controller))) { this.controllers.delete(action.id); this.#persist(); return clone(action); }
     let executionStart;
     try {
       let now = this.#time(); action.status = "executing"; action.executionAttempts += 1; action.attempts = action.executionAttempts; this.metrics.increment("executionAttempts"); action.executingAt = now.iso; action.dispatchStartedAt = now.iso; action.updatedAt = now.iso; executionStart = now.ms;
@@ -375,7 +599,7 @@ export class ControlPlane {
         action.status = "blocked"; action.error = info; action.blockedAt = now.iso; action.updatedAt = now.iso; this.#releaseLocks(action); this.#removeFromQueue(action.id); this.#auditEvent("action.blocked", { actionId, sessionId: action.sessionId, correlationId: action.correlationId, error: info });
       } else if (info.dispatchState === "not_dispatched") {
         if (action.cancellationRequested || info.category === "cancelled") { action.status = "cancelled"; action.error = null; action.cancelledAt = now.iso; action.updatedAt = now.iso; this.#releaseLocks(action); this.#removeFromQueue(action.id); this.#auditEvent("action.cancelled", { actionId, sessionId: action.sessionId, correlationId: action.correlationId, reason: action.cancelReason ?? info.message, dispatchState: "not_dispatched" }); }
-        else if (info.retryable && action.executionAttempts < action.maxAttempts) { action.status = "retry_wait"; action.error = info; action.nextAttemptAtMs = now.ms + action.retryDelayMs; action.updatedAt = now.iso; this.#releaseLocks(action); this.#enqueueId(action.id); this.metrics.increment("retries"); this.#auditEvent("action.retry_wait", { actionId, sessionId: action.sessionId, correlationId: action.correlationId, executionAttempt: action.executionAttempts, maxAttempts: action.maxAttempts, reason: "confirmed_not_dispatched", error: info }); }
+        else if (info.retryable && action.executionAttempts < action.maxAttempts) { this.#invalidatePreflight(action); action.status = "retry_wait"; action.error = info; action.nextAttemptAtMs = now.ms + action.retryDelayMs; action.updatedAt = now.iso; this.#releaseLocks(action); this.#enqueueId(action.id); this.metrics.increment("retries"); this.#auditEvent("action.retry_wait", { actionId, sessionId: action.sessionId, correlationId: action.correlationId, executionAttempt: action.executionAttempts, maxAttempts: action.maxAttempts, reason: "confirmed_not_dispatched", error: info }); }
         else { action.status = "failed"; action.error = info; action.failedAt = now.iso; action.updatedAt = now.iso; this.#releaseLocks(action); this.#removeFromQueue(action.id); this.#auditEvent("action.failed", { actionId, sessionId: action.sessionId, correlationId: action.correlationId, executionAttempt: action.executionAttempts, error: info }); }
       } else {
         this.#transitionUncertain(action, action.cancellationRequested ? "cancellation_race_after_dispatch" : "provider_outcome_unknown", error);
@@ -390,10 +614,20 @@ export class ControlPlane {
   #recoverInFlight(reason) {
     const now = this.#time(); const recovered = []; this.resourceLocks.clear(); this.controllers.clear();
     for (const action of this.actions.values()) {
-      if (!["leased", "executing", "verifying", "reconciling"].includes(action.status)) continue;
+      if (!["leased", "preflighting", "executing", "verifying", "reconciling"].includes(action.status)) continue;
       const previous = action.status; const mode = action.lease?.mode ?? "execute";
       action.lease = null; action.updatedAt = now.iso;
-      if (previous === "leased") { action.status = mode === "reconcile" ? "reconciliation_wait" : "queued"; if (mode === "reconcile") action.nextReconciliationAtMs = now.ms; else action.nextAttemptAtMs = now.ms; this.#enqueueId(action.id); }
+      if (previous === "leased") {
+        action.status = mode === "reconcile" ? "reconciliation_wait" : mode === "preflight" ? "preflight_wait" : "queued";
+        if (mode === "reconcile") action.nextReconciliationAtMs = now.ms;
+        else if (mode === "preflight") action.nextPreflightAtMs = now.ms;
+        else action.nextAttemptAtMs = now.ms;
+        this.#enqueueId(action.id);
+      }
+      else if (previous === "preflighting") {
+        action.status = "preflight_wait"; action.nextPreflightAtMs = now.ms; this.#enqueueId(action.id);
+        this.#auditEvent("action.preflight_interrupted", { actionId: action.id, sessionId: action.sessionId, correlationId: action.correlationId, reason, previousStatus: previous });
+      }
       else if (previous === "executing") this.#transitionUncertain(action, "process_restart_after_dispatch", Object.assign(new Error("Process restarted while side-effect dispatch was in flight."), { code: "PROCESS_RESTART", category: "uncertain_outcome", outcomeUncertain: true }));
       else { action.status = "reconciliation_wait"; action.nextReconciliationAtMs = now.ms; this.#enqueueId(action.id); this.#auditEvent("action.reconciliation_interrupted", { actionId: action.id, sessionId: action.sessionId, correlationId: action.correlationId, reason, previousStatus: previous }); }
       recovered.push(clone(action));

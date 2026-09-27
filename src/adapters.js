@@ -1,6 +1,9 @@
 import {
   adaptExecutorActionOutcomeV1,
   adaptExecutorOutcomeJournalLookupV1,
+  adaptExecutorCapabilitiesV1,
+  adaptExecutorActionPreflightResultV1,
+  buildExecutorActionPreflightRequestV1,
   ConformanceValidationError,
   executorJournalExecutionId,
 } from "./conformance.js";
@@ -36,6 +39,54 @@ class InvokeAdapter {
   async execute(action, context) {
     return this.invoke({ requestId: action.id, sessionId: action.sessionId, tool: action.type, input: action.input, resource: action.resource, signal: context.signal, executionAttempt: context.executionAttempt });
   }
+
+  async readCapabilities(action, context = {}) {
+    if (!this.supportsPreflight) return null;
+    let raw;
+    try {
+      raw = await this._readCapabilities({
+        request_id: action?.id ?? null,
+        action: action?.type ?? null,
+      }, context);
+    } catch (error) {
+      throw readOnlyProviderUnavailable(error, "capabilities_unavailable");
+    }
+    const payload = raw?.data?.capabilities ?? raw?.capabilities ?? raw;
+    try {
+      return adaptExecutorCapabilitiesV1(payload);
+    } catch (error) {
+      throw invalidExecutorCapabilities(error);
+    }
+  }
+
+  async preflightAction(action, context = {}) {
+    if (!this.supportsPreflight) return null;
+    const request = buildExecutorActionPreflightRequestV1(action, {
+      dryRun: this.dryRun,
+      timeoutMs: action.preflightTimeoutMs ?? null,
+    });
+    let raw;
+    try {
+      raw = await this._preflight(structuredClone(request), {
+        signal: context.signal,
+        preflightAttempt: context.preflightAttempt,
+        session: context.session,
+      });
+    } catch (error) {
+      throw readOnlyProviderUnavailable(error, "preflight_unavailable");
+    }
+    const payload = raw?.data?.preflight ?? raw?.preflight ?? raw;
+    try {
+      return adaptExecutorActionPreflightResultV1(payload, {
+        requestId: action.id,
+        action: action.type,
+        capabilitiesDigest: context.capabilitiesDigest ?? null,
+      });
+    } catch (error) {
+      throw invalidExecutorPreflight(error);
+    }
+  }
+
   async readOutcomeEvidence(action, context) {
     if (!this._readEvidence) return { outcome: "unknown", source: this.name, requestId: action.id, reason: "no_evidence_reader" };
     return this._readEvidence({ requestId: action.id, action: action.type, input: action.input, executionAttempt: action.executionAttempts }, context);
@@ -101,6 +152,44 @@ function invalidExecutorJournal(error) {
   return wrapped;
 }
 
+
+function invalidExecutorCapabilities(error) {
+  const wrapped = new Error(`PC Executor capabilities failed conformance: ${error.message}`);
+  wrapped.name = "ProviderPreflightError";
+  wrapped.code = error?.code ?? "EXECUTOR_CAPABILITIES_INVALID";
+  wrapped.category = "capabilities_invalid";
+  wrapped.retryable = false;
+  wrapped.dispatchState = "not_dispatched";
+  wrapped.outcomeUncertain = false;
+  wrapped.cause = error;
+  return wrapped;
+}
+
+function invalidExecutorPreflight(error) {
+  const wrapped = new Error(`PC Executor preflight failed conformance: ${error.message}`);
+  wrapped.name = "ProviderPreflightError";
+  wrapped.code = error?.code ?? "EXECUTOR_PREFLIGHT_INVALID";
+  wrapped.category = "preflight_invalid";
+  wrapped.retryable = false;
+  wrapped.dispatchState = "not_dispatched";
+  wrapped.outcomeUncertain = false;
+  wrapped.cause = error;
+  return wrapped;
+}
+
+function readOnlyProviderUnavailable(error, category) {
+  if (error?.name === "AbortError" || error?.code === "CANCELLED") return error;
+  const wrapped = new Error(String(error?.message ?? error ?? "read-only provider unavailable"));
+  wrapped.name = "ProviderPreflightError";
+  wrapped.code = typeof error?.code === "string" ? error.code : category === "capabilities_unavailable" ? "EXECUTOR_CAPABILITIES_UNAVAILABLE" : "EXECUTOR_PREFLIGHT_UNAVAILABLE";
+  wrapped.category = typeof error?.category === "string" ? error.category : category;
+  wrapped.retryable = error?.retryable !== false;
+  wrapped.dispatchState = "not_dispatched";
+  wrapped.outcomeUncertain = false;
+  wrapped.cause = error;
+  return wrapped;
+}
+
 function executorProviderFailure(result, evidence) {
   const kind = typeof result?.error_kind === "string" ? result.error_kind : null;
   const detail = result?.error;
@@ -126,11 +215,20 @@ function malformedExecutorResult() {
 }
 
 export class HelpPc1Adapter {
-  constructor({ invoke, dryRun = true, readEvidence = null } = {}) {
+  constructor({ invoke, dryRun = true, readEvidence = null, readCapabilities = null, preflight = null } = {}) {
     if (typeof invoke !== "function") throw new TypeError("invoke must be a function.");
     if (typeof dryRun !== "boolean") throw new TypeError("dryRun must be a boolean.");
     if (readEvidence !== null && typeof readEvidence !== "function") throw new TypeError("readEvidence must be a function when supplied.");
-    this.name = "help-pc-1"; this.invoke = invoke; this.dryRun = dryRun; this._readEvidence = readEvidence;
+    if (readCapabilities !== null && typeof readCapabilities !== "function") throw new TypeError("readCapabilities must be a function when supplied.");
+    if (preflight !== null && typeof preflight !== "function") throw new TypeError("preflight must be a function when supplied.");
+    if ((readCapabilities === null) !== (preflight === null)) throw new TypeError("readCapabilities and preflight must be supplied together.");
+    this.name = "help-pc-1";
+    this.invoke = invoke;
+    this.dryRun = dryRun;
+    this._readEvidence = readEvidence;
+    this._readCapabilities = readCapabilities;
+    this._preflight = preflight;
+    this.supportsPreflight = Boolean(readCapabilities && preflight);
   }
   executionCorrelation(action, executionAttempt) {
     return Object.freeze({

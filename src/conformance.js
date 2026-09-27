@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 export const EXECUTOR_OUTCOME_V1 = "pc_executor.action_outcome.v1";
 export const EXECUTOR_OUTCOME_JOURNAL_RECORD_V1 = "pc_executor.outcome_journal.record.v1";
 export const EXECUTOR_OUTCOME_JOURNAL_LOOKUP_V1 = "pc_executor.outcome_journal.lookup.v1";
+export const EXECUTOR_CAPABILITIES_V1 = "pc_executor.capabilities.v1";
+export const EXECUTOR_ACTION_PREFLIGHT_V1 = "pc_executor.action_preflight.v1";
 export const VISION_VERIFICATION_INPUT_V1 = "vision.post_action_verification_input.v1";
 export const VISION_VERIFICATION_RESULT_V1 = "vision.post_action_verification_result.v1";
 export const VISION_PERCEPTION_SNAPSHOT_V2 = "vision.perception_snapshot.v2";
@@ -472,6 +474,286 @@ export function adaptExecutorOutcomeJournalLookupV1(payload, expected = {}) {
     journalSha256: parsed.provenance.journal_sha256,
     latestValidEvidence: evidence ? structuredClone(evidence) : null,
     raw: structuredClone(parsed),
+  });
+}
+
+
+const EXECUTOR_CAPABILITY_ADAPTERS = Object.freeze(["clipboard", "input", "screenshot", "shell", "uia", "windows"]);
+const EXECUTOR_READ_ONLY_ACTIONS = new Set([
+  "action.preflight", "capabilities.get", "clipboard.get", "outcome.lookup",
+  "screenshot.capture", "uia.inspect", "uia.snapshot", "windows.list",
+]);
+const EXECUTOR_SIDE_EFFECT_ACTIONS = new Set([
+  "clipboard.set", "keyboard.press", "keyboard.type_text", "mouse.click",
+  "shell.run", "uia.focus", "uia.invoke", "uia.set_value", "vision.target.invoke",
+]);
+const EXECUTOR_SUPPORTED_CAPABILITY_ACTIONS = Object.freeze(
+  [...EXECUTOR_READ_ONLY_ACTIONS, ...EXECUTOR_SIDE_EFFECT_ACTIONS].sort(),
+);
+const PREFLIGHT_STATUSES = new Set([
+  "ready", "blocked", "unsupported", "stale_observation", "ambiguous_target", "invalid_request",
+]);
+
+function nullableString(value, where) {
+  if (value === null) return null;
+  return string(value, where);
+}
+
+function stringArray(value, where) {
+  if (!Array.isArray(value)) throw new ConformanceValidationError(`${where} must be an array`);
+  return Object.freeze(value.map((item, index) => {
+    if (typeof item !== "string") throw new ConformanceValidationError(`${where}[${index}] must be a string`);
+    return item;
+  }));
+}
+
+export function parseExecutorCapabilitiesV1(payload) {
+  const root = object(payload, "Executor capabilities");
+  exactKeys(root, ["contract_version", "runtime", "adapters", "actions", "safety", "attestation"], "Executor capabilities");
+  if (string(root.contract_version, "capabilities.contract_version") !== EXECUTOR_CAPABILITIES_V1) {
+    throw new ConformanceValidationError("unsupported Executor capabilities version", "EXECUTOR_CAPABILITIES_VERSION_MISMATCH");
+  }
+
+  const runtime = object(root.runtime, "capabilities.runtime");
+  exactKeys(runtime, [
+    "executor_version", "python_implementation", "python_major_minor",
+    "platform_system", "platform_machine", "os_family",
+  ], "capabilities.runtime");
+  for (const key of Object.keys(runtime)) string(runtime[key], `capabilities.runtime.${key}`);
+
+  const adapters = object(root.adapters, "capabilities.adapters");
+  exactKeys(adapters, EXECUTOR_CAPABILITY_ADAPTERS, "capabilities.adapters");
+  const parsedAdapters = {};
+  for (const name of EXECUTOR_CAPABILITY_ADAPTERS) {
+    const entry = object(adapters[name], `capabilities.adapters.${name}`);
+    exactKeys(entry, ["available", "provider", "unsupported_reason"], `capabilities.adapters.${name}`);
+    const available = boolean(entry.available, `capabilities.adapters.${name}.available`);
+    const provider = string(entry.provider, `capabilities.adapters.${name}.provider`);
+    if (!["native", "injected", "missing"].includes(provider)) throw new ConformanceValidationError(`invalid adapter provider: ${name}`);
+    const unsupportedReason = nullableString(entry.unsupported_reason, `capabilities.adapters.${name}.unsupported_reason`);
+    if (available === (unsupportedReason !== null)) throw new ConformanceValidationError(`adapter availability/reason mismatch: ${name}`);
+    parsedAdapters[name] = Object.freeze({ available, provider, unsupported_reason: unsupportedReason });
+  }
+
+  const actions = object(root.actions, "capabilities.actions");
+  exactKeys(actions, EXECUTOR_SUPPORTED_CAPABILITY_ACTIONS, "capabilities.actions");
+  const parsedActions = {};
+  for (const name of EXECUTOR_SUPPORTED_CAPABILITY_ACTIONS) {
+    const entry = object(actions[name], `capabilities.actions.${name}`);
+    exactKeys(entry, ["supported", "adapter", "side_effecting", "safety_gate", "unsupported_reason"], `capabilities.actions.${name}`);
+    const supported = boolean(entry.supported, `capabilities.actions.${name}.supported`);
+    const adapter = nullableString(entry.adapter, `capabilities.actions.${name}.adapter`);
+    if (adapter !== null && !EXECUTOR_CAPABILITY_ADAPTERS.includes(adapter)) throw new ConformanceValidationError(`invalid action adapter: ${name}`);
+    const sideEffecting = boolean(entry.side_effecting, `capabilities.actions.${name}.side_effecting`);
+    if (sideEffecting !== EXECUTOR_SIDE_EFFECT_ACTIONS.has(name)) throw new ConformanceValidationError(`action side_effecting mismatch: ${name}`);
+    const safetyGate = nullableString(entry.safety_gate, `capabilities.actions.${name}.safety_gate`);
+    const unsupportedReason = nullableString(entry.unsupported_reason, `capabilities.actions.${name}.unsupported_reason`);
+    if (supported && unsupportedReason !== null) throw new ConformanceValidationError(`supported action has unsupported_reason: ${name}`);
+    parsedActions[name] = Object.freeze({
+      supported, adapter, side_effecting: sideEffecting, safety_gate: safetyGate, unsupported_reason: unsupportedReason,
+    });
+  }
+
+  const safety = object(root.safety, "capabilities.safety");
+  exactKeys(safety, [
+    "dry_run_default", "coordinate_fallback_enabled", "credential_entry_allowed",
+    "captcha_entry_allowed", "protected_windows_roots", "shell_allowlist",
+    "shell_output_limit_bytes", "operation_timeout_ms", "outcome_journal_configured",
+  ], "capabilities.safety");
+  for (const key of [
+    "dry_run_default", "coordinate_fallback_enabled", "credential_entry_allowed",
+    "captcha_entry_allowed", "outcome_journal_configured",
+  ]) boolean(safety[key], `capabilities.safety.${key}`);
+  if (safety.credential_entry_allowed !== false || safety.captcha_entry_allowed !== false) {
+    throw new ConformanceValidationError("Executor capabilities violate credential/CAPTCHA safety contract", "EXECUTOR_CAPABILITIES_SAFETY_INVALID");
+  }
+  const protectedWindowsRoots = stringArray(safety.protected_windows_roots, "capabilities.safety.protected_windows_roots");
+  const shellAllowlist = stringArray(safety.shell_allowlist, "capabilities.safety.shell_allowlist");
+  const shellOutputLimit = safety.shell_output_limit_bytes;
+  if (shellOutputLimit !== null && (!Number.isInteger(shellOutputLimit) || shellOutputLimit <= 0)) {
+    throw new ConformanceValidationError("capabilities.safety.shell_output_limit_bytes must be positive integer or null");
+  }
+  const operationTimeout = integer(safety.operation_timeout_ms, "capabilities.safety.operation_timeout_ms", { minimum: 0 });
+
+  const attestation = object(root.attestation, "capabilities.attestation");
+  exactKeys(attestation, ["algorithm", "digest"], "capabilities.attestation");
+  if (string(attestation.algorithm, "capabilities.attestation.algorithm") !== "sha256") throw new ConformanceValidationError("unsupported capabilities attestation algorithm");
+  const attestationDigest = digest(attestation.digest, "capabilities.attestation.digest");
+  const body = structuredClone(root);
+  delete body.attestation;
+  if (canonicalSha256(body) !== attestationDigest) {
+    throw new ConformanceValidationError("Executor capabilities attestation digest mismatch", "EXECUTOR_CAPABILITIES_ATTESTATION_MISMATCH");
+  }
+
+  return Object.freeze({
+    contract_version: EXECUTOR_CAPABILITIES_V1,
+    runtime: Object.freeze(structuredClone(runtime)),
+    adapters: Object.freeze(parsedAdapters),
+    actions: Object.freeze(parsedActions),
+    safety: Object.freeze({
+      dry_run_default: safety.dry_run_default,
+      coordinate_fallback_enabled: safety.coordinate_fallback_enabled,
+      credential_entry_allowed: false,
+      captcha_entry_allowed: false,
+      protected_windows_roots: protectedWindowsRoots,
+      shell_allowlist: shellAllowlist,
+      shell_output_limit_bytes: shellOutputLimit,
+      operation_timeout_ms: operationTimeout,
+      outcome_journal_configured: safety.outcome_journal_configured,
+    }),
+    attestation: Object.freeze({ algorithm: "sha256", digest: attestationDigest }),
+    raw: structuredClone(root),
+  });
+}
+
+export function adaptExecutorCapabilitiesV1(payload) {
+  const parsed = parseExecutorCapabilitiesV1(payload);
+  return Object.freeze({
+    source: "help-pc-1",
+    contract: EXECUTOR_CAPABILITIES_V1,
+    digest: parsed.attestation.digest,
+    runtime: structuredClone(parsed.runtime),
+    adapters: structuredClone(parsed.adapters),
+    actions: structuredClone(parsed.actions),
+    safety: structuredClone(parsed.safety),
+    raw: structuredClone(parsed.raw),
+  });
+}
+
+export function buildExecutorActionPreflightRequestV1(action, { dryRun = null, timeoutMs = null } = {}) {
+  const root = object(action, "Control action");
+  const requestId = string(root.id, "Control action.id");
+  const actionName = string(root.type, "Control action.type");
+  const params = root.input === undefined ? {} : object(root.input, "Control action.input");
+  if (dryRun !== null && typeof dryRun !== "boolean") throw new ConformanceValidationError("preflight dryRun must be boolean or null");
+  if (timeoutMs !== null && (!Number.isInteger(timeoutMs) || timeoutMs <= 0)) throw new ConformanceValidationError("preflight timeoutMs must be positive integer or null");
+  return Object.freeze({
+    contract_version: EXECUTOR_ACTION_PREFLIGHT_V1,
+    request: Object.freeze({
+      request_id: requestId,
+      action: actionName,
+      params: structuredClone(params),
+      dry_run: dryRun,
+      timeout_ms: timeoutMs,
+    }),
+  });
+}
+
+export function parseExecutorActionPreflightRequestV1(payload) {
+  const root = object(payload, "Executor preflight request");
+  exactKeys(root, ["contract_version", "request"], "Executor preflight request");
+  if (string(root.contract_version, "preflight.contract_version") !== EXECUTOR_ACTION_PREFLIGHT_V1) {
+    throw new ConformanceValidationError("unsupported Executor preflight request version", "EXECUTOR_PREFLIGHT_VERSION_MISMATCH");
+  }
+  const request = object(root.request, "preflight.request");
+  const allowed = new Set(["request_id", "action", "params", "dry_run", "timeout_ms"]);
+  const required = new Set(["request_id", "action", "params"]);
+  for (const key of Object.keys(request)) if (!allowed.has(key)) throw new ConformanceValidationError(`preflight.request has extra field ${key}`);
+  for (const key of required) if (!Object.hasOwn(request, key)) throw new ConformanceValidationError(`preflight.request missing field ${key}`);
+  const requestId = string(request.request_id, "preflight.request.request_id");
+  const actionName = string(request.action, "preflight.request.action");
+  const params = object(request.params, "preflight.request.params");
+  const dryRun = request.dry_run ?? null;
+  if (dryRun !== null && typeof dryRun !== "boolean") throw new ConformanceValidationError("preflight.request.dry_run must be boolean or null");
+  const timeoutMs = request.timeout_ms ?? null;
+  if (timeoutMs !== null && (!Number.isInteger(timeoutMs) || timeoutMs <= 0)) throw new ConformanceValidationError("preflight.request.timeout_ms must be positive integer or null");
+  return Object.freeze({
+    contract_version: EXECUTOR_ACTION_PREFLIGHT_V1,
+    request: Object.freeze({
+      request_id: requestId,
+      action: actionName,
+      params: structuredClone(params),
+      dry_run: dryRun,
+      timeout_ms: timeoutMs,
+    }),
+  });
+}
+
+function parsePreflightTarget(value) {
+  if (value === null) return null;
+  const target = object(value, "preflight result.target");
+  exactKeys(target, [
+    "resolved", "automation_id_present", "enabled", "offscreen", "password",
+    "supports_invoke", "supports_value",
+  ], "preflight result.target");
+  const parsed = {};
+  for (const key of Object.keys(target)) parsed[key] = boolean(target[key], `preflight result.target.${key}`);
+  return Object.freeze(parsed);
+}
+
+export function parseExecutorActionPreflightResultV1(payload, {
+  requestId = null,
+  action = null,
+  capabilitiesDigest = null,
+} = {}) {
+  const root = object(payload, "Executor preflight result");
+  exactKeys(root, [
+    "contract_version", "request_id", "action", "status", "executable",
+    "capabilities_digest", "deadline_budget_ms", "reasons", "target",
+  ], "Executor preflight result");
+  if (string(root.contract_version, "preflight result.contract_version") !== EXECUTOR_ACTION_PREFLIGHT_V1) {
+    throw new ConformanceValidationError("unsupported Executor preflight result version", "EXECUTOR_PREFLIGHT_VERSION_MISMATCH");
+  }
+  const parsedRequestId = root.request_id === null ? null : string(root.request_id, "preflight result.request_id");
+  const parsedAction = root.action === null ? null : string(root.action, "preflight result.action");
+  const status = string(root.status, "preflight result.status");
+  if (!PREFLIGHT_STATUSES.has(status)) throw new ConformanceValidationError("unsupported Executor preflight result status");
+  const executable = boolean(root.executable, "preflight result.executable");
+  if (executable !== (status === "ready")) throw new ConformanceValidationError("preflight executable/status mismatch");
+  const parsedCapabilitiesDigest = digest(root.capabilities_digest, "preflight result.capabilities_digest");
+  const deadlineBudgetMs = integer(root.deadline_budget_ms, "preflight result.deadline_budget_ms", { minimum: 1 });
+  if (!Array.isArray(root.reasons) || root.reasons.length < 1) throw new ConformanceValidationError("preflight result.reasons must be a non-empty array");
+  const reasons = root.reasons.map((reason, index) => {
+    const entry = object(reason, `preflight result.reasons[${index}]`);
+    exactKeys(entry, ["code", "message"], `preflight result.reasons[${index}]`);
+    return Object.freeze({
+      code: string(entry.code, `preflight result.reasons[${index}].code`),
+      message: string(entry.message, `preflight result.reasons[${index}].message`),
+    });
+  });
+  const target = parsePreflightTarget(root.target);
+
+  if (requestId !== null && parsedRequestId !== requestId) {
+    throw new ConformanceValidationError("preflight request_id binding mismatch", "EXECUTOR_PREFLIGHT_BINDING_MISMATCH");
+  }
+  if (action !== null && parsedAction !== action) {
+    throw new ConformanceValidationError("preflight action binding mismatch", "EXECUTOR_PREFLIGHT_BINDING_MISMATCH");
+  }
+  if (capabilitiesDigest !== null && parsedCapabilitiesDigest !== capabilitiesDigest) {
+    throw new ConformanceValidationError("preflight capabilities attestation binding mismatch", "EXECUTOR_PREFLIGHT_CAPABILITY_MISMATCH");
+  }
+
+  return Object.freeze({
+    contract_version: EXECUTOR_ACTION_PREFLIGHT_V1,
+    request_id: parsedRequestId,
+    action: parsedAction,
+    status,
+    executable,
+    capabilities_digest: parsedCapabilitiesDigest,
+    deadline_budget_ms: deadlineBudgetMs,
+    reasons: Object.freeze(reasons),
+    target,
+    attestation_digest: canonicalSha256(root),
+    raw: structuredClone(root),
+  });
+}
+
+export function adaptExecutorActionPreflightResultV1(payload, expected = {}) {
+  const parsed = parseExecutorActionPreflightResultV1(payload, expected);
+  return Object.freeze({
+    source: "help-pc-1",
+    contract: EXECUTOR_ACTION_PREFLIGHT_V1,
+    requestId: parsed.request_id,
+    action: parsed.action,
+    status: parsed.status,
+    ready: parsed.status === "ready",
+    executable: parsed.executable,
+    capabilitiesDigest: parsed.capabilities_digest,
+    attestationDigest: parsed.attestation_digest,
+    deadlineBudgetMs: parsed.deadline_budget_ms,
+    reasons: structuredClone(parsed.reasons),
+    target: parsed.target ? structuredClone(parsed.target) : null,
+    raw: structuredClone(parsed.raw),
   });
 }
 

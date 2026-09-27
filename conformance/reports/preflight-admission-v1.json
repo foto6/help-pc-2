@@ -1,0 +1,24 @@
+{
+  "schema": "pc_control.preflight_admission_report.v1",
+  "executorHead": "d0ccb0f390474fc3fc091e51c25f7ef8771b0f09",
+  "controlBaseHead": "ead172d3a54eeb861599ec5b0bbf4fd4a51bdfdc",
+  "scenarios": [
+    {
+      "name": "pending",
+      "status": "pending",
+      "preflightAttempts": 0,
+      "observationAttempts": 0,
+      "executionAttempts": 0,
+      "verificationAttempts": 0,
+      "reconciliationAttempts": 0,
+      "sideEffectProviderCalls": 0,
+      "capabilityChecks": 0,
+      "preflightCalls": 0,
+      "attestationDigest": null,
+      "capabilitiesDigest": null,
+      "transitionHash": "pending",
+      "evidenceHash": "pending"
+    }
+  ],
+  "aggregateTransitionEvidenceHash": "pending"
+}

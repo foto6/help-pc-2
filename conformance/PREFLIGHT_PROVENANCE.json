@@ -1,0 +1,74 @@
+{
+  "schema": "pc_control.executor_preflight_provenance.v1",
+  "producer": {
+    "repository": "foto6/help-pc-1",
+    "branch": "agent/pc-executor",
+    "commit_sha": "d0ccb0f390474fc3fc091e51c25f7ef8771b0f09",
+    "authoritative_doc": "docs/PREFLIGHT_V1.md",
+    "capabilities_contract": "pc_executor.capabilities.v1",
+    "preflight_contract": "pc_executor.action_preflight.v1"
+  },
+  "copied_root": "conformance/frozen/executor/d0ccb0f390474fc3fc091e51c25f7ef8771b0f09/tests/fixtures/preflight_v1",
+  "files": [
+    {
+      "name": "manifest.json",
+      "source_path": "tests/fixtures/preflight_v1/manifest.json",
+      "git_blob_sha1": "929b91cf3a5a99e9dbf75236dbb9057b143d0531",
+      "sha256": "ae659207e2af4622fe69ef6d8fd3cab5c380e8f5532820cd9b0444d313182171"
+    },
+    {
+      "name": "manifest.sha256",
+      "source_path": "tests/fixtures/preflight_v1/manifest.sha256",
+      "git_blob_sha1": "1509b53d7a9667fec87a67013693b1f3c66c48cd",
+      "sha256": "9435fc30fc7eb410897650f2d36b8b8ace1dd9224ab2cd93313fe767c57906b6"
+    },
+    {
+      "name": "capabilities.json",
+      "source_path": "tests/fixtures/preflight_v1/capabilities.json",
+      "git_blob_sha1": "8d14a1d42e0da2e9fe3b3ce1e20de93a9b6cbc35",
+      "sha256": "cb01f3b61633dcd49d969436a10f255bf1f9665f0cbe89b2ffd4709c922bebd8"
+    },
+    {
+      "name": "ready.request.json",
+      "source_path": "tests/fixtures/preflight_v1/ready.request.json",
+      "git_blob_sha1": "eb2abc93bdd65fb8a8c106391d1a1df02c524071",
+      "sha256": "0b83bc7b9c22a7d8c38489c41c320f0f7b882e3696ac24db4a10b7ca648fd650"
+    },
+    {
+      "name": "ready.result.json",
+      "source_path": "tests/fixtures/preflight_v1/ready.result.json",
+      "git_blob_sha1": "f8d5502eb415d6f78cbfeff0f55911a778803a0c",
+      "sha256": "801fba11febd0fc87283a2b556a8945efdac49a468c25eed81b6206be6bb80f0"
+    },
+    {
+      "name": "blocked.result.json",
+      "source_path": "tests/fixtures/preflight_v1/blocked.result.json",
+      "git_blob_sha1": "7126a8b9cfc5f07ea23a43a58a9771a95aadfd6d",
+      "sha256": "fa5b55d7981164b1e6ccc0e24b7872268ea86e803345733472c56da4236129ef"
+    },
+    {
+      "name": "unsupported.result.json",
+      "source_path": "tests/fixtures/preflight_v1/unsupported.result.json",
+      "git_blob_sha1": "4a7a711551ff5cad996082f76cc61bc2b2b837c6",
+      "sha256": "becc44747a7bb9b00cbcabb49cc85c4090190097a4e61ea5f3fed82f0166b883"
+    },
+    {
+      "name": "invalid_request.result.json",
+      "source_path": "tests/fixtures/preflight_v1/invalid_request.result.json",
+      "git_blob_sha1": "85543e644fd5257d6a40227c557a47f727a848b8",
+      "sha256": "ea19e3f588cb62deabdf9a67102efd83c8b25084057e67f1b03fd2323c47c102"
+    },
+    {
+      "name": "stale_observation.result.json",
+      "source_path": "tests/fixtures/preflight_v1/stale_observation.result.json",
+      "git_blob_sha1": "04b6211e204c1e7759912730c6154b9737d1ac6d",
+      "sha256": "a737c88948d9314f8edd6c2b32703f9ad2dbee5af2015cb45d0713cd395f1a0f"
+    },
+    {
+      "name": "ambiguous_target.result.json",
+      "source_path": "tests/fixtures/preflight_v1/ambiguous_target.result.json",
+      "git_blob_sha1": "41ec57e3a189ff443271a8fb3857275b765060ef",
+      "sha256": "f9b2d9a2aa4390416361ae94447079fcf85d7b91272994f43c81a6bbaf7055e8"
+    }
+  ]
+}

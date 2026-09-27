@@ -1,6 +1,8 @@
 export const ACTION_STATUSES = Object.freeze([
   "awaiting_confirmation",
   "queued",
+  "preflight_wait",
+  "preflighting",
   "leased",
   "executing",
   "verifying",
@@ -56,7 +58,10 @@ export function validateActionSpec(spec) {
   intInRange(spec.maxAttempts, "maxAttempts", 1, 10);
   intInRange(spec.maxVerificationAttempts, "maxVerificationAttempts", 1, 20);
   intInRange(spec.maxReconciliationAttempts, "maxReconciliationAttempts", 1, 20);
+  intInRange(spec.maxPreflightAttempts, "maxPreflightAttempts", 1, 20);
   intInRange(spec.retryDelayMs, "retryDelayMs", 0, 300000);
+  intInRange(spec.preflightDelayMs, "preflightDelayMs", 0, 300000);
+  intInRange(spec.preflightTimeoutMs, "preflightTimeoutMs", 1, 300000);
   intInRange(spec.verificationDelayMs, "verificationDelayMs", 0, 300000);
   if (spec.confirmation !== undefined && !["none", "required"].includes(spec.confirmation)) throw new ValidationError("confirmation must be 'none' or 'required'.");
   if (spec.destructive !== undefined && typeof spec.destructive !== "boolean") throw new ValidationError("destructive must be boolean when supplied.");
@@ -72,7 +77,10 @@ export function validateActionSpec(spec) {
     maxAttempts: spec.maxAttempts ?? 3,
     maxVerificationAttempts: spec.maxVerificationAttempts ?? 3,
     maxReconciliationAttempts: spec.maxReconciliationAttempts ?? 3,
+    maxPreflightAttempts: spec.maxPreflightAttempts ?? 3,
     retryDelayMs: spec.retryDelayMs ?? 0,
+    preflightDelayMs: spec.preflightDelayMs ?? 0,
+    preflightTimeoutMs: spec.preflightTimeoutMs ?? null,
     verificationDelayMs: spec.verificationDelayMs ?? 0,
     confirmation: spec.confirmation ?? "none",
     destructive: spec.destructive ?? false,
@@ -93,7 +101,10 @@ export const actionSpecSchema = Object.freeze({
     maxAttempts: { type: "integer", minimum: 1, maximum: 10, default: 3 },
     maxVerificationAttempts: { type: "integer", minimum: 1, maximum: 20, default: 3 },
     maxReconciliationAttempts: { type: "integer", minimum: 1, maximum: 20, default: 3 },
+    maxPreflightAttempts: { type: "integer", minimum: 1, maximum: 20, default: 3 },
     retryDelayMs: { type: "integer", minimum: 0, maximum: 300000, default: 0 },
+    preflightDelayMs: { type: "integer", minimum: 0, maximum: 300000, default: 0 },
+    preflightTimeoutMs: { type: ["integer", "null"], minimum: 1, maximum: 300000, default: null },
     verificationDelayMs: { type: "integer", minimum: 0, maximum: 300000, default: 0 },
     confirmation: { enum: ["none", "required"], default: "none" }, destructive: { type: "boolean", default: false }, requiresDesktop: { type: "boolean", default: true },
     verification: { type: ["object", "null"], properties: { provider: { type: "string" }, type: { type: "string" }, input: { type: "object" } } },

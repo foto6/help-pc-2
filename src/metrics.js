@@ -2,12 +2,17 @@ function emptyDuration() { return { count: 0, totalMs: 0, maxMs: 0 }; }
 export class RuntimeMetrics {
   constructor(snapshot = {}) {
     this.queueLatency = { ...emptyDuration(), ...(snapshot.queueLatency ?? {}) };
+    this.preflightLatency = { ...emptyDuration(), ...(snapshot.preflightLatency ?? {}) };
     this.executionLatency = { ...emptyDuration(), ...(snapshot.executionLatency ?? {}) };
     this.verificationLatency = { ...emptyDuration(), ...(snapshot.verificationLatency ?? {}) };
     this.reconciliationLatency = { ...emptyDuration(), ...(snapshot.reconciliationLatency ?? {}) };
     this.retries = snapshot.retries ?? 0;
     this.cancellations = snapshot.cancellations ?? 0;
     this.leaseExpiries = snapshot.leaseExpiries ?? 0;
+    this.preflightAttempts = snapshot.preflightAttempts ?? 0;
+    this.observationAttempts = snapshot.observationAttempts ?? 0;
+    this.capabilityChecks = snapshot.capabilityChecks ?? 0;
+    this.capabilityDrifts = snapshot.capabilityDrifts ?? 0;
     this.executionAttempts = snapshot.executionAttempts ?? 0;
     this.verificationAttempts = snapshot.verificationAttempts ?? 0;
     this.reconciliationAttempts = snapshot.reconciliationAttempts ?? 0;
@@ -18,15 +23,17 @@ export class RuntimeMetrics {
   snapshot() {
     const duration = (bucket) => ({ ...bucket, averageMs: bucket.count ? bucket.totalMs / bucket.count : 0 });
     return {
-      queueLatency: duration(this.queueLatency), executionLatency: duration(this.executionLatency), verificationLatency: duration(this.verificationLatency), reconciliationLatency: duration(this.reconciliationLatency),
+      queueLatency: duration(this.queueLatency), preflightLatency: duration(this.preflightLatency), executionLatency: duration(this.executionLatency), verificationLatency: duration(this.verificationLatency), reconciliationLatency: duration(this.reconciliationLatency),
       retries: this.retries, cancellations: this.cancellations, leaseExpiries: this.leaseExpiries,
+      preflightAttempts: this.preflightAttempts, observationAttempts: this.observationAttempts, capabilityChecks: this.capabilityChecks, capabilityDrifts: this.capabilityDrifts,
       executionAttempts: this.executionAttempts, verificationAttempts: this.verificationAttempts, reconciliationAttempts: this.reconciliationAttempts, uncertainOutcomes: this.uncertainOutcomes,
     };
   }
   persisted() {
     return {
-      queueLatency: { ...this.queueLatency }, executionLatency: { ...this.executionLatency }, verificationLatency: { ...this.verificationLatency }, reconciliationLatency: { ...this.reconciliationLatency },
+      queueLatency: { ...this.queueLatency }, preflightLatency: { ...this.preflightLatency }, executionLatency: { ...this.executionLatency }, verificationLatency: { ...this.verificationLatency }, reconciliationLatency: { ...this.reconciliationLatency },
       retries: this.retries, cancellations: this.cancellations, leaseExpiries: this.leaseExpiries,
+      preflightAttempts: this.preflightAttempts, observationAttempts: this.observationAttempts, capabilityChecks: this.capabilityChecks, capabilityDrifts: this.capabilityDrifts,
       executionAttempts: this.executionAttempts, verificationAttempts: this.verificationAttempts, reconciliationAttempts: this.reconciliationAttempts, uncertainOutcomes: this.uncertainOutcomes,
     };
   }

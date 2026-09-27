@@ -22,6 +22,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Focused Executor preflight admission
+        run: npm run test:preflight
       - name: Focused Executor journal recovery
         run: npm run test:journal
       - name: Full test suite
