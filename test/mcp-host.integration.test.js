@@ -30,7 +30,7 @@ function success(request, data = {}) {
   };
 }
 
-async function createHarness({ invoke, readEvidence = null } = {}) {
+async function createHarness({ invoke, readEvidence = null, actions = null } = {}) {
   const calls = [];
   const caps = { value: "executor-cap-v1" };
   const adapter = new HelpPc1Adapter({
@@ -47,7 +47,7 @@ async function createHarness({ invoke, readEvidence = null } = {}) {
     capabilityProvider: async () => ({
       contract_version: "pc_executor.capabilities.v1",
       digest: caps.value,
-      actions: [...new Set(TOOL_REGISTRY_LIST.map((tool) => tool.executorAction))],
+      actions: actions ?? [...new Set(TOOL_REGISTRY_LIST.map((tool) => tool.executorAction))],
     }),
   });
   const runtime = await NativeMcpRuntime.create({ facade, desktopId: "desktop-mcp-test" });
@@ -160,6 +160,10 @@ test("official MCP client exercises observed Desktop Commander compatibility cal
   let writeCalls = 0;
   let processReadCalls = 0;
   const h = await createHarness({
+    actions: [
+      "fs.read_text", "fs.read_many", "fs.hash", "fs.edit_text", "fs.write_text",
+      "process.start", "process.read", "process.list", "process.terminate",
+    ],
     invoke: async (request) => {
       switch (request.action) {
         case "fs.read_text":
@@ -178,6 +182,20 @@ test("official MCP client exercises observed Desktop Commander compatibility cal
             text: request.params.path.endsWith("b.txt") ? "B" : "A",
             returned_bytes: 1,
             next_cursor: null,
+          });
+        case "fs.read_many":
+          return success(request, {
+            results: request.params.paths.map((path) => path.endsWith("missing.txt")
+              ? {
+                path,
+                ok: false,
+                error: { code: "ENOENT", category: "filesystem", message: "No such file" },
+              }
+              : {
+                path,
+                ok: true,
+                data: { path, content: path.endsWith("b.txt") ? "B" : "A" },
+              }),
           });
         case "fs.hash":
           return success(request, {
@@ -291,11 +309,6 @@ test("official MCP client exercises observed Desktop Commander compatibility cal
   ]);
   assert.deepEqual(batch.data.results.map((item) => item.ok), [true, false, true]);
   assert.equal(batch.data.results[1].error.code, "FILE_NOT_FOUND");
-  assert.deepEqual(readOrder.slice(-3), [
-    "C:\\tmp\\a.txt",
-    "C:\\tmp\\missing.txt",
-    "C:\\tmp\\b.txt",
-  ]);
 
   const edit = structured(await client.callTool({
     name: "edit_block",
@@ -325,7 +338,7 @@ test("official MCP client exercises observed Desktop Commander compatibility cal
 
   const started = structured(await client.callTool({
     name: "start_process",
-    arguments: { request_id: "dc-start", command: "mock-command" },
+    arguments: { request_id: "dc-start", command: "mock-command", timeout_ms: 1000 },
   }));
   assert.equal(started.status, "completed");
   assert.equal(started.data.pid, 77);
@@ -685,6 +698,510 @@ test("MCP host preserves bounded native pagination and opaque continuation curso
   assert.deepEqual(secondBody.data.items, ["second"]);
   assert.equal(secondBody.stream.next_cursor, null);
   assert.equal(seen[1].params.cursor, "executor-next");
+});
+
+
+test("Desktop Commander tools/list exposes current capability availability and fails closed for missing mutable/PDF/batch/meta actions", async (t) => {
+  const currentActions = [
+    "device.info", "health.get", "config.get",
+    "fs.read_text", "fs.write_text", "fs.append_text", "fs.mkdir", "fs.list",
+    "fs.move", "fs.stat", "fs.hash", "fs.edit_text",
+    "process.start", "process.read_output", "process.managed.list",
+    "process.terminate", "process.list", "system.process.kill",
+  ];
+  const h = await createHarness({
+    actions: currentActions,
+    invoke: async (request) => {
+      if (request.action === "device.info") {
+        return success(request, {
+          device_id: "local",
+          platform: "Windows",
+          generation_id: "gen-1",
+          auth_token: "must-be-redacted",
+        });
+      }
+      if (request.action === "health.get") return success(request, { status: "ok" });
+      if (request.action === "config.get") return success(request, {
+        mutable: false,
+        limits: { max_text_read_bytes: 262144 },
+        secret_token: "must-be-redacted",
+      });
+      return success(request, { ok: true });
+    },
+  });
+  t.after(h.close);
+  const { client, transport } = makeClient(h.http.url);
+  t.after(() => client.close());
+  await client.connect(transport);
+
+  const listed = await client.listTools();
+  const compat = (name) => listed.tools.find((tool) => tool.name === name);
+  for (const name of ["list_devices", "ping", "get_config", "read_file", "write_file",
+    "create_directory", "list_directory", "move_file", "get_file_info", "edit_block",
+    "start_process", "read_process_output", "list_sessions", "list_processes", "kill_process"]) {
+    assert.equal(compat(name)._meta["pc.desktop_commander/available"], true, name);
+    assert.equal(compat(name)._meta["pc.desktop_commander/reference_version"], "0.2.51");
+    assert.equal(typeof compat(name)._meta["pc.desktop_commander/selected_variant"], "string");
+  }
+  for (const name of ["shutdown", "set_config_value", "read_multiple_files", "write_pdf",
+    "interact_with_process", "who_am_i", "get_usage_stats", "get_recent_tool_calls",
+    "start_search", "get_more_search_results", "stop_search", "list_searches"]) {
+    assert.equal(compat(name)._meta["pc.desktop_commander/available"], false, name);
+    assert.equal(
+      compat(name)._meta["pc.desktop_commander/availability_reason"],
+      "required_native_capability_unavailable",
+    );
+  }
+
+  const devices = structured(await client.callTool({
+    name: "list_devices",
+    arguments: { request_id: "dc-devices" },
+  }));
+  assert.equal(devices.status, "completed");
+  assert.equal(devices.data.devices[0].device_id, "local");
+  assert.equal(Object.hasOwn(devices.data.devices[0], "auth_token"), false);
+
+  const ping = structured(await client.callTool({
+    name: "ping",
+    arguments: { request_id: "dc-ping" },
+  }));
+  assert.equal(ping.status, "completed");
+  assert.equal(ping.data.pong, true);
+
+  const config = structured(await client.callTool({
+    name: "get_config",
+    arguments: { request_id: "dc-config" },
+  }));
+  assert.equal(config.status, "completed");
+  assert.equal(config.data.mutable, false);
+  assert.equal(Object.hasOwn(config.data, "secret_token"), false);
+
+  const callsBeforeUnavailable = h.calls.length;
+  for (const [name, args] of [
+    ["shutdown", {}],
+    ["set_config_value", { key: "telemetryEnabled", value: false }],
+    ["read_multiple_files", { paths: ["C:\\tmp\\a.txt"] }],
+    ["write_pdf", { path: "C:\\tmp\\out.pdf", content: "# test" }],
+    ["who_am_i", {}],
+    ["get_usage_stats", {}],
+    ["get_recent_tool_calls", {}],
+  ]) {
+    const result = structured(await client.callTool({
+      name,
+      arguments: { request_id: "unavailable-" + name, ...args },
+    }));
+    assert.equal(result.status, "error", name);
+    assert.equal(result.error.code, "CAPABILITY_UNAVAILABLE", name);
+  }
+  assert.equal(h.calls.length, callsBeforeUnavailable);
+});
+
+test("official MCP current PC Core capabilities expose admin/batch/shutdown and keep PDF unavailable", async (t) => {
+  const actions = [
+    "device.info", "health.get", "config.get", "config.set", "device.shutdown",
+    "fs.read_text", "fs.read_many", "fs.write_text", "fs.append_text", "fs.mkdir", "fs.list", "fs.move", "fs.stat", "fs.hash", "fs.edit_text",
+    "search.start", "search.read", "search.list", "search.stop",
+    "shell.session.start", "shell.session.read", "shell.session.write_stdin", "shell.session.terminate",
+    "process.managed.list", "process.list", "system.process.kill",
+    "identity.get", "metrics.get", "audit.history",
+  ];
+  const seen = [];
+  const h = await createHarness({
+    actions,
+    invoke: async (request) => {
+      seen.push(structuredClone(request));
+      if (request.action === "config.set") return success(request, { key: request.params.key, config: { [request.params.key]: request.params.value }, revision: "a".repeat(64) });
+      if (request.action === "fs.read_many") return success(request, {
+        results: request.params.paths.map((path, index) => ({ path, ok: true, text: String(index), encoding: "utf-8", returned_bytes: 1, file_bytes: 1, truncated: false, sha256: "b".repeat(64) })),
+        count: request.params.paths.length,
+        returned_bytes: request.params.paths.length,
+      });
+      if (request.action === "device.shutdown") return success(request, { shutdown_requested: true, scope: "current_device_agent" });
+      return success(request, {});
+    },
+  });
+  t.after(h.close);
+  const { client, transport } = makeClient(h.http.url);
+  t.after(() => client.close());
+  await client.connect(transport);
+
+  const listed = await client.listTools();
+  const compat = (name) => listed.tools.find((tool) => tool.name === name);
+  const required = [
+    "list_devices", "ping", "shutdown", "get_config", "set_config_value", "read_file", "read_multiple_files", "write_file",
+    "create_directory", "list_directory", "move_file", "start_search", "get_more_search_results", "stop_search", "list_searches",
+    "get_file_info", "edit_block", "start_process", "read_process_output", "interact_with_process", "force_terminate", "list_sessions",
+    "list_processes", "kill_process", "who_am_i", "get_usage_stats", "get_recent_tool_calls",
+  ];
+  for (const name of required) {
+    assert.equal(compat(name)._meta["pc.desktop_commander/available"], true, name);
+    assert.equal(compat(name)._meta["pc.desktop_commander/executor_digest"], "executor-cap-v1", name);
+  }
+  assert.equal(compat("write_pdf")._meta["pc.desktop_commander/available"], false);
+  assert.equal(compat("write_pdf")._meta["pc.desktop_commander/selected_variant"], null);
+  assert.equal(compat("write_pdf")._meta["pc.desktop_commander/availability_reason"], "required_native_capability_unavailable");
+  assert.equal(compat("get_prompts"), undefined);
+  assert.equal(compat("give_feedback_to_desktop_commander"), undefined);
+  assert.deepEqual(
+    compat("read_file")._meta["pc.desktop_commander/vendor_non_equivalents"].map((entry) => entry.name).sort(),
+    ["get_prompts", "give_feedback_to_desktop_commander"].sort(),
+  );
+
+  const changed = structured(await client.callTool({
+    name: "set_config_value",
+    arguments: { request_id: "core-config-set", key: "read_many_max_bytes", value: 524288 },
+  }));
+  assert.equal(changed.status, "completed");
+  assert.equal(changed.data.key, "read_many_max_bytes");
+
+  const batch = structured(await client.callTool({
+    name: "read_multiple_files",
+    arguments: { request_id: "core-batch", paths: ["C:\\tmp\\a.txt", "C:\\tmp\\b.txt"] },
+  }));
+  assert.equal(batch.status, "completed");
+  assert.deepEqual(batch.data.results.map((item) => item.path), ["C:\\tmp\\a.txt", "C:\\tmp\\b.txt"]);
+  assert.deepEqual(batch.data.results.map((item) => item.ok), [true, true]);
+
+  const pdfCalls = seen.length;
+  const pdf = structured(await client.callTool({
+    name: "write_pdf",
+    arguments: { request_id: "core-pdf-gap", path: "C:\\tmp\\gap.pdf", content: "# no provider" },
+  }));
+  assert.equal(pdf.status, "error");
+  assert.equal(pdf.error.code, "CAPABILITY_UNAVAILABLE");
+  assert.equal(seen.length, pdfCalls);
+
+  const shutdown = structured(await client.callTool({ name: "shutdown", arguments: { request_id: "core-shutdown" } }));
+  assert.equal(shutdown.status, "completed");
+  assert.equal(shutdown.data.native.shutdown_requested, true);
+  assert.deepEqual(seen.filter((item) => item.action === "device.shutdown")[0].params, {});
+});
+
+test("official MCP filesystem compatibility category stays Executor-bound and bounded", async (t) => {
+  const seen = [];
+  const h = await createHarness({
+    actions: ["fs.mkdir", "fs.list", "fs.move", "fs.stat", "fs.hash"],
+    invoke: async (request) => {
+      seen.push(structuredClone(request));
+      switch (request.action) {
+        case "fs.mkdir":
+          return success(request, { path: request.params.path, created: true });
+        case "fs.list":
+          return success(request, {
+            path: request.params.path,
+            entries: [{ name: "a.txt", path: request.params.path + "\\a.txt", kind: "file" }],
+            has_more: false,
+            next_cursor: null,
+          });
+        case "fs.move":
+          return success(request, {
+            source: request.params.source,
+            destination: request.params.destination,
+          });
+        case "fs.stat":
+          return success(request, {
+            path: request.params.path,
+            kind: "file",
+            bytes: 9,
+            modified_ns: 11,
+            symlink: false,
+          });
+        case "fs.hash":
+          return success(request, { path: request.params.path, sha256: "d".repeat(64) });
+        default:
+          return success(request, {});
+      }
+    },
+  });
+  t.after(h.close);
+  const { client, transport } = makeClient(h.http.url);
+  t.after(() => client.close());
+  await client.connect(transport);
+
+  const made = structured(await client.callTool({
+    name: "create_directory",
+    arguments: { request_id: "dc-mkdir", path: "C:\\tmp\\folder" },
+  }));
+  assert.equal(made.status, "completed");
+
+  const listed = structured(await client.callTool({
+    name: "list_directory",
+    arguments: { request_id: "dc-ls", path: "C:\\tmp\\folder", depth: 2 },
+  }));
+  assert.equal(listed.status, "completed");
+  assert.equal(listed.data.count, 1);
+
+  const moved = structured(await client.callTool({
+    name: "move_file",
+    arguments: {
+      request_id: "dc-move",
+      source: "C:\\tmp\\folder\\a.txt",
+      destination: "C:\\tmp\\folder\\b.txt",
+    },
+  }));
+  assert.equal(moved.status, "completed");
+
+  const info = structured(await client.callTool({
+    name: "get_file_info",
+    arguments: { request_id: "dc-info", path: "C:\\tmp\\folder\\b.txt" },
+  }));
+  assert.equal(info.status, "completed");
+  assert.equal(info.data.size, 9);
+  assert.equal(info.data.sha256, "d".repeat(64));
+  assert.deepEqual(
+    seen.map((item) => item.action),
+    ["fs.mkdir", "fs.list", "fs.move", "fs.stat", "fs.hash"],
+  );
+});
+
+test("official MCP stateful search compatibility preserves handles, tail pagination, list and stop", async (t) => {
+  const seen = [];
+  const h = await createHarness({
+    actions: ["search.start", "search.read", "search.list", "search.stop"],
+    invoke: async (request) => {
+      seen.push(structuredClone(request));
+      switch (request.action) {
+        case "search.start":
+          return success(request, {
+            search_id: "search-42",
+            status: "running",
+            result_count: 0,
+            runtime_ms: 1,
+          });
+        case "search.read":
+          return success(request, {
+            search_id: request.params.search_id,
+            status: "completed",
+            result_count: 2,
+            runtime_ms: 7,
+            results: [
+              { path: "C:\\tmp\\a.txt" },
+              { path: "C:\\tmp\\b.txt" },
+            ],
+          });
+        case "search.list":
+          return success(request, {
+            searches: [{
+              search_id: "search-42",
+              search_type: "files",
+              pattern: "txt",
+              status: "completed",
+              runtime_ms: 7,
+              result_count: 2,
+            }],
+          });
+        case "search.stop":
+          return success(request, {
+            search_id: request.params.search_id,
+            already_finished: true,
+            status: "completed",
+          });
+        default:
+          throw new Error("unexpected search action");
+      }
+    },
+  });
+  t.after(h.close);
+  const { client, transport } = makeClient(h.http.url);
+  t.after(() => client.close());
+  await client.connect(transport);
+
+  const started = structured(await client.callTool({
+    name: "start_search",
+    arguments: {
+      request_id: "dc-search-start",
+      path: "C:\\tmp",
+      pattern: "txt",
+      searchType: "files",
+      literalSearch: true,
+      ignoreCase: true,
+      includeHidden: false,
+      maxResults: 25,
+      contextLines: 5,
+      timeout_ms: 5000,
+    },
+  }));
+  assert.equal(started.status, "completed");
+  assert.equal(started.data.sessionId, "search-42");
+
+  const tail = structured(await client.callTool({
+    name: "get_more_search_results",
+    arguments: {
+      request_id: "dc-search-tail",
+      sessionId: "search-42",
+      offset: -2,
+      length: 1,
+    },
+  }));
+  assert.equal(tail.status, "completed");
+  assert.equal(tail.data.length, null);
+  assert.equal(tail.data.results.length, 2);
+  const readCall = seen.find((item) => item.action === "search.read");
+  assert.deepEqual(readCall.params, { search_id: "search-42", offset: -2 });
+
+  const listed = structured(await client.callTool({
+    name: "list_searches",
+    arguments: { request_id: "dc-search-list" },
+  }));
+  assert.equal(listed.data.searches[0].sessionId, "search-42");
+  assert.equal(listed.data.searches[0].result_count, 2);
+
+  const stopped = structured(await client.callTool({
+    name: "stop_search",
+    arguments: { request_id: "dc-search-stop", sessionId: "search-42" },
+  }));
+  assert.equal(stopped.status, "completed");
+  assert.equal(stopped.data.already_finished, true);
+});
+
+test("official MCP process/system and sanitized meta compatibility delegate through current PC Core contracts", async (t) => {
+  let outputReads = 0;
+  const h = await createHarness({
+    actions: [
+      "shell.session.start", "shell.session.read", "shell.session.write_stdin", "shell.session.terminate",
+      "process.managed.list", "process.list", "system.process.kill",
+      "identity.get", "metrics.get", "audit.history",
+    ],
+    invoke: async (request) => {
+      switch (request.action) {
+        case "shell.session.start":
+          assert.deepEqual(request.params.argv, ["python", "-i"]);
+          return success(request, { handle_id: "handle-88", session_id: "handle-88", pid: 88, kind: "session" });
+        case "shell.session.read":
+          outputReads += 1;
+          if (outputReads === 2) {
+            assert.deepEqual(request.params.cursor, {
+              version: "pc_executor.stream_cursor.v1", handle_id: "handle-88", stdout_offset: 1, stderr_offset: 0,
+            });
+          }
+          return success(request, {
+            handle_id: "handle-88",
+            stdout: outputReads === 1 ? "one\n" : "two\n",
+            stderr: "",
+            cursor: { version: "pc_executor.stream_cursor.v1", handle_id: "handle-88", stdout_offset: outputReads, stderr_offset: 0 },
+            running: outputReads === 1,
+            returncode: outputReads === 1 ? null : 0,
+          });
+        case "process.managed.list":
+          return success(request, {
+            handles: [{ handle_id: "handle-88", pid: 88, kind: "session", status: "finished", running: false, returncode: 0 }],
+          });
+        case "shell.session.write_stdin":
+          assert.deepEqual(request.params, {
+            session_id: "handle-88", text: "x", append_newline: false, sensitive: false,
+          });
+          return success(request, { session_id: "handle-88", written_bytes: 1 });
+        case "shell.session.terminate":
+          return success(request, { handle_id: "handle-88", already_exited: true, returncode: 0 });
+        case "process.list":
+          return success(request, {
+            processes: [{ pid: request.params.pid ?? 321, ppid: 1, name: "worker.exe" }],
+            has_more: false,
+          });
+        case "system.process.kill":
+          assert.equal(request.params.expected_name, "worker.exe");
+          return success(request, { terminated: true });
+        case "identity.get":
+          return success(request, {
+            controller: "pc_executor", device_id: "device-1", session_epoch: "epoch-1", transport: "native_remote",
+            auth_token: "redact-me",
+          });
+        case "metrics.get":
+          return success(request, { available: true, sanitized: true, completed_calls: 12, actions: { "fs.read_text": 4 }, secret_key: "redact-me" });
+        case "audit.history":
+          return success(request, {
+            contract_version: "pc_executor.audit_history.v1",
+            available: true,
+            sanitized: true,
+            events: [{ action: "read_file", phase: "completed", timestamp: "2026-09-28T00:00:00Z", credential: "redact-me" }],
+          });
+        default:
+          throw new Error("unexpected action " + request.action);
+      }
+    },
+  });
+  t.after(h.close);
+  const { client, transport } = makeClient(h.http.url);
+  t.after(() => client.close());
+  await client.connect(transport);
+
+  const started = structured(await client.callTool({
+    name: "start_process",
+    arguments: { request_id: "full-proc-start", command: "python -i", timeout_ms: 1000 },
+  }));
+  assert.equal(started.status, "completed");
+  assert.equal(started.data.pid, 88);
+  assert.equal(started.data.native_variant, "pc_core_interactive_session");
+
+  const one = structured(await client.callTool({
+    name: "read_process_output",
+    arguments: { request_id: "full-proc-read1", pid: 88, timeout_ms: 10, length: 10 },
+  }));
+  const two = structured(await client.callTool({
+    name: "read_process_output",
+    arguments: { request_id: "full-proc-read2", pid: 88, timeout_ms: 10, length: 10 },
+  }));
+  assert.equal(one.data.output, "one\n");
+  assert.equal(two.data.output, "two\n");
+  assert.equal(two.data.running, false);
+
+  const interacted = structured(await client.callTool({
+    name: "interact_with_process",
+    arguments: { request_id: "full-proc-input", pid: 88, input: "x", timeout_ms: 10 },
+  }));
+  assert.equal(interacted.status, "completed");
+  assert.equal(interacted.data.native_variant, "pc_core_session");
+
+  const sessions = structured(await client.callTool({
+    name: "list_sessions",
+    arguments: { request_id: "full-proc-list" },
+  }));
+  assert.equal(sessions.data.sessions[0].status, "finished");
+
+  const processes = structured(await client.callTool({
+    name: "list_processes",
+    arguments: { request_id: "full-system-list" },
+  }));
+  assert.equal(processes.data.processes[0].name, "worker.exe");
+
+  const providerCallsBeforeKill = h.calls.length;
+  const killed = structured(await client.callTool({
+    name: "kill_process",
+    arguments: { request_id: "full-system-kill", pid: 321 },
+  }));
+  assert.equal(killed.status, "error");
+  assert.equal(killed.error.code, "PROCESS_ERROR");
+  assert.match(killed.error.message, /destructive actions are disabled/i);
+  const killProviderCalls = h.calls.slice(providerCallsBeforeKill);
+  assert.deepEqual(killProviderCalls.map((item) => item.request.action), ["process.list"]);
+
+  const stopped = structured(await client.callTool({
+    name: "force_terminate",
+    arguments: { request_id: "full-proc-stop", pid: 88 },
+  }));
+  assert.equal(stopped.data.terminated, true);
+
+  const who = structured(await client.callTool({
+    name: "who_am_i",
+    arguments: { request_id: "full-who" },
+  }));
+  assert.equal(who.data.controller, "pc_executor");
+  assert.equal(Object.hasOwn(who.data, "auth_token"), false);
+
+  const usage = structured(await client.callTool({
+    name: "get_usage_stats",
+    arguments: { request_id: "full-usage" },
+  }));
+  assert.equal(usage.data.completed_calls, 12);
+  assert.equal(usage.data.connector_billing_available, false);
+  assert.equal(Object.hasOwn(usage.data, "secret_key"), false);
+
+  const recent = structured(await client.callTool({
+    name: "get_recent_tool_calls",
+    arguments: { request_id: "full-recent", maxResults: 10, toolName: "read_file" },
+  }));
+  assert.equal(recent.data.calls[0].action, "read_file");
+  assert.equal(Object.hasOwn(recent.data.calls[0], "credential"), false);
 });
 
 test("Streamable HTTP host rejects non-loopback binds", async () => {

@@ -49,16 +49,104 @@ function nonemptyString(value, name) {
   return value;
 }
 
+function commandToArgv(command, shell = null) {
+  if (typeof command !== "string" || !command.length || command.includes("\0")) {
+    throw new DcCompatibilityError("command must be a non-empty string without NUL bytes.", {
+      code: "INVALID_ARGUMENT",
+      category: "argument",
+    });
+  }
+  if (shell !== null && shell !== undefined) {
+    const shellName = nonemptyString(shell, "shell");
+    const basename = shellName.replaceAll("\\", "/").split("/").at(-1).toLowerCase();
+    if (["powershell", "powershell.exe", "pwsh", "pwsh.exe"].includes(basename)) {
+      return [shellName, "-NoProfile", "-Command", command];
+    }
+    if (["cmd", "cmd.exe"].includes(basename)) return [shellName, "/d", "/s", "/c", command];
+    return [shellName, "-c", command];
+  }
+
+  const argv = [];
+  let current = "";
+  let quote = null;
+  let started = false;
+  for (let index = 0; index < command.length; index += 1) {
+    const char = command[index];
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+        started = true;
+      } else if (char === "\\" && quote === '"' && index + 1 < command.length && ["\\", '"'].includes(command[index + 1])) {
+        current += command[++index];
+        started = true;
+      } else {
+        current += char;
+        started = true;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      started = true;
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (started) {
+        argv.push(current);
+        current = "";
+        started = false;
+      }
+      continue;
+    }
+    current += char;
+    started = true;
+  }
+  if (quote) {
+    throw new DcCompatibilityError("command contains an unterminated quoted argument.", {
+      code: "INVALID_ARGUMENT",
+      category: "argument",
+    });
+  }
+  if (started) argv.push(current);
+  if (!argv.length || argv.length > 128 || argv.some((part) => !part.length)) {
+    throw new DcCompatibilityError("command could not be represented as bounded argv.", {
+      code: "INVALID_ARGUMENT",
+      category: "argument",
+    });
+  }
+  return argv;
+}
+
 function defaultState() {
   return { version: STORE_VERSION, processes: [] };
 }
 
 function extractNativeHandle(data) {
   if (!data || typeof data !== "object") return null;
-  for (const key of ["process_handle", "session_handle", "handle"]) {
+  for (const key of ["process_handle", "session_handle", "handle", "handle_id"]) {
     if (typeof data[key] === "string" && data[key]) return data[key];
   }
   return null;
+}
+
+function sanitize(value) {
+  if (Array.isArray(value)) return value.map(sanitize);
+  if (!value || typeof value !== "object") return value;
+  const result = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (/(secret|token|password|credential|authorization|auth)/i.test(key)) continue;
+    result[key] = sanitize(item);
+  }
+  return result;
+}
+
+function asArray(value, keys = ["items", "results", "entries", "processes", "handles", "searches"]) {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "object") return [];
+  for (const key of keys) {
+    if (Array.isArray(value[key])) return value[key];
+  }
+  return [];
 }
 
 function responseEnvelope({ requestId, sessionId, tool, status, data = null, error = null }) {
@@ -264,6 +352,45 @@ export class DesktopCommanderCompatibilitySurface {
     return manifest;
   }
 
+  async #selectVariant(toolName, { variantId = null } = {}) {
+    const definition = desktopCommanderToolDefinition(toolName);
+    if (!definition) {
+      throw new DcCompatibilityError(`Unknown Desktop Commander compatibility tool '${toolName}'.`, {
+        code: "TOOL_NOT_FOUND",
+        category: "tool",
+      });
+    }
+    const manifest = await this.facade.capabilities();
+    const advertised = new Set(Array.isArray(manifest?.executor?.actions) ? manifest.executor.actions : []);
+    const variants = definition.capability_variants.filter(
+      (variant) => variantId === null || variant.id === variantId,
+    );
+    for (const variant of variants) {
+      const missing = variant.executor_actions.filter((action) => !advertised.has(action));
+      const blockedBy = (variant.unless_executor_actions ?? []).filter((action) => advertised.has(action));
+      if (missing.length === 0 && blockedBy.length === 0) {
+        return { definition, variant, manifest, advertised };
+      }
+    }
+    throw new DcCompatibilityError(
+      `Desktop Commander tool '${toolName}' is unavailable because required native capabilities are missing.`,
+      {
+        code: "CAPABILITY_UNAVAILABLE",
+        category: "capability",
+        details: {
+          executor_digest: manifest?.executor?.digest ?? null,
+          requested_variant: variantId,
+          variants: variants.map((variant) => ({
+            id: variant.id,
+            required_executor_actions: [...variant.executor_actions],
+            missing_executor_actions: variant.executor_actions.filter((action) => !advertised.has(action)),
+            blocked_by_executor_actions: (variant.unless_executor_actions ?? []).filter((action) => advertised.has(action)),
+          })),
+        },
+      },
+    );
+  }
+
   async #invokeNative({ sessionId, requestId, tool, arguments: args = {}, page = undefined, signal = null }) {
     let response;
     try {
@@ -342,79 +469,562 @@ export class DesktopCommanderCompatibilitySurface {
     };
   }
 
+  #unsupportedMode(toolName, message, details = null) {
+    throw new DcCompatibilityError(message, {
+      code: "CAPABILITY_UNAVAILABLE",
+      category: "capability",
+      details: { tool: toolName, ...(details ?? {}) },
+    });
+  }
+
+  async #listDevices(sessionId, requestId, signal = null) {
+    const { variant } = await this.#selectVariant("list_devices");
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: variant.native_tools[0],
+      arguments: {},
+      signal,
+    });
+    const data = sanitize(response.data ?? {});
+    const device = {
+      device_id: data.device_id ?? "local",
+      status: "online",
+      transport: data.transport ?? "native",
+      platform: data.platform ?? null,
+      architecture: data.architecture ?? null,
+      generation_id: data.generation_id ?? null,
+      contract_version: data.contract_version ?? null,
+    };
+    return { devices: [device], count: 1 };
+  }
+
+  async #ping(sessionId, requestId, _args, signal = null) {
+    const { variant } = await this.#selectVariant("ping");
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: variant.native_tools[0],
+      arguments: {},
+      signal,
+    });
+    return {
+      pong: true,
+      timestamp_ms: this.clock(),
+      health: sanitize(response.data ?? {}),
+    };
+  }
+
+  async #shutdown(sessionId, requestId, _args, signal = null) {
+    const { variant } = await this.#selectVariant("shutdown");
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: variant.native_tools[0],
+      arguments: {},
+      signal,
+    });
+    return {
+      acknowledged: true,
+      native: sanitize(response.data ?? {}),
+    };
+  }
+
+  async #getConfig(sessionId, requestId, _args, signal = null) {
+    const { variant } = await this.#selectVariant("get_config");
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: variant.native_tools[0],
+      arguments: {},
+      signal,
+    });
+    return sanitize(response.data ?? {});
+  }
+
+  async #setConfigValue(sessionId, requestId, args, signal = null) {
+    const { variant } = await this.#selectVariant("set_config_value");
+    const key = nonemptyString(args.key, "key");
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: variant.native_tools[0],
+      arguments: { key, value: clone(args.value) },
+      signal,
+    });
+    return sanitize(response.data ?? { key, updated: true });
+  }
+
+  async #writePdf(sessionId, requestId, args, signal = null) {
+    const { variant } = await this.#selectVariant("write_pdf");
+    const path = nonemptyString(args.path, "path");
+    if (typeof args.content !== "string" && !Array.isArray(args.content)) {
+      throw new DcCompatibilityError("write_pdf content must be markdown text or an operation array.", {
+        code: "INVALID_ARGUMENT",
+        category: "argument",
+      });
+    }
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: variant.native_tools[0],
+      arguments: {
+        path,
+        content: clone(args.content),
+        ...(args.outputPath === undefined ? {} : { output_path: nonemptyString(args.outputPath, "outputPath") }),
+        ...(args.options === undefined ? {} : { options: clone(args.options) }),
+      },
+      signal,
+    });
+    return sanitize(response.data ?? {});
+  }
+
+  async #createDirectory(sessionId, requestId, args, signal = null) {
+    await this.#selectVariant("create_directory");
+    const path = nonemptyString(args.path, "path");
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: "file.create_dir",
+      arguments: { path, parents: true, exist_ok: true },
+      signal,
+    });
+    return {
+      path: response.data?.path ?? path,
+      created: response.data?.created ?? true,
+      native: sanitize(response.data ?? {}),
+    };
+  }
+
+  async #listDirectory(sessionId, requestId, args, signal = null) {
+    await this.#selectVariant("list_directory");
+    const root = nonemptyString(args.path, "path");
+    const depth = integer(args.depth, "depth", { fallback: 2, minimum: 1, maximum: 32 });
+    const entries = [];
+    const queue = [{ path: root, level: 1 }];
+    let directoryIndex = 0;
+    let truncated = false;
+    const maxAggregateEntries = 2000;
+    const maxDirectories = 256;
+
+    while (queue.length && entries.length < maxAggregateEntries && directoryIndex < maxDirectories) {
+      const current = queue.shift();
+      const nested = current.level > 1;
+      const perDirectoryLimit = nested ? 100 : DEFAULT_NATIVE_LIMITS.maxPageSize;
+      let offset = 0;
+      let pageIndex = 0;
+      do {
+        const response = await this.#invokeNative({
+          sessionId,
+          requestId: `${requestId}:dir:${directoryIndex}:page:${pageIndex}`,
+          tool: "file.list",
+          arguments: {
+            path: current.path,
+            offset,
+            max_entries: perDirectoryLimit,
+            include_hidden: true,
+          },
+          signal,
+        });
+        const pageEntries = asArray(response.data, ["entries", "items"]);
+        for (const item of pageEntries) {
+          if (entries.length >= maxAggregateEntries) {
+            truncated = true;
+            break;
+          }
+          const clean = sanitize(item);
+          entries.push(clean);
+          const itemPath = item?.path;
+          const kind = item?.kind ?? item?.type;
+          if (current.level < depth && typeof itemPath === "string" &&
+              (kind === "directory" || item?.is_directory === true)) {
+            queue.push({ path: itemPath, level: current.level + 1 });
+          }
+        }
+        const hasMore = response.data?.has_more === true || response.data?.truncated === true;
+        if (nested && hasMore) {
+          truncated = true;
+          break;
+        }
+        if (!hasMore || pageEntries.length === 0) break;
+        offset = Number.isInteger(response.data?.next_offset)
+          ? response.data.next_offset
+          : offset + pageEntries.length;
+        pageIndex += 1;
+        if (pageIndex >= 10) {
+          truncated = true;
+          break;
+        }
+      } while (entries.length < maxAggregateEntries);
+      directoryIndex += 1;
+    }
+    if (queue.length || directoryIndex >= maxDirectories || entries.length >= maxAggregateEntries) truncated = true;
+    return {
+      path: root,
+      depth,
+      entries,
+      count: entries.length,
+      truncated,
+      nested_directory_limit: 100,
+      aggregate_entry_limit: maxAggregateEntries,
+    };
+  }
+
+  async #moveFile(sessionId, requestId, args, signal = null) {
+    await this.#selectVariant("move_file");
+    const source = nonemptyString(args.source, "source");
+    const destination = nonemptyString(args.destination, "destination");
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: "file.move",
+      arguments: { source, destination, overwrite: false },
+      signal,
+    });
+    return sanitize(response.data ?? { source, destination });
+  }
+
+  async #startSearch(sessionId, requestId, args, signal = null) {
+    await this.#selectVariant("start_search");
+    const path = nonemptyString(args.path, "path");
+    const pattern = nonemptyString(args.pattern, "pattern");
+    if (args.filePattern !== undefined) {
+      this.#unsupportedMode("start_search", "filePattern is not available in pc_executor.search_session.v1.", {
+        unsupported_parameter: "filePattern",
+      });
+    }
+    if (args.earlyTermination !== undefined) {
+      this.#unsupportedMode("start_search", "earlyTermination is not available in pc_executor.search_session.v1.", {
+        unsupported_parameter: "earlyTermination",
+      });
+    }
+    const searchType = args.searchType ?? "files";
+    if (!["files", "content"].includes(searchType)) {
+      throw new DcCompatibilityError("searchType must be files or content.", {
+        code: "INVALID_ARGUMENT",
+        category: "argument",
+      });
+    }
+    const nativeArgs = {
+      path,
+      pattern,
+      search_type: searchType,
+      literal_search: args.literalSearch === true,
+      ignore_case: args.ignoreCase !== false,
+      include_hidden: args.includeHidden === true,
+      context_lines: integer(args.contextLines, "contextLines", { fallback: 5, minimum: 0, maximum: 100 }),
+      max_results: integer(args.maxResults, "maxResults", { fallback: 100, minimum: 1, maximum: 100000 }),
+      ...(args.timeout_ms === undefined ? {} : {
+        timeout_ms: integer(args.timeout_ms, "timeout_ms", { minimum: 1, maximum: 600000 }),
+      }),
+    };
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: "search.start",
+      arguments: nativeArgs,
+      signal,
+    });
+    const searchId = response.data?.search_id ?? response.data?.sessionId ?? response.data?.session_id;
+    if (typeof searchId !== "string" || !searchId) {
+      throw new DcCompatibilityError("Native search.start did not return a search_id.", {
+        code: "NATIVE_RESULT_INVALID",
+        category: "native_result",
+      });
+    }
+    return {
+      sessionId: searchId,
+      search_id: searchId,
+      searchType,
+      pattern,
+      status: response.data?.status ?? "running",
+      result_count: response.data?.result_count ?? 0,
+      runtime_ms: response.data?.runtime_ms ?? 0,
+    };
+  }
+
+  async #getMoreSearchResults(sessionId, requestId, args, signal = null) {
+    await this.#selectVariant("get_more_search_results");
+    const searchId = nonemptyString(args.sessionId, "sessionId");
+    const offset = integer(args.offset, "offset", {
+      fallback: 0,
+      minimum: -1000000,
+      maximum: 1000000,
+    });
+    const length = integer(args.length, "length", {
+      fallback: 100,
+      minimum: 1,
+      maximum: 1000,
+    });
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: "search.read",
+      arguments: {
+        search_id: searchId,
+        offset,
+        ...(offset < 0 ? {} : { length }),
+      },
+      signal,
+    });
+    const results = asArray(response.data, ["results", "items"]);
+    const maxExpected = offset < 0 ? Math.min(-offset, 1000000) : length;
+    if (results.length > maxExpected) {
+      throw new DcCompatibilityError("Native search.read exceeded the requested result bound.", {
+        code: "NATIVE_RESULT_INVALID",
+        category: "bounds",
+        details: { expected_max: maxExpected, actual: results.length },
+      });
+    }
+    return {
+      sessionId: searchId,
+      search_id: searchId,
+      offset,
+      length: offset < 0 ? null : length,
+      results: sanitize(results),
+      result_count: response.data?.result_count ?? results.length,
+      status: response.data?.status ?? null,
+      runtime_ms: response.data?.runtime_ms ?? null,
+      has_more: response.data?.has_more ?? null,
+    };
+  }
+
+  async #stopSearch(sessionId, requestId, args, signal = null) {
+    await this.#selectVariant("stop_search");
+    const searchId = nonemptyString(args.sessionId, "sessionId");
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: "search.stop",
+      arguments: { search_id: searchId },
+      signal,
+    });
+    return {
+      sessionId: searchId,
+      search_id: searchId,
+      stopped: response.data?.stopped !== false,
+      already_finished: response.data?.already_finished === true,
+      status: response.data?.status ?? null,
+    };
+  }
+
+  async #listSearches(sessionId, requestId, _args, signal = null) {
+    await this.#selectVariant("list_searches");
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: "search.list",
+      arguments: {},
+      signal,
+    });
+    const searches = asArray(response.data, ["searches", "items"]).map((item) => ({
+      sessionId: item?.search_id ?? item?.sessionId ?? null,
+      search_id: item?.search_id ?? item?.sessionId ?? null,
+      searchType: item?.search_type ?? item?.searchType ?? null,
+      pattern: item?.pattern ?? null,
+      status: item?.status ?? null,
+      runtime_ms: item?.runtime_ms ?? null,
+      result_count: item?.result_count ?? item?.count ?? null,
+    }));
+    return { searches, count: searches.length };
+  }
+
+  async #getFileInfo(sessionId, requestId, args, signal = null) {
+    const { advertised } = await this.#selectVariant("get_file_info");
+    const path = nonemptyString(args.path, "path");
+    const stat = await this.#invokeNative({
+      sessionId,
+      requestId: `${requestId}:stat`,
+      tool: "file.info",
+      arguments: { path },
+      signal,
+    });
+    let sha256 = null;
+    if (advertised.has("fs.hash")) {
+      const hash = await this.#invokeNative({
+        sessionId,
+        requestId: `${requestId}:hash`,
+        tool: "file.hash",
+        arguments: { path, max_bytes: this.maxTextBytes },
+        signal,
+      });
+      sha256 = hash.data?.sha256 ?? null;
+    }
+    const data = stat.data ?? {};
+    return {
+      path: data.path ?? path,
+      type: data.kind ?? data.type ?? null,
+      size: data.bytes ?? data.size ?? null,
+      created_ns: data.created_ns ?? null,
+      modified_ns: data.modified_ns ?? null,
+      permissions: data.permissions ?? null,
+      symlink: data.symlink ?? false,
+      lineCount: data.line_count ?? null,
+      lastLine: data.last_line ?? null,
+      appendPosition: data.append_position ?? null,
+      sheets: data.sheets ?? null,
+      sha256,
+      native: sanitize(data),
+    };
+  }
+
+  async #whoAmI(sessionId, requestId, signal = null) {
+    const { variant } = await this.#selectVariant("who_am_i");
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: variant.native_tools[0],
+      arguments: {},
+      signal,
+    });
+    return sanitize(response.data ?? {});
+  }
+
+  async #getUsageStats(sessionId, requestId, _args, signal = null) {
+    const { variant } = await this.#selectVariant("get_usage_stats");
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: variant.native_tools[0],
+      arguments: {},
+      signal,
+    });
+    const data = sanitize(response.data ?? {});
+    return {
+      ...data,
+      connector_billing_available: false,
+      note: "Native equivalent reports sanitized PC action/outcome metrics only; Desktop Commander Remote MCP billing telemetry is not synthesized.",
+    };
+  }
+
+  async #getRecentToolCalls(sessionId, requestId, args, signal = null) {
+    const { variant } = await this.#selectVariant("get_recent_tool_calls");
+    const requested = integer(args.maxResults, "maxResults", { fallback: 50, minimum: 1, maximum: 1000 });
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: variant.native_tools[0],
+      arguments: { limit: Math.min(requested, 200) },
+      signal,
+    });
+    const data = sanitize(response.data ?? {});
+    let events = asArray(data, ["events", "calls", "items"]);
+    if (args.toolName !== undefined) {
+      const toolName = nonemptyString(args.toolName, "toolName");
+      events = events.filter((item) => (item?.tool ?? item?.action) === toolName);
+    }
+    if (args.since !== undefined) {
+      const since = Date.parse(nonemptyString(args.since, "since"));
+      if (!Number.isFinite(since)) {
+        throw new DcCompatibilityError("since must be an ISO date-time.", { code: "INVALID_ARGUMENT", category: "argument" });
+      }
+      events = events.filter((item) => {
+        const value = item?.timestamp ?? item?.timestamp_ms ?? item?.time;
+        const stamp = typeof value === "number" ? value : Date.parse(String(value ?? ""));
+        return Number.isFinite(stamp) && stamp >= since;
+      });
+    }
+    events = events.slice(-requested);
+    return {
+      calls: sanitize(events),
+      count: events.length,
+      sanitized: data.sanitized !== false,
+      source_contract: data.contract_version ?? null,
+      bounded_native_limit: 200,
+      requested_max_results: requested,
+    };
+  }
+
   async #readFile(sessionId, requestId, args, signal = null) {
     await this.#requireCapabilities("read_file", ["fs.read_text"]);
+    if (args.isUrl === true || args.sheet !== undefined || args.range !== undefined || args.options !== undefined) {
+      this.#unsupportedMode(
+        "read_file",
+        "URL/office/PDF-specific read_file modes are not backed by the current native text-file capability.",
+        { unsupported_parameters: ["isUrl", "sheet", "range", "options"].filter((key) => args[key] !== undefined) },
+      );
+    }
     const translated = this.#fileReadArguments(args);
-    const limit = Math.max(1, Math.min(translated.length, DEFAULT_NATIVE_LIMITS.maxPageSize));
     const response = await this.#invokeNative({
       sessionId,
       requestId,
       tool: "file.read",
       arguments: translated.native,
-      page: { limit },
       signal,
     });
     return this.#projectRead(response.data, translated);
   }
 
   async #readMultipleFiles(sessionId, requestId, args, signal = null) {
-    await this.#requireCapabilities("read_multiple_files", ["fs.read_text"]);
+    await this.#selectVariant("read_multiple_files", { variantId: "true_batch" });
     if (!Array.isArray(args.paths) || args.paths.length < 1 || args.paths.length > this.maxBatchFiles) {
       throw new DcCompatibilityError(`paths must contain 1..${this.maxBatchFiles} entries.`, {
         code: "RANGE_ERROR",
         category: "range",
       });
     }
-    const results = [];
-    for (let index = 0; index < args.paths.length; index += 1) {
-      const path = nonemptyString(args.paths[index], `paths[${index}]`);
-      try {
-        const translated = this.#fileReadArguments({ path, offset: 0, length: this.maxReadLines });
-        const response = await this.#invokeNative({
-          sessionId,
-          requestId: `${requestId}:file:${index}`,
-          tool: "file.read",
-          arguments: translated.native,
-          page: { limit: DEFAULT_NATIVE_LIMITS.maxPageSize },
-          signal,
-        });
-        results.push({
-          path,
-          ok: true,
-          data: this.#projectRead(response.data, translated),
-          error: null,
-        });
-      } catch (error) {
-        if (error instanceof NativeStatusSignal) {
-          results.push({
-            path,
-            ok: false,
-            data: null,
-            error: {
-              code: "NATIVE_REQUEST_INCOMPLETE",
-              category: "native_status",
-              message: `Native request is ${error.response?.status ?? "incomplete"}.`,
-              retryable: true,
-              details: { status: error.response?.status ?? null },
-            },
-          });
-          continue;
-        }
-        const normalized = normalizeDesktopCommanderError(error, { tool: "read_file" });
-        results.push({
-          path,
-          ok: false,
-          data: null,
-          error: {
-            code: normalized.code,
-            category: normalized.category,
-            message: normalized.message,
-            retryable: normalized.retryable,
-            details: clone(normalized.details),
-          },
+    const paths = args.paths.map((path, index) => nonemptyString(path, `paths[${index}]`));
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: "file.read_many",
+      arguments: { paths },
+      signal,
+    });
+    const rawResults = Array.isArray(response.data?.results)
+      ? response.data.results
+      : Array.isArray(response.data?.files)
+        ? response.data.files
+        : null;
+    if (!rawResults || rawResults.length !== paths.length) {
+      throw new DcCompatibilityError("Native fs.read_many returned an invalid batch result cardinality.", {
+        code: "NATIVE_RESULT_INVALID",
+        category: "native_result",
+        details: {
+          expected_count: paths.length,
+          actual_count: rawResults?.length ?? null,
+        },
+      });
+    }
+
+    const results = rawResults.map((item, index) => {
+      const path = paths[index];
+      if (item?.path !== undefined && item.path !== path) {
+        throw new DcCompatibilityError("Native fs.read_many changed deterministic batch ordering.", {
+          code: "NATIVE_RESULT_INVALID",
+          category: "native_result",
+          details: { index, expected_path: path, actual_path: item.path },
         });
       }
-    }
+      const ok = item?.ok !== false && !item?.error;
+      if (ok) {
+        const data = item?.data && typeof item.data === "object"
+          ? clone(item.data)
+          : {
+            path,
+            content: typeof item?.content === "string"
+              ? item.content
+              : typeof item?.text === "string"
+                ? item.text
+                : "",
+            ...(item?.returned_bytes === undefined ? {} : { returned_bytes: item.returned_bytes }),
+          };
+        return { path, ok: true, data, error: null };
+      }
+      const normalized = normalizeDesktopCommanderError(item?.error ?? item, { tool: "read_file" });
+      return {
+        path,
+        ok: false,
+        data: null,
+        error: {
+          code: normalized.code,
+          category: normalized.category,
+          message: normalized.message,
+          retryable: normalized.retryable,
+          details: clone(normalized.details),
+        },
+      };
+    });
     return {
       results,
       count: results.length,
@@ -526,7 +1136,7 @@ export class DesktopCommanderCompatibilitySurface {
   }
 
   async #startProcess(sessionId, requestId, args, signal = null) {
-    await this.#requireCapabilities("start_process", ["process.start"]);
+    const { variant } = await this.#selectVariant("start_process");
     const command = nonemptyString(args.command, "command");
     if (command.length > MAX_COMMAND_CHARS) {
       throw new DcCompatibilityError("command exceeds compatibility character bound.", {
@@ -534,26 +1144,39 @@ export class DesktopCommanderCompatibilitySurface {
         category: "range",
       });
     }
-    const response = await this.#invokeNative({
-      sessionId,
-      requestId,
-      tool: "process.start",
-      arguments: {
+
+    const argv = commandToArgv(command, args.shell);
+    let tool;
+    let nativeArgs;
+    let kind;
+    if (variant.id === "pc_core_interactive_session") {
+      tool = "shell.session.start";
+      nativeArgs = { argv, output_limit_bytes: this.maxTextBytes };
+      kind = "session";
+    } else if (variant.id === "pc_core_process") {
+      tool = "process.start";
+      nativeArgs = { argv, output_limit_bytes: this.maxTextBytes };
+      kind = "process_pc_core";
+    } else {
+      tool = "process.start";
+      nativeArgs = {
         command,
         ...(args.timeout_ms === undefined ? {} : {
           timeout_ms: integer(args.timeout_ms, "timeout_ms", { minimum: 0, maximum: 600000 }),
         }),
         ...(args.shell === undefined ? {} : { shell: nonemptyString(args.shell, "shell") }),
-      },
-      signal,
-    });
+      };
+      kind = "legacy_process";
+    }
+
+    const response = await this.#invokeNative({ sessionId, requestId, tool, arguments: nativeArgs, signal });
     const handle = extractNativeHandle(response.data);
     const pid = response.data?.pid;
     if (!handle || !Number.isInteger(pid) || pid < 1) {
-      throw new DcCompatibilityError("Native process.start must return both process_handle and numeric pid.", {
+      throw new DcCompatibilityError("Native start action must return both a durable handle and numeric pid.", {
         code: "PROCESS_ERROR",
         category: "process",
-        details: { handle_present: Boolean(handle), pid: pid ?? null },
+        details: { handle_present: Boolean(handle), pid: pid ?? null, variant: variant.id },
       });
     }
     const existing = this.#process(sessionId, pid);
@@ -561,6 +1184,7 @@ export class DesktopCommanderCompatibilitySurface {
       sessionId,
       pid,
       handle,
+      kind,
       status: response.data?.running === false ? "finished" : "running",
       running: response.data?.running !== false,
       returncode: response.data?.returncode ?? null,
@@ -576,7 +1200,9 @@ export class DesktopCommanderCompatibilitySurface {
       status: record.status,
       running: record.running,
       process_handle: handle,
-      native: clone(response.data),
+      native_variant: variant.id,
+      interactive: kind === "session" || variant.id === "legacy_facade",
+      native: sanitize(response.data ?? {}),
     };
   }
 
@@ -590,7 +1216,6 @@ export class DesktopCommanderCompatibilitySurface {
   }
 
   async #readProcessOutput(sessionId, requestId, args, signal = null) {
-    await this.#requireCapabilities("read_process_output", ["process.read"]);
     const pid = integer(args.pid, "pid", { minimum: 1 });
     const record = this.#requireProcess(sessionId, pid);
     const offset = integer(args.offset, "offset", { fallback: 0 });
@@ -604,25 +1229,61 @@ export class DesktopCommanderCompatibilitySurface {
       minimum: 0,
       maximum: 10000,
     });
-    const nativeArgs = {
-      handle: record.handle,
-      offset,
-      length,
-      timeout_ms: timeout,
-    };
-    const page = {
-      limit: Math.max(1, Math.min(length, DEFAULT_NATIVE_LIMITS.maxPageSize)),
-      ...(offset === 0 && record.lastCursor ? { cursor: record.lastCursor } : {}),
-    };
-    const response = await this.#invokeNative({
-      sessionId,
-      requestId,
-      tool: "process.read",
-      arguments: nativeArgs,
-      page,
-      signal,
-    });
-    if (offset === 0) record.lastCursor = response.stream?.next_cursor ?? null;
+
+    let response;
+    let nativeVariant;
+    if (record.kind === "session") {
+      await this.#requireCapabilities("read_process_output", ["shell.session.read"]);
+      if (offset !== 0) this.#unsupportedMode("read_process_output", "PC Core shell-session output supports durable byte cursors for repeated reads; absolute/tail line offsets are not losslessly translatable.", { offset });
+      response = await this.#invokeNative({
+        sessionId,
+        requestId,
+        tool: "shell.session.read",
+        arguments: {
+          session_id: record.handle,
+          ...(record.lastCursor ? { cursor: record.lastCursor } : {}),
+          max_bytes: Math.min(this.maxTextBytes, Math.max(1024, length * 4096)),
+          wait_ms: Math.min(timeout, 2000),
+        },
+        signal,
+      });
+      record.lastCursor = response.data?.cursor ?? null;
+      nativeVariant = "pc_core_session";
+    } else if (record.kind === "process_pc_core") {
+      await this.#requireCapabilities("read_process_output", ["process.read_output"]);
+      if (offset !== 0) this.#unsupportedMode("read_process_output", "PC Core process output supports durable byte cursors for repeated reads; absolute/tail line offsets are not losslessly translatable.", { offset });
+      response = await this.#invokeNative({
+        sessionId,
+        requestId,
+        tool: "process.read_output",
+        arguments: {
+          handle_id: record.handle,
+          ...(record.lastCursor ? { cursor: record.lastCursor } : {}),
+          max_bytes: Math.min(this.maxTextBytes, Math.max(1024, length * 4096)),
+          wait_ms: Math.min(timeout, 2000),
+        },
+        signal,
+      });
+      record.lastCursor = response.data?.cursor ?? null;
+      nativeVariant = "pc_core_process";
+    } else {
+      await this.#requireCapabilities("read_process_output", ["process.read"]);
+      const page = {
+        limit: Math.max(1, Math.min(length, DEFAULT_NATIVE_LIMITS.maxPageSize)),
+        ...(offset === 0 && record.lastCursor ? { cursor: record.lastCursor } : {}),
+      };
+      response = await this.#invokeNative({
+        sessionId,
+        requestId,
+        tool: "process.read",
+        arguments: { handle: record.handle, offset, length, timeout_ms: timeout },
+        page,
+        signal,
+      });
+      if (offset === 0) record.lastCursor = response.stream?.next_cursor ?? null;
+      nativeVariant = "legacy_facade";
+    }
+
     if (typeof response.data?.running === "boolean") record.running = response.data.running;
     if (response.data?.returncode !== undefined) record.returncode = response.data.returncode;
     if (!record.running) record.status = "finished";
@@ -639,37 +1300,67 @@ export class DesktopCommanderCompatibilitySurface {
       truncated: response.data?.truncated === true ||
         response.data?.stdout_truncated_before_cursor === true ||
         response.data?.stderr_truncated_before_cursor === true,
+      cursor: nativeVariant === "legacy_facade" ? record.lastCursor : clone(response.data?.cursor ?? null),
+      native_variant: nativeVariant,
     };
   }
 
-  async #listSessions(sessionId, requestId, signal = null) {
-    await this.#requireCapabilities("list_sessions", ["process.list"]);
-    const response = await this.#invokeNative({
-      sessionId,
-      requestId,
-      tool: "process.list",
-      arguments: {},
-      page: { limit: DEFAULT_NATIVE_LIMITS.maxPageSize },
-      signal,
-    });
-    const nativeProcesses = Array.isArray(response.data?.processes)
-      ? response.data.processes
-      : Array.isArray(response.data?.items)
-        ? response.data.items
-        : [];
-    const livePids = new Set(
+  async #listSessions(sessionId, requestId, _args = {}, signal = null) {
+    const { variant } = await this.#selectVariant("list_sessions");
+    let response;
+    let nativeProcesses = [];
+    if (variant.id === "pc_core") {
+      response = await this.#invokeNative({
+        sessionId,
+        requestId,
+        tool: "process.managed.list",
+        arguments: { include_stale: true, offset: 0, max_results: DEFAULT_NATIVE_LIMITS.maxPageSize },
+        signal,
+      });
+      nativeProcesses = asArray(response.data, ["handles", "items", "processes"]);
+    } else {
+      response = await this.#invokeNative({
+        sessionId,
+        requestId,
+        tool: "process.list",
+        arguments: {},
+        page: { limit: DEFAULT_NATIVE_LIMITS.maxPageSize },
+        signal,
+      });
+      nativeProcesses = asArray(response.data, ["processes", "items", "handles"]);
+    }
+
+    const byHandle = new Map(
       nativeProcesses
-        .map((item) => item?.pid)
-        .filter((pid) => Number.isInteger(pid) && pid > 0),
+        .filter((item) => typeof item?.handle_id === "string")
+        .map((item) => [item.handle_id, item]),
+    );
+    const byPid = new Map(
+      nativeProcesses
+        .filter((item) => Number.isInteger(item?.pid) && item.pid > 0)
+        .map((item) => [item.pid, item]),
     );
     const sessions = this.state.processes
       .filter((item) => item.sessionId === sessionId)
       .map((item) => {
-        if (item.status === "running" && nativeProcesses.length && !livePids.has(item.pid)) {
+        const native = byHandle.get(item.handle) ?? byPid.get(item.pid) ?? null;
+        if (native) {
+          const nativeStatus = native.status;
+          if (typeof native.running === "boolean") item.running = native.running;
+          else if (typeof nativeStatus === "string") {
+            item.running = ["running", "blocked", "waiting"].includes(nativeStatus);
+          }
+          if (native.returncode !== undefined) item.returncode = native.returncode;
+          if (!item.running && item.status === "running") item.status = nativeStatus ?? "finished";
+          if (nativeStatus === "stale_after_restart") {
+            item.running = false;
+            item.status = "stale_after_restart";
+          }
+        } else if (nativeProcesses.length && item.status === "running") {
           item.running = false;
           item.status = "finished";
-          item.updatedAtMs = this.clock();
         }
+        item.updatedAtMs = this.clock();
         return {
           pid: item.pid,
           running: item.running,
@@ -680,20 +1371,28 @@ export class DesktopCommanderCompatibilitySurface {
       })
       .sort((a, b) => a.pid - b.pid);
     this.#persist();
-    return { sessions, count: sessions.length };
+    return { sessions, count: sessions.length, native_variant: variant.id };
   }
 
   async #forceTerminate(sessionId, requestId, args, signal = null) {
-    await this.#requireCapabilities("force_terminate", ["process.terminate"]);
     const pid = integer(args.pid, "pid", { minimum: 1 });
     const record = this.#requireProcess(sessionId, pid);
-    const response = await this.#invokeNative({
-      sessionId,
-      requestId,
-      tool: "process.terminate",
-      arguments: { handle: record.handle },
-      signal,
-    });
+    let tool;
+    let nativeArgs;
+    if (record.kind === "session") {
+      await this.#requireCapabilities("force_terminate", ["shell.session.terminate"]);
+      tool = "shell.session.terminate";
+      nativeArgs = { session_id: record.handle, grace_ms: 0 };
+    } else if (record.kind === "process_pc_core") {
+      await this.#requireCapabilities("force_terminate", ["process.terminate"]);
+      tool = "process.terminate";
+      nativeArgs = { handle_id: record.handle, grace_ms: 0 };
+    } else {
+      await this.#requireCapabilities("force_terminate", ["process.terminate"]);
+      tool = "process.terminate";
+      nativeArgs = { handle: record.handle };
+    }
+    const response = await this.#invokeNative({ sessionId, requestId, tool, arguments: nativeArgs, signal });
     record.running = false;
     record.status = "terminated";
     record.returncode = response.data?.returncode ?? record.returncode;
@@ -704,6 +1403,120 @@ export class DesktopCommanderCompatibilitySurface {
       terminated: true,
       already_exited: response.data?.already_exited === true,
       returncode: record.returncode,
+      native_variant: record.kind,
+    };
+  }
+
+  async #interactWithProcess(sessionId, requestId, args, signal = null) {
+    const pid = integer(args.pid, "pid", { minimum: 1 });
+    const record = this.#requireProcess(sessionId, pid);
+    if (typeof args.input !== "string") {
+      throw new DcCompatibilityError("input must be a string.", {
+        code: "INVALID_ARGUMENT",
+        category: "argument",
+      });
+    }
+    let response;
+    let nativeVariant;
+    if (record.kind === "session") {
+      await this.#requireCapabilities("interact_with_process", ["shell.session.write_stdin"]);
+      response = await this.#invokeNative({
+        sessionId,
+        requestId,
+        tool: "shell.session.write_stdin",
+        arguments: { session_id: record.handle, text: args.input, append_newline: false, sensitive: false },
+        signal,
+      });
+      nativeVariant = "pc_core_session";
+    } else if (record.kind === "legacy_process") {
+      await this.#requireCapabilities("interact_with_process", ["process.interact"]);
+      response = await this.#invokeNative({
+        sessionId,
+        requestId,
+        tool: "process.interact",
+        arguments: {
+          handle: record.handle,
+          input: args.input,
+          ...(args.timeout_ms === undefined ? {} : { timeout_ms: integer(args.timeout_ms, "timeout_ms", { minimum: 0, maximum: 10000 }) }),
+        },
+        signal,
+      });
+      nativeVariant = "legacy_facade";
+    } else {
+      throw new DcCompatibilityError("This managed process was not started with an interactive stdin capability.", {
+        code: "CAPABILITY_UNAVAILABLE",
+        category: "capability",
+        details: { pid, native_kind: record.kind },
+      });
+    }
+    return {
+      pid,
+      native: sanitize(response.data ?? {}),
+      native_variant: nativeVariant,
+      wait_for_prompt_supported: false,
+      verbose_timing_supported: false,
+    };
+  }
+
+  async #listProcesses(sessionId, requestId, _args = {}, signal = null) {
+    const { variant } = await this.#selectVariant("list_processes");
+    const nativeTool = variant.native_tools[0];
+    const response = await this.#invokeNative({
+      sessionId,
+      requestId,
+      tool: nativeTool,
+      arguments: nativeTool === "process.list"
+        ? { offset: 0, max_results: DEFAULT_NATIVE_LIMITS.maxPageSize }
+        : {},
+      ...(nativeTool === "system.process.list" ? { page: { limit: DEFAULT_NATIVE_LIMITS.maxPageSize } } : {}),
+      signal,
+    });
+    const processes = asArray(response.data, ["processes", "items"]);
+    return {
+      processes: sanitize(processes),
+      count: processes.length,
+      truncated: response.data?.has_more === true ||
+        response.stream?.next_cursor !== null && response.stream?.next_cursor !== undefined,
+      native_variant: variant.id,
+    };
+  }
+
+  async #killProcess(sessionId, requestId, args, signal = null) {
+    const { variant } = await this.#selectVariant("kill_process");
+    const pid = integer(args.pid, "pid", { minimum: 1 });
+    const listingTool = variant.native_tools[0];
+    const listed = await this.#invokeNative({
+      sessionId,
+      requestId: `${requestId}:lookup`,
+      tool: listingTool,
+      arguments: listingTool === "process.list"
+        ? { pid, offset: 0, max_results: 1 }
+        : { pid },
+      ...(listingTool === "system.process.list" ? { page: { limit: 1 } } : {}),
+      signal,
+    });
+    const processes = asArray(listed.data, ["processes", "items"]);
+    const target = processes.find((item) => item?.pid === pid) ?? processes[0] ?? null;
+    const expectedName = target?.name ?? target?.executable ?? target?.command ?? null;
+    if (!target || typeof expectedName !== "string" || !expectedName) {
+      throw new DcCompatibilityError("Process identity could not be resolved before kill.", {
+        code: "PROCESS_NOT_FOUND",
+        category: "process",
+        details: { pid },
+      });
+    }
+    const killed = await this.#invokeNative({
+      sessionId,
+      requestId: `${requestId}:kill`,
+      tool: "system.process.kill",
+      arguments: { pid, expected_name: expectedName },
+      signal,
+    });
+    return {
+      pid,
+      expected_name: expectedName,
+      terminated: killed.data?.terminated !== false,
+      native: sanitize(killed.data ?? {}),
     };
   }
 
@@ -738,17 +1551,59 @@ export class DesktopCommanderCompatibilitySurface {
 
       let data;
       switch (toolName) {
+        case "list_devices":
+          data = await this.#listDevices(sessionId, requestId, signal);
+          break;
+        case "ping":
+          data = await this.#ping(sessionId, requestId, args, signal);
+          break;
+        case "shutdown":
+          data = await this.#shutdown(sessionId, requestId, args, signal);
+          break;
+        case "get_config":
+          data = await this.#getConfig(sessionId, requestId, args, signal);
+          break;
+        case "set_config_value":
+          data = await this.#setConfigValue(sessionId, requestId, args, signal);
+          break;
         case "read_file":
           data = await this.#readFile(sessionId, requestId, args, signal);
           break;
         case "read_multiple_files":
           data = await this.#readMultipleFiles(sessionId, requestId, args, signal);
           break;
-        case "edit_block":
-          data = await this.#editBlock(sessionId, requestId, args, signal);
-          break;
         case "write_file":
           data = await this.#writeFile(sessionId, requestId, args, signal);
+          break;
+        case "write_pdf":
+          data = await this.#writePdf(sessionId, requestId, args, signal);
+          break;
+        case "create_directory":
+          data = await this.#createDirectory(sessionId, requestId, args, signal);
+          break;
+        case "list_directory":
+          data = await this.#listDirectory(sessionId, requestId, args, signal);
+          break;
+        case "move_file":
+          data = await this.#moveFile(sessionId, requestId, args, signal);
+          break;
+        case "start_search":
+          data = await this.#startSearch(sessionId, requestId, args, signal);
+          break;
+        case "get_more_search_results":
+          data = await this.#getMoreSearchResults(sessionId, requestId, args, signal);
+          break;
+        case "stop_search":
+          data = await this.#stopSearch(sessionId, requestId, args, signal);
+          break;
+        case "list_searches":
+          data = await this.#listSearches(sessionId, requestId, args, signal);
+          break;
+        case "get_file_info":
+          data = await this.#getFileInfo(sessionId, requestId, args, signal);
+          break;
+        case "edit_block":
+          data = await this.#editBlock(sessionId, requestId, args, signal);
           break;
         case "start_process":
           data = await this.#startProcess(sessionId, requestId, args, signal);
@@ -756,11 +1611,29 @@ export class DesktopCommanderCompatibilitySurface {
         case "read_process_output":
           data = await this.#readProcessOutput(sessionId, requestId, args, signal);
           break;
-        case "list_sessions":
-          data = await this.#listSessions(sessionId, requestId, signal);
+        case "interact_with_process":
+          data = await this.#interactWithProcess(sessionId, requestId, args, signal);
           break;
         case "force_terminate":
           data = await this.#forceTerminate(sessionId, requestId, args, signal);
+          break;
+        case "list_sessions":
+          data = await this.#listSessions(sessionId, requestId, args, signal);
+          break;
+        case "list_processes":
+          data = await this.#listProcesses(sessionId, requestId, args, signal);
+          break;
+        case "kill_process":
+          data = await this.#killProcess(sessionId, requestId, args, signal);
+          break;
+        case "who_am_i":
+          data = await this.#whoAmI(sessionId, requestId, signal);
+          break;
+        case "get_usage_stats":
+          data = await this.#getUsageStats(sessionId, requestId, args, signal);
+          break;
+        case "get_recent_tool_calls":
+          data = await this.#getRecentToolCalls(sessionId, requestId, args, signal);
           break;
         default:
           throw new DcCompatibilityError(`Tool '${toolName}' has no compatibility translator.`, {

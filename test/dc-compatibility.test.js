@@ -7,6 +7,8 @@ import {
   DC_COMPATIBILITY_REGISTRY_V1,
   DC_COMPATIBILITY_REGISTRY_DIGEST,
   DC_COMPATIBILITY_REGISTRY_LIST,
+  DC_VENDOR_NON_EQUIVALENTS,
+  DESKTOP_COMMANDER_REFERENCE_VERSION,
   DesktopCommanderCompatibilitySurface,
   JsonDcCompatibilityStore,
   desktopCommanderCompatibilityManifestV1,
@@ -14,14 +16,14 @@ import {
 } from "../src/index.js";
 
 const REQUIRED_NAMES = [
-  "edit_block",
-  "read_file",
-  "read_multiple_files",
-  "write_file",
-  "start_process",
-  "read_process_output",
-  "list_sessions",
-  "force_terminate",
+  "list_devices", "ping", "shutdown", "get_config", "set_config_value",
+  "read_file", "read_multiple_files", "write_file", "write_pdf",
+  "create_directory", "list_directory", "move_file",
+  "start_search", "get_more_search_results", "stop_search", "list_searches",
+  "get_file_info", "edit_block", "start_process", "read_process_output",
+  "interact_with_process", "force_terminate", "list_sessions",
+  "list_processes", "kill_process", "who_am_i", "get_usage_stats",
+  "get_recent_tool_calls",
 ].sort();
 
 function completed(data, stream = null) {
@@ -81,6 +83,11 @@ function request(tool, args = {}, requestId = "req-1", sessionId = "session-1") 
 
 test("compatibility registry is versioned, exact, and MCP-host consumable without MCP framing", async () => {
   assert.equal(DC_COMPATIBILITY_REGISTRY_V1, "pc.desktop_commander.compat_registry.v1");
+  assert.equal(DESKTOP_COMMANDER_REFERENCE_VERSION, "0.2.51");
+  assert.deepEqual(
+    DC_VENDOR_NON_EQUIVALENTS.map((entry) => entry.name).sort(),
+    ["get_prompts", "give_feedback_to_desktop_commander"].sort(),
+  );
   assert.match(DC_COMPATIBILITY_REGISTRY_DIGEST, /^[0-9a-f]{64}$/);
   assert.deepEqual(DC_COMPATIBILITY_REGISTRY_LIST.map((tool) => tool.name).sort(), REQUIRED_NAMES);
   for (const tool of DC_COMPATIBILITY_REGISTRY_LIST) {
@@ -97,7 +104,62 @@ test("compatibility registry is versioned, exact, and MCP-host consumable withou
   });
   const processRead = manifest.tools.find((tool) => tool.name === "read_process_output");
   assert.equal(processRead.available, false);
-  assert.deepEqual(processRead.capability_variants[0].missing_executor_actions, ["process.read"]);
+  const processReadVariant = processRead.capability_variants.find((variant) => variant.id === "pc_core_process");
+  assert.deepEqual(processReadVariant.missing_executor_actions, ["process.read_output"]);
+});
+
+
+test("future mutable/PDF/batch/search capabilities become available from the live manifest without host-side fallback", async () => {
+  const manifest = desktopCommanderCompatibilityManifestV1({
+    nativeManifest: await new FakeFacade({
+      actions: [
+        "device.shutdown", "config.set", "fs.read_many", "pdf.write",
+        "search.start", "search.read", "search.list", "search.stop",
+        "identity.get", "metrics.get", "audit.history",
+      ],
+    }).capabilities(),
+  });
+  const status = Object.fromEntries(manifest.tools.map((tool) => [tool.name, tool.available]));
+  for (const name of [
+    "shutdown", "set_config_value", "read_multiple_files", "write_pdf",
+    "start_search", "get_more_search_results", "list_searches", "stop_search",
+    "who_am_i", "get_usage_stats", "get_recent_tool_calls",
+  ]) {
+    assert.equal(status[name], true, name);
+  }
+});
+
+test("current green PC Core capability set exposes every required compatibility tool except PDF", async () => {
+  const currentActions = [
+    "device.info", "health.get", "config.get", "config.set", "device.shutdown",
+    "fs.read_text", "fs.read_many", "fs.write_text", "fs.append_text", "fs.mkdir", "fs.list", "fs.move", "fs.stat", "fs.hash", "fs.edit_text",
+    "search.start", "search.read", "search.list", "search.stop",
+    "shell.session.start", "shell.session.read", "shell.session.write_stdin", "shell.session.terminate",
+    "process.managed.list", "process.list", "system.process.kill",
+    "identity.get", "metrics.get", "audit.history",
+  ];
+  const facade = new FakeFacade({ actions: currentActions });
+  const manifest = desktopCommanderCompatibilityManifestV1({ nativeManifest: await facade.capabilities() });
+  const status = Object.fromEntries(manifest.tools.map((tool) => [tool.name, tool]));
+  for (const name of REQUIRED_NAMES.filter((name) => name !== "write_pdf")) {
+    assert.equal(status[name].available, true, name);
+    assert.equal(status[name].availability_reason, "available", name);
+  }
+  assert.equal(status.write_pdf.available, false);
+  assert.equal(status.write_pdf.availability_reason, "required_native_capability_unavailable");
+  assert.deepEqual(status.write_pdf.capability_variants[0].missing_executor_actions, ["pdf.write"]);
+});
+
+test("write_pdf is explicit capability unavailable and never dispatches without pdf.write", async () => {
+  const facade = new FakeFacade({ actions: ["fs.write_text"] });
+  const surface = new DesktopCommanderCompatibilitySurface({ facade });
+  const result = await surface.invoke(request("write_pdf", {
+    path: "C:\\tmp\\out.pdf",
+    content: "# document",
+  }, "pdf-gap"));
+  assert.equal(result.status, "error");
+  assert.equal(result.error.code, "CAPABILITY_UNAVAILABLE");
+  assert.equal(facade.calls.length, 0);
 });
 
 test("read_file translates positive offsets to bounded native line ranges", async () => {
@@ -111,7 +173,7 @@ test("read_file translates positive offsets to bounded native line ranges", asyn
         end_line: 8,
         max_bytes: 256 * 1024,
       });
-      assert.deepEqual(envelope.page, { limit: 3 });
+      assert.equal(envelope.page, undefined);
       return completed({
         path: envelope.arguments.path,
         text: "six\nseven\neight\n",
@@ -160,34 +222,43 @@ test("read_file negative offset preserves Desktop Commander tail semantics and i
   assert.equal(result.data.content, "tail");
 });
 
-test("read_multiple_files is a deterministic batch with per-file success and error", async () => {
+test("read_multiple_files uses one true-batch native action with deterministic per-file records", async () => {
+  const paths = ["C:\tmp\a.txt", "C:\tmp\missing.txt", "C:\tmp\b.txt"];
   const facade = new FakeFacade({
-    actions: ["fs.read_text"],
+    actions: ["fs.read_many"],
     handler: async (envelope) => {
-      const path = envelope.arguments.path;
-      if (path.endsWith("missing.txt")) return failed("ENOENT", "No such file", "filesystem");
-      return completed({ path, text: path.endsWith("a.txt") ? "A" : "B", returned_bytes: 1 });
+      assert.equal(envelope.tool, "file.read_many");
+      assert.deepEqual(envelope.arguments, { paths });
+      return completed({
+        results: [
+          { path: paths[0], ok: true, text: "A", encoding: "utf-8", returned_bytes: 1, file_bytes: 1, truncated: false, sha256: "a".repeat(64) },
+          { path: paths[1], ok: false, error: { code: "NOT_FOUND" } },
+          { path: paths[2], ok: true, text: "B", encoding: "utf-8", returned_bytes: 1, file_bytes: 1, truncated: false, sha256: "b".repeat(64) },
+        ],
+      });
     },
   });
   const surface = new DesktopCommanderCompatibilitySurface({ facade });
-  const result = await surface.invoke(request("read_multiple_files", {
-    paths: ["C:\\tmp\\a.txt", "C:\\tmp\\missing.txt", "C:\\tmp\\b.txt"],
-  }, "batch-7"));
+  const result = await surface.invoke(request("read_multiple_files", { paths }, "batch-7"));
   assert.equal(result.status, "completed");
   assert.equal(result.data.count, 3);
   assert.equal(result.data.succeeded, 2);
   assert.equal(result.data.failed, 1);
-  assert.deepEqual(result.data.results.map((item) => item.path), [
-    "C:\\tmp\\a.txt",
-    "C:\\tmp\\missing.txt",
-    "C:\\tmp\\b.txt",
-  ]);
+  assert.deepEqual(result.data.results.map((item) => item.path), paths);
   assert.equal(result.data.results[1].error.code, "FILE_NOT_FOUND");
-  assert.deepEqual(facade.calls.map((call) => call.request_id), [
-    "batch-7:file:0",
-    "batch-7:file:1",
-    "batch-7:file:2",
-  ]);
+  assert.equal(facade.calls.length, 1);
+  assert.equal(facade.calls[0].request_id, "batch-7");
+});
+
+test("read_multiple_files fails closed without fs.read_many and never composes serial reads", async () => {
+  const facade = new FakeFacade({ actions: ["fs.read_text"] });
+  const surface = new DesktopCommanderCompatibilitySurface({ facade });
+  const result = await surface.invoke(request("read_multiple_files", {
+    paths: ["C:\tmp\a.txt", "C:\tmp\b.txt"],
+  }, "batch-unavailable"));
+  assert.equal(result.status, "error");
+  assert.equal(result.error.code, "CAPABILITY_UNAVAILABLE");
+  assert.equal(facade.calls.length, 0);
 });
 
 test("edit_block hashes first then performs one atomic exact replacement with count precondition", async () => {
@@ -383,6 +454,75 @@ test("process lifecycle survives compatibility restart, repeated reads, finish, 
   assert.equal(stale.status, "error");
   assert.equal(stale.error.code, "STALE_HANDLE");
   assert.equal(facade.calls.length, callsBeforeStale);
+});
+
+test("current PC Core process/session and sanitized meta contracts are translated exactly", async () => {
+  let reads = 0;
+  const facade = new FakeFacade({
+    actions: [
+      "shell.session.start", "shell.session.read", "shell.session.write_stdin", "shell.session.terminate",
+      "process.managed.list", "metrics.get", "audit.history", "identity.get",
+    ],
+    handler: async (envelope) => {
+      if (envelope.tool === "shell.session.start") {
+        assert.deepEqual(envelope.arguments.argv, ["python", "-i"]);
+        return completed({ handle_id: "session-h-1", session_id: "session-h-1", pid: 7331, kind: "session" });
+      }
+      if (envelope.tool === "shell.session.read") {
+        reads += 1;
+        if (reads === 2) assert.deepEqual(envelope.arguments.cursor, { version: "cursor-v1", handle_id: "session-h-1", stdout_offset: 3, stderr_offset: 0 });
+        return completed({
+          stdout: reads === 1 ? ">>> " : "ok\n>>> ",
+          stderr: "",
+          cursor: { version: "cursor-v1", handle_id: "session-h-1", stdout_offset: reads * 3, stderr_offset: 0 },
+          running: true,
+          returncode: null,
+        });
+      }
+      if (envelope.tool === "shell.session.write_stdin") {
+        assert.deepEqual(envelope.arguments, {
+          session_id: "session-h-1", text: "print('ok')", append_newline: false, sensitive: false,
+        });
+        return completed({ session_id: "session-h-1", written_bytes: 11 });
+      }
+      if (envelope.tool === "process.managed.list") return completed({ handles: [{ handle_id: "session-h-1", pid: 7331, kind: "session", running: true }] });
+      if (envelope.tool === "shell.session.terminate") return completed({ handle_id: "session-h-1", already_exited: false, returncode: 0 });
+      if (envelope.tool === "metrics.get") return completed({ available: true, sanitized: true, actions: { "shell.session.start": 1 }, outcomes: { succeeded: 1 } });
+      if (envelope.tool === "audit.recent") return completed({ contract_version: "pc_executor.audit_history.v1", sanitized: true, events: [{ action: "fs.read_text", phase: "completed", timestamp: "2026-09-28T00:00:00Z" }] });
+      if (envelope.tool === "identity.get") return completed({ controller: "pc_executor", device_id: "device-1", session_epoch: "epoch-1", transport: "native_remote" });
+      throw new Error(`unexpected native tool ${envelope.tool}`);
+    },
+  });
+  const surface = new DesktopCommanderCompatibilitySurface({ facade });
+  const started = await surface.invoke(request("start_process", { command: "python -i" }, "core-start"));
+  assert.equal(started.status, "completed");
+  assert.equal(started.data.native_variant, "pc_core_interactive_session");
+  assert.equal(started.data.pid, 7331);
+
+  const first = await surface.invoke(request("read_process_output", { pid: 7331, offset: 0, length: 20 }, "core-read-1"));
+  const second = await surface.invoke(request("read_process_output", { pid: 7331, offset: 0, length: 20 }, "core-read-2"));
+  assert.equal(first.data.output, ">>> ");
+  assert.equal(second.data.output, "ok\n>>> ");
+
+  const interacted = await surface.invoke(request("interact_with_process", { pid: 7331, input: "print('ok')" }, "core-input"));
+  assert.equal(interacted.status, "completed");
+  assert.equal(interacted.data.native_variant, "pc_core_session");
+
+  const sessions = await surface.invoke(request("list_sessions", {}, "core-list"));
+  assert.equal(sessions.data.sessions[0].pid, 7331);
+
+  const identity = await surface.invoke(request("who_am_i", {}, "core-id"));
+  assert.equal(identity.data.controller, "pc_executor");
+  const usage = await surface.invoke(request("get_usage_stats", {}, "core-metrics"));
+  assert.equal(usage.data.sanitized, true);
+  assert.equal(usage.data.connector_billing_available, false);
+  const recent = await surface.invoke(request("get_recent_tool_calls", { maxResults: 10, toolName: "fs.read_text" }, "core-audit"));
+  assert.equal(recent.data.calls.length, 1);
+  assert.equal(recent.data.calls[0].action, "fs.read_text");
+
+  const stopped = await surface.invoke(request("force_terminate", { pid: 7331 }, "core-stop"));
+  assert.equal(stopped.status, "completed");
+  assert.equal(stopped.data.returncode, 0);
 });
 
 test("normalized compatibility errors cover access, stale handle, range, replacement and process failures", () => {

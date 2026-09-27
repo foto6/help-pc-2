@@ -1,114 +1,77 @@
-# Desktop Commander Compatibility Surface v1
+# Desktop Commander 0.2.51 Compatibility Surface
 
 ## Scope
 
-This layer exposes the observed Desktop Commander names over the existing `pc.native.control.v1` facade. It does not execute filesystem or process side effects itself. The canonical MCP host registers this translation layer as real MCP tools while keeping translation and protocol hosting separate.
+The compatibility registry `pc.desktop_commander.compat_registry.v1` exposes the observed Desktop Commander 0.2.51 operation names over `pc.native.control.v1`. The Control/MCP process is translation and transport only: it does not implement filesystem, PDF, process, shell, UI, configuration, device-shutdown, identity, usage, or audit side effects.
 
-Registry contract: `pc.desktop_commander.compat_registry.v1`
+Every MCP compatibility tool advertises its registry digest, native registry digest, Executor capability digest, selected capability variant, and current availability. A tool is callable only when the current Executor capability manifest satisfies one of its registered variants.
 
-Response contract: `pc.desktop_commander.compat_response.v1`
+Required compatibility names:
 
-Mandatory names:
-- `edit_block`
-- `read_file`
-- `read_multiple_files`
-- `write_file`
-- `start_process`
-- `read_process_output`
-- `list_sessions`
-- `force_terminate`
+- `list_devices`, `ping`, `shutdown`, `get_config`, `set_config_value`
+- `read_file`, `read_multiple_files`, `write_file`, `write_pdf`, `create_directory`, `list_directory`, `move_file`, `get_file_info`, `edit_block`
+- `start_search`, `get_more_search_results`, `stop_search`, `list_searches`
+- `start_process`, `read_process_output`, `interact_with_process`, `force_terminate`, `list_sessions`, `list_processes`, `kill_process`
+- `who_am_i`, `get_usage_stats`, `get_recent_tool_calls`
 
-The registry in `src/dc-compatibility-registry.js` is the machine-readable source for names, input schemas, native tool mappings, semantics, and capability variants. `src/mcp-host.js` consumes it alongside the native registry without changing the compatibility translator.
+Desktop Commander vendor workflows `get_prompts` and `give_feedback_to_desktop_commander` are explicit non-equivalents. They are documented in the registry metadata and intentionally are not registered as native MCP tools because they are vendor onboarding/feedback workflows, not PC Executor capabilities.
 
-## MCP exposure
+## Capability-gated availability
 
-The standards-compliant MCP host exposes both registries at once:
+The current green PC Core full-parity producer (`agent/pc-native-full-dc-parity` at `de9797eaf0fd646291ad7ed06af8447c281ddcac`) publishes the capability set required for every mandatory compatibility name except PDF output. Availability is still resolved dynamically from the live Executor manifest rather than hard-coded.
 
-- native tools keep their dotted `pc.native.control.v1` names such as `file.read` and `process.start`;
-- Desktop Commander compatibility tools keep the exact observed names listed above;
-- the two sets do not collide;
-- every compatibility tool carries `pc.desktop_commander.compat_registry.v1`, its registry digest, the native registry digest, and the Executor capability digest in `tools/list` metadata.
+Current capability mappings include:
 
-The MCP host accepts an optional stable `request_id` on compatibility calls. It removes that host-only field before translation and uses it as the facade correlation/idempotency key. SDK cancellation signals are forwarded through the compatibility translator to `NativeControlFacade.invoke()`.
+- `shutdown` -> `device.shutdown` (current authenticated device agent/session only; not OS power-off)
+- `set_config_value` -> `config.set` (Executor allowlist and atomic validation remain authoritative)
+- `read_multiple_files` -> `fs.read_many`
+- `who_am_i` -> `identity.get`
+- `get_usage_stats` -> `metrics.get`
+- `get_recent_tool_calls` -> `audit.history`
+- stateful search -> `search.start`, `search.read`, `search.list`, `search.stop`
 
-The configured MCP runtime persists compatibility process-handle metadata in `dc-compatibility.json` next to the existing facade/control state. Discovery probes remain read-only and do not claim desktop ownership.
+`write_pdf` remains explicitly unavailable because the current producer does not advertise `pdf.write`. The registry already contains the translation schema, so it will become available only when an Executor-bound `pdf.write` capability is actually advertised. There is no host-side PDF renderer.
 
-## Safety and execution boundary
+There is no composed serial fallback for `read_multiple_files` in the canonical full-DC surface. True batch ordering and independent per-file records require `fs.read_many`. Identity, usage, and audit data are not synthesized by the host.
 
-Every filesystem/process operation is dispatched through `NativeControlFacade.invoke()`. The compatibility layer does not call the filesystem, spawn/kill processes, or emulate side effects.
+## Filesystem semantics
 
-Before dispatch, the layer checks the current native capability manifest. A required Executor action that is not advertised returns `CAPABILITY_UNAVAILABLE`; compatibility is never claimed by name alone.
+`read_file` preserves 0-based positive line offsets and negative tail offsets. Reads are bounded to 1000 lines and 256 KiB. URL, spreadsheet-range, office-document, and PDF-specific read modes fail closed unless an Executor-bound capability is added; they are not emulated by the MCP host.
 
-The native facade remains authoritative for:
-- session ownership and staleness;
-- request idempotency;
-- protected-path policy;
-- Executor preflight, execution-context binding, outcome journal and audit;
-- uncertain-outcome reconciliation and cancellation.
+`read_multiple_files` sends one true-batch native request. The returned list must match input cardinality and order. Every item carries independent success/error state.
 
-## File compatibility
+`edit_block` first obtains a native SHA-256 precondition and then issues one `file.edit` mutation with exact old/new text and replacement-count precondition. A mismatch never falls back to a whole-file write.
 
-### read_file
+`write_file` uses explicit rewrite/append actions. `create_directory`, `list_directory`, `move_file`, and `get_file_info` remain bounded facade translations. `get_file_info` adds a native hash only when `fs.hash` is advertised.
 
-Desktop Commander offsets are 0-based. Positive offsets become native 1-based `start_line` / inclusive `end_line` bounds. A negative offset is translated to `tail_lines`; its magnitude is the effective read length and the supplied `length` is ignored.
+## Stateful search semantics
 
-Reads are bounded to 1000 lines and 256 KiB per compatibility request.
+`start_search` maps to `search.start` and returns the durable PC Core `search_id` as Desktop Commander's `sessionId`. It supports files/content type, regex-by-default vs literal search, case behavior, hidden-file policy, context lines, max results, and timeout. Parameters not implemented by `pc_executor.search_session.v1` such as `filePattern` or `earlyTermination` return `CAPABILITY_UNAVAILABLE` instead of being silently ignored.
 
-### read_multiple_files
+`get_more_search_results` maps to `search.read`. Positive offsets are absolute result indexes; negative offsets tail and omit length. `list_searches` projects the retained search ID/type/pattern/status/runtime/result count. `stop_search` cancels the search via `search.stop`; final retained results remain owned by PC Core's retention lifecycle.
 
-The translator performs one deterministic native read request per input path using child request IDs `<request>:file:<index>`. The aggregate result preserves input order and carries independent success/error state for every path. One missing or denied file does not abort the remaining batch.
+## Process and system semantics
 
-### edit_block
+Compatibility-started processes persist only non-secret pid-to-native-handle metadata. On current PC Core, `start_process` prefers the interactive `shell.session.start/read/write_stdin/terminate` lifecycle so Desktop Commander stdin semantics remain available. Command text is parsed into bounded argv by the translator but is never executed by Control/MCP; PC Core performs executable allowlisting, preflight, and execution. If only managed-process capabilities are advertised, `process.start/read_output/terminate` is used instead. Older facade variants remain capability-gated fallbacks.
 
-`edit_block` performs no read/modify/write emulation. It first obtains a SHA-256 precondition using native `file.hash`, then issues exactly one native `file.edit` request with:
-- exact `old_text` / `new_text`;
-- `expected_replacements` (default 1);
-- the hash as `expected_current_hash`.
+Repeated `read_process_output` calls preserve the PC Core byte cursor. Unsupported absolute line offsets on byte-cursor variants fail closed rather than being approximated. `list_sessions` prefers `process.managed.list`; `interact_with_process` is available only for a compatibility-owned interactive session handle.
 
-The Executor therefore owns replacement counting and the atomic mutation. A replacement-count mismatch is normalized to `REPLACEMENT_CONFLICT`; no fallback write occurs.
+`list_processes` is a bounded native process listing. `kill_process` first resolves the target executable identity using a read-only native process listing, then requests `system.process.kill` with both pid and expected executable name. Existing destructive-action policy remains authoritative and may block the kill before provider dispatch.
 
-### write_file
+## Identity, usage, and audit
 
-`mode=rewrite` maps to native `file.write` / `fs.write_text`.
+`who_am_i`, `get_usage_stats`, and `get_recent_tool_calls` are not reconstructed from the Control/MCP host process. They become available only when the Executor publishes dedicated sanitized read-only actions. Returned objects are recursively stripped of secret/token/password/credential/auth-shaped fields before projection.
 
-`mode=append` maps to native `file.append` / `fs.append_text`.
+## Idempotency, cancellation, and protected paths
 
-Payloads are bounded to 256 KiB before dispatch. The required capability is checked for the selected mode, so a producer can support rewrite while append remains explicitly unavailable.
+Every compatibility call uses the MCP logical `request_id` as the facade correlation/idempotency key. Multi-step translations derive deterministic child IDs. Cancellation signals propagate through the translator into `NativeControlFacade`.
 
-## Process compatibility
+A lost connection, unknown dispatch, lost result, or cancellation race after side-effect dispatch remains `reconciliation_required`; compatibility never authorizes a blind replacement action.
 
-`start_process` maps to native `process.start`. The native result must contain both a numeric OS pid and a facade-owned process handle. The compatibility state records only this non-secret handle metadata.
+The Executor remains authoritative for protected-path policy. The facade also rejects the protected test target before Control Plane enqueue; tests use only mocked path strings and prove zero provider dispatch.
 
-`read_process_output` maps to native `process.read`. Offset 0 uses the durable native stream cursor when one is available, so repeated reads continue rather than restarting. Absolute and negative offsets are passed through as explicit bounded range/tail semantics.
+## Verification
 
-`list_sessions` maps to native `process.list` and reports compatibility-started process records. The persisted compatibility map survives compatibility-layer restart and tracks running/finished state without creating a second process authority.
+`test/dc-compatibility.test.js` covers registry, bounded reads, true-batch behavior, edit/write semantics, capability failure, durable process lifecycle, and normalized errors.
 
-`force_terminate` resolves the pid to the stored facade handle and maps to native `process.terminate`. A terminated/unknown compatibility handle is rejected before native dispatch as `STALE_HANDLE`.
-
-## Normalized errors
-
-The compatibility response normalizes common native/provider failures into:
-- `FILE_NOT_FOUND`
-- `ACCESS_DENIED`
-- `STALE_HANDLE`
-- `RANGE_ERROR`
-- `REPLACEMENT_CONFLICT`
-- `PROCESS_ERROR`
-- `CAPABILITY_UNAVAILABLE`
-
-The original native code/category are retained in error details when available.
-
-## Tests
-
-`test/dc-compatibility.test.js` covers:
-- exact registry names and digest;
-- positive-range and negative-tail reads;
-- deterministic true-batch per-file results;
-- hash-bound atomic edit translation and replacement conflicts;
-- rewrite/append selection and bounds;
-- capability-unavailable fail-closed behavior;
-- persisted start/read/repeated-read/finish/list/terminate lifecycle;
-- stale handle rejection;
-- normalized filesystem/range/replacement/process errors.
-
-All compatibility tests use mocks and temporary directories only. `test/mcp-host.integration.test.js` additionally exercises the observed compatibility names through the official MCP SDK client and the real Streamable HTTP host, including batch ordering, durable process reads, idempotency, cancellation, reconciliation-required outcomes, and protected-path zero-dispatch.
+`test/mcp-host.integration.test.js` uses the official MCP SDK client against the real Streamable HTTP host. It covers discovery/status metadata, filesystem, stateful search, process/system, identity/usage/audit sanitization, unsupported capabilities, modern/older protocol negotiation, cancellation, duplicate logical requests, uncertain outcomes, and protected-path no-dispatch.

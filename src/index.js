@@ -38,6 +38,8 @@ export { LocalNativeHttpTransport } from "./native-http.js";
 export {
   DC_COMPATIBILITY_REGISTRY_V1,
   DC_COMPATIBILITY_RESPONSE_V1,
+  DESKTOP_COMMANDER_REFERENCE_VERSION,
+  DC_VENDOR_NON_EQUIVALENTS,
   DC_COMPATIBILITY_REGISTRY,
   DC_COMPATIBILITY_REGISTRY_LIST,
   DC_COMPATIBILITY_REGISTRY_DIGEST,
@@ -117,3 +119,26 @@ export {
 } from "./mcp-tool-schemas.js";
 export { startNativeMcpHttpServer, isLoopbackHost as isMcpLoopbackHost } from "./mcp-http-host.js";
 export { createConfiguredNativeMcpRuntime } from "./mcp-runtime-config.js";
+
+export {
+  REMOTE_FRAME_VERSION,
+  DEFAULT_RELAY_LIMITS,
+  REMOTE_FRAME_TYPES,
+  RelayProtocolError,
+  RelayAuthenticationError,
+  RelayReplayError,
+  RelayStaleEpochError,
+  ReplayGuard,
+  StreamAssembler,
+  canonicalJson as canonicalRelayJson,
+  sha256Hex as relaySha256Hex,
+  digestJson as relayDigestJson,
+  encodeRelayFrame,
+  decodeRelayFrame,
+  parseRelayEnvelope,
+  validateRequestPayload,
+  requestFingerprint,
+  assertHelloPayload,
+} from "./native-relay-protocol.js";
+export { JsonRelayStateStore, NativeRelayState, RelayStateError } from "./native-relay-state.js";
+export { NativeRelayServer, NativeRelayServerError } from "./native-relay-server.js";

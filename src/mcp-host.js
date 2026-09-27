@@ -204,6 +204,20 @@ export class NativeMcpRuntime {
     const { nativeArgs, page } = splitHostArguments(args);
     let response;
     try {
+      const manifest = await this.ensureCapabilities();
+      const actions = Array.isArray(manifest.executor?.actions) ? manifest.executor.actions : [];
+      if (!actions.includes(tool.executorAction)) {
+        const error = new Error("Native tool is unavailable because the Executor does not advertise its action.");
+        error.code = "CAPABILITY_UNAVAILABLE";
+        error.category = "capability";
+        error.retryable = false;
+        error.details = {
+          tool: tool.name,
+          executor_action: tool.executorAction,
+          executor_digest: manifest.executor?.digest ?? null,
+        };
+        throw error;
+      }
       await this.ensureFacadeSession();
       const request = {
         contract_version: NATIVE_CONTROL_PROTOCOL_V1,
@@ -264,6 +278,9 @@ export class NativeMcpRuntime {
       { capabilities: { tools: {} } },
     );
 
+    const executorActions = new Set(
+      Array.isArray(manifest.executor?.actions) ? manifest.executor.actions : [],
+    );
     for (const tool of TOOL_REGISTRY_LIST) {
       server.registerTool(
         tool.name,
@@ -283,6 +300,8 @@ export class NativeMcpRuntime {
             "pc.native/executor_digest": manifest.executor?.digest ?? null,
             "pc.native/effect": tool.effect,
             "pc.native/streaming": tool.streaming,
+            "pc.native/executor_action": tool.executorAction,
+            "pc.native/available": executorActions.has(tool.executorAction),
             "pc.native/mcp_era": ctx.era ?? null,
           },
         },
@@ -313,9 +332,14 @@ export class NativeMcpRuntime {
             "pc.desktop_commander/native_protocol_version": manifest.protocol_version,
             "pc.desktop_commander/native_registry_digest": manifest.registry_digest,
             "pc.desktop_commander/executor_digest": manifest.executor?.digest ?? null,
+            "pc.desktop_commander/reference_version": advertised?.desktop_commander_version ?? "0.2.51",
             "pc.desktop_commander/effect": tool.effect,
+            "pc.desktop_commander/native_tools": advertised?.native_tools ?? [],
             "pc.desktop_commander/available": advertised?.available === true,
+            "pc.desktop_commander/selected_variant": advertised?.selected_variant ?? null,
+            "pc.desktop_commander/availability_reason": advertised?.availability_reason ?? null,
             "pc.desktop_commander/capability_variants": advertised?.capability_variants ?? [],
+            "pc.desktop_commander/vendor_non_equivalents": compatibilityManifest.vendor_non_equivalents,
             "pc.desktop_commander/mcp_era": ctx.era ?? null,
           },
         },

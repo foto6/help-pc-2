@@ -92,7 +92,7 @@ function hasProtectedPath(value) {
 
 function extractHandle(data) {
   if (!data || typeof data !== "object") return null;
-  for (const key of ["process_handle", "session_handle", "handle"]) {
+  for (const key of ["process_handle", "session_handle", "handle", "handle_id", "session_id"]) {
     if (typeof data[key] === "string" && data[key]) return data[key];
   }
   return null;
@@ -100,7 +100,7 @@ function extractHandle(data) {
 
 function inputHandle(input) {
   if (!input || typeof input !== "object") return null;
-  for (const key of ["process_handle", "session_handle", "handle"]) {
+  for (const key of ["process_handle", "session_handle", "handle", "handle_id", "session_id"]) {
     if (typeof input[key] === "string" && input[key]) return input[key];
   }
   return null;
@@ -272,7 +272,7 @@ export class NativeControlFacade {
   }
 
   #validatePage(sessionId, tool, page) {
-    if (page === undefined || page === null) return { limit: this.maxPageSize, innerCursor: null };
+    if (page === undefined || page === null) return { limit: this.maxPageSize, innerCursor: null, requested: false };
     if (!page || typeof page !== "object" || Array.isArray(page)) {
       throw new NativeFacadeError("page must be an object.", { code: "INVALID_ARGUMENT" });
     }
@@ -280,13 +280,13 @@ export class NativeControlFacade {
     if (!Number.isInteger(limit) || limit < 1 || limit > this.maxPageSize) {
       throw new NativeFacadeError(`page.limit must be 1..${this.maxPageSize}.`, { code: "PAGE_LIMIT_EXCEEDED", category: "bounds" });
     }
-    if (page.cursor === undefined || page.cursor === null) return { limit, innerCursor: null };
+    if (page.cursor === undefined || page.cursor === null) return { limit, innerCursor: null, requested: true };
     if (typeof page.cursor !== "string") throw new NativeFacadeError("page.cursor must be a string.", { code: "MALFORMED_STREAM_CURSOR" });
     const decoded = decodeCursor(page.cursor);
     if (decoded.session !== sessionId || decoded.tool !== tool) {
       throw new NativeFacadeError("Stream cursor is stale or belongs to another session/tool.", { code: "STALE_STREAM_CURSOR", category: "invalid_cursor", httpStatus: 409 });
     }
-    return { limit, innerCursor: decoded.inner };
+    return { limit, innerCursor: decoded.inner, requested: true };
   }
 
   #assertHandle(session, tool, args) {
@@ -434,7 +434,11 @@ export class NativeControlFacade {
     }
     this.#assertHandle(session, tool, args);
     const page = this.#validatePage(session.id, tool.name, envelope.page);
-    const fingerprint = sha256({ tool: tool.name, args, page: { limit: page.limit, inner: page.innerCursor } });
+    const fingerprint = sha256({
+      tool: tool.name,
+      args,
+      page: page.requested ? { limit: page.limit, inner: page.innerCursor } : null,
+    });
     let request = this.#request(session.id, envelope.request_id);
     if (request) {
       if (request.fingerprint !== fingerprint) throw new NativeFacadeError("Duplicate request_id was reused with different input.", { code: "DUPLICATE_REQUEST_MISMATCH", category: "idempotency", httpStatus: 409 });
@@ -450,6 +454,7 @@ export class NativeControlFacade {
       effect: tool.effect,
       args: clone(args),
       pageLimit: page.limit,
+      pageRequested: page.requested,
       actionId: null,
       status: "allocating",
       response: null,
@@ -458,7 +463,7 @@ export class NativeControlFacade {
     this.#persist();
 
     const input = clone(args);
-    if (tool.streaming) {
+    if (tool.streaming && page.requested) {
       input.limit = page.limit;
       if (page.innerCursor !== null) input.cursor = page.innerCursor;
     }
