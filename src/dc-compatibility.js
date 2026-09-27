@@ -20,6 +20,20 @@ function clone(value) {
   return value === undefined ? undefined : structuredClone(value);
 }
 
+function normalizedPath(value) {
+  return value.replaceAll("/", "\\").replace(/\\+/g, "\\").toLowerCase();
+}
+
+function hasProtectedPath(value) {
+  if (typeof value === "string") {
+    const candidate = normalizedPath(value);
+    return candidate === "e:\\manhwa" || candidate.startsWith("e:\\manhwa\\");
+  }
+  if (Array.isArray(value)) return value.some(hasProtectedPath);
+  if (value && typeof value === "object") return Object.values(value).some(hasProtectedPath);
+  return false;
+}
+
 function integer(value, name, { minimum = null, maximum = null, fallback = undefined } = {}) {
   const actual = value === undefined ? fallback : value;
   if (!Number.isInteger(actual) ||
@@ -264,7 +278,7 @@ export class DesktopCommanderCompatibilitySurface {
     return manifest;
   }
 
-  async #invokeNative({ sessionId, requestId, tool, arguments: args = {}, page = undefined }) {
+  async #invokeNative({ sessionId, requestId, tool, arguments: args = {}, page = undefined, signal = undefined }) {
     let response;
     try {
       response = await this.facade.invoke({
@@ -274,7 +288,7 @@ export class DesktopCommanderCompatibilitySurface {
         tool,
         arguments: args,
         ...(page === undefined ? {} : { page }),
-      });
+      }, { signal });
     } catch (error) {
       throw normalizeDesktopCommanderError(error, { tool });
     }
@@ -342,7 +356,7 @@ export class DesktopCommanderCompatibilitySurface {
     };
   }
 
-  async #readFile(sessionId, requestId, args) {
+  async #readFile(sessionId, requestId, args, signal) {
     await this.#requireCapabilities("read_file", ["fs.read_text"]);
     const translated = this.#fileReadArguments(args);
     const limit = Math.max(1, Math.min(translated.length, DEFAULT_NATIVE_LIMITS.maxPageSize));
@@ -352,11 +366,12 @@ export class DesktopCommanderCompatibilitySurface {
       tool: "file.read",
       arguments: translated.native,
       page: { limit },
+      signal,
     });
     return this.#projectRead(response.data, translated);
   }
 
-  async #readMultipleFiles(sessionId, requestId, args) {
+  async #readMultipleFiles(sessionId, requestId, args, signal) {
     await this.#requireCapabilities("read_multiple_files", ["fs.read_text"]);
     if (!Array.isArray(args.paths) || args.paths.length < 1 || args.paths.length > this.maxBatchFiles) {
       throw new DcCompatibilityError(`paths must contain 1..${this.maxBatchFiles} entries.`, {
@@ -375,6 +390,7 @@ export class DesktopCommanderCompatibilitySurface {
           tool: "file.read",
           arguments: translated.native,
           page: { limit: DEFAULT_NATIVE_LIMITS.maxPageSize },
+          signal,
         });
         results.push({
           path,
@@ -421,7 +437,7 @@ export class DesktopCommanderCompatibilitySurface {
     };
   }
 
-  async #editBlock(sessionId, requestId, args) {
+  async #editBlock(sessionId, requestId, args, signal) {
     await this.#requireCapabilities("edit_block", ["fs.hash", "fs.edit_text"]);
     const path = nonemptyString(args.path, "path");
     const oldString = nonemptyString(args.old_string, "old_string");
@@ -449,6 +465,7 @@ export class DesktopCommanderCompatibilitySurface {
       requestId: `${requestId}:hash`,
       tool: "file.hash",
       arguments: { path, max_bytes: this.maxTextBytes },
+      signal,
     });
     const expectedCurrentHash = hash.data?.sha256;
     if (typeof expectedCurrentHash !== "string" || !/^[0-9a-f]{64}$/.test(expectedCurrentHash)) {
@@ -469,6 +486,7 @@ export class DesktopCommanderCompatibilitySurface {
         expected_current_hash: expectedCurrentHash,
         ...(typeof args.encoding === "string" && args.encoding ? { encoding: args.encoding } : {}),
       },
+      signal,
     });
     return {
       path: edit.data?.path ?? path,
@@ -479,7 +497,7 @@ export class DesktopCommanderCompatibilitySurface {
     };
   }
 
-  async #writeFile(sessionId, requestId, args) {
+  async #writeFile(sessionId, requestId, args, signal) {
     const path = nonemptyString(args.path, "path");
     if (typeof args.content !== "string") {
       throw new DcCompatibilityError("content must be a string.", {
@@ -511,6 +529,7 @@ export class DesktopCommanderCompatibilitySurface {
       arguments: mode === "append"
         ? { path, text: args.content, create: true }
         : { path, text: args.content, overwrite: true },
+      signal,
     });
     return {
       path: response.data?.path ?? path,
@@ -520,7 +539,7 @@ export class DesktopCommanderCompatibilitySurface {
     };
   }
 
-  async #startProcess(sessionId, requestId, args) {
+  async #startProcess(sessionId, requestId, args, signal) {
     await this.#requireCapabilities("start_process", ["process.start"]);
     const command = nonemptyString(args.command, "command");
     if (command.length > MAX_COMMAND_CHARS) {
@@ -540,6 +559,7 @@ export class DesktopCommanderCompatibilitySurface {
         }),
         ...(args.shell === undefined ? {} : { shell: nonemptyString(args.shell, "shell") }),
       },
+      signal,
     });
     const handle = extractNativeHandle(response.data);
     const pid = response.data?.pid;
@@ -583,7 +603,7 @@ export class DesktopCommanderCompatibilitySurface {
     return stdout + stderr;
   }
 
-  async #readProcessOutput(sessionId, requestId, args) {
+  async #readProcessOutput(sessionId, requestId, args, signal) {
     await this.#requireCapabilities("read_process_output", ["process.read"]);
     const pid = integer(args.pid, "pid", { minimum: 1 });
     const record = this.#requireProcess(sessionId, pid);
@@ -614,6 +634,7 @@ export class DesktopCommanderCompatibilitySurface {
       tool: "process.read",
       arguments: nativeArgs,
       page,
+      signal,
     });
     if (offset === 0) record.lastCursor = response.stream?.next_cursor ?? null;
     if (typeof response.data?.running === "boolean") record.running = response.data.running;
@@ -635,7 +656,7 @@ export class DesktopCommanderCompatibilitySurface {
     };
   }
 
-  async #listSessions(sessionId, requestId) {
+  async #listSessions(sessionId, requestId, signal) {
     await this.#requireCapabilities("list_sessions", ["process.list"]);
     const response = await this.#invokeNative({
       sessionId,
@@ -643,6 +664,7 @@ export class DesktopCommanderCompatibilitySurface {
       tool: "process.list",
       arguments: {},
       page: { limit: DEFAULT_NATIVE_LIMITS.maxPageSize },
+      signal,
     });
     const nativeProcesses = Array.isArray(response.data?.processes)
       ? response.data.processes
@@ -675,7 +697,7 @@ export class DesktopCommanderCompatibilitySurface {
     return { sessions, count: sessions.length };
   }
 
-  async #forceTerminate(sessionId, requestId, args) {
+  async #forceTerminate(sessionId, requestId, args, signal) {
     await this.#requireCapabilities("force_terminate", ["process.terminate"]);
     const pid = integer(args.pid, "pid", { minimum: 1 });
     const record = this.#requireProcess(sessionId, pid);
@@ -684,6 +706,7 @@ export class DesktopCommanderCompatibilitySurface {
       requestId,
       tool: "process.terminate",
       arguments: { handle: record.handle },
+      signal,
     });
     record.running = false;
     record.status = "terminated";
@@ -698,7 +721,7 @@ export class DesktopCommanderCompatibilitySurface {
     };
   }
 
-  async invoke(envelope) {
+  async invoke(envelope, { signal = undefined } = {}) {
     const requestId = envelope?.request_id;
     const sessionId = envelope?.session_id;
     const toolName = envelope?.tool;
@@ -726,32 +749,38 @@ export class DesktopCommanderCompatibilitySurface {
           category: "argument",
         });
       }
+      if (hasProtectedPath(args)) {
+        throw new DcCompatibilityError("Protected path is outside compatibility dispatch scope.", {
+          code: "PROTECTED_PATH_BLOCKED",
+          category: "policy",
+        });
+      }
 
       let data;
       switch (toolName) {
         case "read_file":
-          data = await this.#readFile(sessionId, requestId, args);
+          data = await this.#readFile(sessionId, requestId, args, signal);
           break;
         case "read_multiple_files":
-          data = await this.#readMultipleFiles(sessionId, requestId, args);
+          data = await this.#readMultipleFiles(sessionId, requestId, args, signal);
           break;
         case "edit_block":
-          data = await this.#editBlock(sessionId, requestId, args);
+          data = await this.#editBlock(sessionId, requestId, args, signal);
           break;
         case "write_file":
-          data = await this.#writeFile(sessionId, requestId, args);
+          data = await this.#writeFile(sessionId, requestId, args, signal);
           break;
         case "start_process":
-          data = await this.#startProcess(sessionId, requestId, args);
+          data = await this.#startProcess(sessionId, requestId, args, signal);
           break;
         case "read_process_output":
-          data = await this.#readProcessOutput(sessionId, requestId, args);
+          data = await this.#readProcessOutput(sessionId, requestId, args, signal);
           break;
         case "list_sessions":
-          data = await this.#listSessions(sessionId, requestId, args);
+          data = await this.#listSessions(sessionId, requestId, signal);
           break;
         case "force_terminate":
-          data = await this.#forceTerminate(sessionId, requestId, args);
+          data = await this.#forceTerminate(sessionId, requestId, args, signal);
           break;
         default:
           throw new DcCompatibilityError(`Tool '${toolName}' has no compatibility translator.`, {

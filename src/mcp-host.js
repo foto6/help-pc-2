@@ -6,6 +6,15 @@ import {
   TOOL_REGISTRY_LIST,
 } from "./native-registry.js";
 import { mcpToolDescription, mcpToolSchema } from "./mcp-tool-schemas.js";
+import { DesktopCommanderCompatibilitySurface } from "./dc-compatibility.js";
+import {
+  DC_COMPATIBILITY_REGISTRY_DIGEST,
+  DC_COMPATIBILITY_REGISTRY_LIST,
+  DC_COMPATIBILITY_REGISTRY_V1,
+  DC_COMPATIBILITY_RESPONSE_V1,
+  desktopCommanderCompatibilityManifestV1,
+} from "./dc-compatibility-registry.js";
+import { mcpDcToolDescription, mcpDcToolSchema } from "./mcp-dc-schemas.js";
 
 export const MCP_HOST_VERSION = "1.0.0";
 export const MCP_MODERN_PROTOCOL = "2026-07-28";
@@ -33,6 +42,24 @@ function facadeErrorResult(error) {
       details: error?.details ?? null,
     },
     stream: null,
+  };
+}
+
+function compatibilityErrorResult(error, { requestId, sessionId, tool }) {
+  return {
+    contract_version: DC_COMPATIBILITY_RESPONSE_V1,
+    request_id: requestId,
+    session_id: sessionId,
+    tool,
+    status: "error",
+    data: null,
+    error: {
+      code: error?.code ?? "MCP_COMPATIBILITY_HOST_ERROR",
+      category: error?.category ?? "host",
+      message: String(error?.message ?? error),
+      retryable: error?.retryable === true,
+      details: error?.details ?? null,
+    },
   };
 }
 
@@ -80,6 +107,7 @@ export class NativeMcpRuntime {
     maxToolResultBytes = 256 * 1024,
   }) {
     this.facade = facade;
+    this.compatibility = new DesktopCommanderCompatibilitySurface({ facade });
     this.desktopId = desktopId;
     this.facadeSession = facadeSession;
     this.initialManifest = initialManifest;
@@ -192,6 +220,34 @@ export class NativeMcpRuntime {
     };
   }
 
+  async callCompatibilityTool(tool, args, ctx) {
+    const requestId = requestIdentity(tool.name, args, ctx);
+    const { request_id: _requestId, ...compatibilityArgs } = args;
+    let response;
+    try {
+      await this.ensureFacadeSession();
+      response = await this.compatibility.invoke({
+        request_id: requestId,
+        session_id: this.facadeSession.session_id,
+        tool: tool.name,
+        arguments: compatibilityArgs,
+      }, { signal: ctx.mcpReq.signal });
+    } catch (error) {
+      response = compatibilityErrorResult(error, {
+        requestId,
+        sessionId: this.facadeSession?.session_id ?? null,
+        tool: tool.name,
+      });
+    }
+
+    const bounded = boundedResult(response, this.maxToolResultBytes);
+    return {
+      content: [{ type: "text", text: safeJson(bounded) }],
+      structuredContent: bounded,
+      isError: bounded.status === "error",
+    };
+  }
+
   async createServer(ctx = {}) {
     const manifest = await this.ensureCapabilities();
     const server = new McpServer(
@@ -199,6 +255,7 @@ export class NativeMcpRuntime {
       { capabilities: { tools: {} } },
     );
 
+    const nativeNames = new Set(TOOL_REGISTRY_LIST.map((tool) => tool.name));
     for (const tool of TOOL_REGISTRY_LIST) {
       server.registerTool(
         tool.name,
@@ -222,6 +279,40 @@ export class NativeMcpRuntime {
           },
         },
         async (args, callCtx) => this.callNativeTool(tool, args, callCtx),
+      );
+    }
+
+    const compatibilityManifest = desktopCommanderCompatibilityManifestV1({ nativeManifest: manifest });
+    const compatibilityAvailability = new Map(
+      compatibilityManifest.tools.map((tool) => [tool.name, tool.available]),
+    );
+    for (const tool of DC_COMPATIBILITY_REGISTRY_LIST) {
+      if (nativeNames.has(tool.name)) {
+        throw new Error(`MCP compatibility tool name collides with native tool: ${tool.name}`);
+      }
+      server.registerTool(
+        tool.name,
+        {
+          description: mcpDcToolDescription(tool.name),
+          inputSchema: mcpDcToolSchema(tool.name),
+          annotations: {
+            readOnlyHint: tool.effect === "read_only",
+            destructiveHint: false,
+            idempotentHint: tool.effect === "read_only",
+            openWorldHint: false,
+          },
+          _meta: {
+            "pc.desktop_commander/registry_contract": DC_COMPATIBILITY_REGISTRY_V1,
+            "pc.desktop_commander/registry_digest": DC_COMPATIBILITY_REGISTRY_DIGEST,
+            "pc.desktop_commander/available": compatibilityAvailability.get(tool.name) === true,
+            "pc.native/protocol_version": manifest.protocol_version,
+            "pc.native/registry_digest": manifest.registry_digest,
+            "pc.native/executor_digest": manifest.executor?.digest ?? null,
+            "pc.native/effect": tool.effect,
+            "pc.native/mcp_era": ctx.era ?? null,
+          },
+        },
+        async (args, callCtx) => this.callCompatibilityTool(tool, args, callCtx),
       );
     }
 

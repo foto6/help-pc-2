@@ -111,5 +111,11 @@ export {
   mcpToolSchema,
   mcpToolDescription,
 } from "./mcp-tool-schemas.js";
+export {
+  MCP_DC_TOOL_SCHEMAS,
+  MCP_DC_TOOL_DESCRIPTIONS,
+  mcpDcToolSchema,
+  mcpDcToolDescription,
+} from "./mcp-dc-schemas.js";
 export { startNativeMcpHttpServer, isLoopbackHost as isMcpLoopbackHost } from "./mcp-http-host.js";
 export { createConfiguredNativeMcpRuntime } from "./mcp-runtime-config.js";
