@@ -1,0 +1,54 @@
+{
+  "contract_version": "vision.observation_epoch_fixture_corpus.v1",
+  "vision_source_head": "df9a84590a4a9d8fe8dfdec9ff195fe4821397f6",
+  "scenarios": {
+    "process_restart_same_title": {
+      "mutation": "process_start_epoch_ms",
+      "expected_relation": "replaced",
+      "expected_reason": "process_start_epoch_changed",
+      "epoch_changed": true
+    },
+    "window_recreated_same_automation_ids": {
+      "mutation": "window_id",
+      "expected_relation": "replaced",
+      "expected_reason": "window_identity_changed",
+      "epoch_changed": true
+    },
+    "dpi_display_change_same_window": {
+      "mutation": "display_geometry",
+      "expected_relation": "replaced",
+      "expected_reason": "display_provenance_changed",
+      "epoch_changed": true
+    },
+    "minimize_restore": {
+      "mutation": "visibility_state",
+      "expected_relation": "same",
+      "expected_reason": null,
+      "epoch_changed": false
+    },
+    "moving_window": {
+      "mutation": "node_geometry",
+      "expected_relation": "same",
+      "expected_reason": null,
+      "epoch_changed": false
+    },
+    "tab_content_navigation": {
+      "mutation": "non_root_content",
+      "expected_relation": "same",
+      "expected_reason": null,
+      "epoch_changed": false
+    },
+    "root_tree_replacement": {
+      "mutation": "root_window_node_identity",
+      "expected_relation": "replaced",
+      "expected_reason": "root_uia_replaced",
+      "epoch_changed": true
+    },
+    "screenshot_restart_same_pixels": {
+      "mutation": "sequence_reset_same_digest",
+      "expected_relation": "replaced",
+      "expected_reason": "capture_sequence_reset",
+      "epoch_changed": true
+    }
+  }
+}

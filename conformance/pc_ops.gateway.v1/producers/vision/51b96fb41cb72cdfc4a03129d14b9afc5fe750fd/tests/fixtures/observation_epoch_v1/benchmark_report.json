@@ -1,0 +1,10 @@
+{
+  "node_count": 1000,
+  "relation": "same",
+  "epoch_unchanged": true,
+  "ordinal": 0,
+  "transition_reason_count": 0,
+  "canonical_bytes": 1385,
+  "canonical_sha256": "06e3c1533c3f914cae442d71c4e8a66f2e19ab134ca2e0f4d546ac5c437fcc85",
+  "compute_ms": 336.682
+}
