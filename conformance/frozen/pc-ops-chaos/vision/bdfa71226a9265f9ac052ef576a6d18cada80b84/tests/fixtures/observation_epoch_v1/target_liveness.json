@@ -1,0 +1,14 @@
+{
+  "contract_version": "vision.target_liveness_fixture.v1",
+  "lease_policy": {
+    "max_sequence_delta": 3,
+    "max_age_ms": 1000
+  },
+  "expectations": {
+    "same_epoch": "live",
+    "prior_epoch": "stale",
+    "prior_epoch_required_reason": "observation_epoch_changed",
+    "no_auto_rebind": true,
+    "side_effect_authority": false
+  }
+}
