@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - agent/pc-control-plane
+      - agent/pc-native-mcp
   pull_request:
 
 permissions:
@@ -22,6 +23,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Native MCP/control facade
+        run: npm run test:native-mcp
       - name: Focused execution-context and Vision epoch reconciliation
         run: npm run test:context-epoch
       - name: Frozen Wave 8 E2E readiness
