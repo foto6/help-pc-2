@@ -116,7 +116,7 @@ test("CHAOS_MATRIX.v1 canonical digest is stable", () => {
 function nativeRequest(id = "native-1", extra = {}) {
   return {
     version: "pc_executor.ops.v1",
-    id,
+    request_id: id,
     action: "fs.write_text",
     params: { path: "E:\\work\\state.json", text: "{}" },
     ...extra,
@@ -131,70 +131,92 @@ function boundNative(id, extra = {}) {
   return { oracle, raw };
 }
 
+
+
+test("unbound native request fails closed before dispatch", () => {
+  const oracle = new NativeCutoverOracle();
+  const raw = nativeRequest("unbound");
+  oracle.receive(raw);
+  const result = oracle.dispatch(raw.request_id, { contextDigest: null, observationEpoch: null });
+  assert.equal(result.disposition, "fail_closed");
+  assert.equal(result.code, "EXECUTION_CONTEXT_UNBOUND");
+  assert.equal(oracle.get(raw.request_id).dispatchAttempts, 0);
+  assert.equal(oracle.get(raw.request_id).effectCount, 0);
+});
+
+test("managed operation id cannot change kind across reconnect", () => {
+  const operations = new ManagedOperationOracle();
+  assert.equal(operations.begin("shared-op", "process").disposition, "created");
+  const conflict = operations.begin("shared-op", "shell.session");
+  assert.equal(conflict.disposition, "fail_closed");
+  assert.equal(conflict.code, "OPERATION_ID_KIND_CONFLICT");
+  assert.equal(operations.startDispatches, 0);
+});
+
 test("native MCP disconnect after dispatch never blind replays uncertain effect", () => {
   const { oracle, raw } = boundNative("mcp-disconnect");
   assert.equal(
-    oracle.dispatch(raw.id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" }).disposition,
+    oracle.dispatch(raw.request_id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" }).disposition,
     "dispatched",
   );
-  oracle.observeEffect(raw.id);
+  oracle.observeEffect(raw.request_id);
 
   // Disconnect destroys only the live transport. Durable state survives.
   const afterReconnect = new NativeCutoverOracle(oracle.snapshot());
   assert.equal(afterReconnect.receive(raw).disposition, "duplicate");
-  assert.equal(afterReconnect.reconcile(raw.id, "unknown"), "reconcile_only");
+  assert.equal(afterReconnect.reconcile(raw.request_id, "unknown"), "reconcile_only");
   assert.deepEqual(
-    afterReconnect.dispatch(raw.id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" }),
+    afterReconnect.dispatch(raw.request_id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" }),
     {
       disposition: "fail_closed",
       code: "RECONCILIATION_REQUIRED",
-      record: afterReconnect.get(raw.id),
+      record: afterReconnect.get(raw.request_id),
     },
   );
-  assert.equal(afterReconnect.get(raw.id).effectCount, 1);
-  assert.equal(afterReconnect.get(raw.id).dispatchAttempts, 1);
+  assert.equal(afterReconnect.get(raw.request_id).effectCount, 1);
+  assert.equal(afterReconnect.get(raw.request_id).dispatchAttempts, 1);
 });
 
 test("Control Plane restart preserves dispatch boundary and journal unknown fails closed", () => {
   const { oracle, raw } = boundNative("cp-restart");
-  oracle.dispatch(raw.id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" });
+  oracle.dispatch(raw.request_id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" });
 
   const restarted = new NativeCutoverOracle(oracle.snapshot());
-  assert.equal(restarted.reconcile(raw.id, "unknown"), "reconcile_only");
+  assert.equal(restarted.reconcile(raw.request_id, "unknown"), "reconcile_only");
   assert.equal(
-    restarted.dispatch(raw.id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" }).code,
+    restarted.dispatch(raw.request_id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" }).code,
     "RECONCILIATION_REQUIRED",
   );
-  assert.equal(restarted.get(raw.id).dispatchAttempts, 1);
-  assert.equal(restarted.get(raw.id).effectCount, 0);
+  assert.equal(restarted.get(raw.request_id).dispatchAttempts, 1);
+  assert.equal(restarted.get(raw.request_id).effectCount, 0);
 });
 
 test("Executor restart permits one bounded redispatch only after durable not_started evidence", () => {
   const { oracle, raw } = boundNative("executor-restart");
-  oracle.dispatch(raw.id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" });
+  oracle.dispatch(raw.request_id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" });
 
   const restarted = new NativeCutoverOracle(oracle.snapshot());
-  assert.equal(restarted.reconcile(raw.id, "not_started"), "redispatch_once");
+  assert.equal(restarted.reconcile(raw.request_id, "not_started"), "redispatch_once");
   assert.equal(
-    restarted.dispatch(raw.id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" }).disposition,
+    restarted.dispatch(raw.request_id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" }).disposition,
     "dispatched",
   );
-  restarted.observeEffect(raw.id);
-  assert.equal(restarted.get(raw.id).dispatchAttempts, 2);
-  assert.equal(restarted.get(raw.id).effectCount, 1);
+  restarted.observeEffect(raw.request_id);
+  assert.equal(restarted.get(raw.request_id).dispatchAttempts, 2);
+  assert.equal(restarted.get(raw.request_id).effectCount, 1);
   assert.equal(
-    restarted.dispatch(raw.id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" }).code,
+    restarted.dispatch(raw.request_id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" }).code,
     "RECONCILIATION_REQUIRED",
   );
 });
 
 test("stale execution context binding rejects before side-effect dispatch", () => {
   const { oracle, raw } = boundNative("stale-context");
-  const rejected = oracle.dispatch(raw.id, { contextDigest: "ctx-replaced", observationEpoch: "epoch-1" });
+  const rejected = oracle.dispatch(raw.request_id, { contextDigest: "ctx-replaced", observationEpoch: "epoch-1" });
   assert.equal(rejected.disposition, "fail_closed");
   assert.equal(rejected.code, "STALE_CONTEXT_BINDING");
-  assert.equal(oracle.get(raw.id).dispatchAttempts, 0);
-  assert.equal(oracle.get(raw.id).effectCount, 0);
+  assert.equal(oracle.get(raw.request_id).dispatchAttempts, 0);
+  assert.equal(oracle.get(raw.request_id).effectCount, 0);
 });
 
 test("native duplicate request id is idempotent only for identical canonical payload", () => {
@@ -206,34 +228,34 @@ test("native duplicate request id is idempotent only for identical canonical pay
   assert.equal(oracle.receive(first).disposition, "accepted");
   assert.equal(oracle.receive(same).disposition, "duplicate");
   assert.equal(oracle.receive(changed).disposition, "conflict");
-  assert.equal(oracle.get(first.id).dispatchAttempts, 0);
+  assert.equal(oracle.get(first.request_id).dispatchAttempts, 0);
 });
 
 test("journal unknown never grants replay authority", () => {
   const { oracle, raw } = boundNative("journal-unknown");
-  oracle.dispatch(raw.id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" });
-  assert.equal(oracle.reconcile(raw.id, "unknown"), "reconcile_only");
+  oracle.dispatch(raw.request_id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" });
+  assert.equal(oracle.reconcile(raw.request_id, "unknown"), "reconcile_only");
   assert.equal(
-    oracle.dispatch(raw.id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" }).code,
+    oracle.dispatch(raw.request_id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" }).code,
     "RECONCILIATION_REQUIRED",
   );
-  assert.equal(oracle.get(raw.id).dispatchAttempts, 1);
+  assert.equal(oracle.get(raw.request_id).dispatchAttempts, 1);
 });
 
 test("result lost after side effect reconciles completed without a second effect", () => {
   const { oracle, raw } = boundNative("lost-result");
-  oracle.dispatch(raw.id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" });
-  oracle.observeEffect(raw.id);
-  oracle.loseResult(raw.id);
+  oracle.dispatch(raw.request_id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" });
+  oracle.observeEffect(raw.request_id);
+  oracle.loseResult(raw.request_id);
 
   const restarted = new NativeCutoverOracle(oracle.snapshot());
-  assert.equal(restarted.reconcile(raw.id, "completed"), "reconcile_only");
+  assert.equal(restarted.reconcile(raw.request_id, "completed"), "reconcile_only");
   assert.equal(
-    restarted.dispatch(raw.id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" }).code,
+    restarted.dispatch(raw.request_id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" }).code,
     "RECONCILIATION_REQUIRED",
   );
-  assert.equal(restarted.get(raw.id).effectCount, 1);
-  assert.equal(restarted.get(raw.id).resultLost, true);
+  assert.equal(restarted.get(raw.request_id).effectCount, 1);
+  assert.equal(restarted.get(raw.request_id).resultLost, true);
 });
 
 for (const kind of ["process", "shell.session"]) {
@@ -267,22 +289,22 @@ test("managed reconnect fails closed when remote handle is unknown or replaced",
 
 test("UI observation epoch change before dispatch fails closed", () => {
   const { oracle, raw } = boundNative("epoch-before");
-  const rejected = oracle.dispatch(raw.id, { contextDigest: "ctx-a", observationEpoch: "epoch-2" });
+  const rejected = oracle.dispatch(raw.request_id, { contextDigest: "ctx-a", observationEpoch: "epoch-2" });
   assert.equal(rejected.code, "STALE_OBSERVATION_EPOCH");
-  assert.equal(oracle.get(raw.id).dispatchAttempts, 0);
-  assert.equal(oracle.get(raw.id).effectCount, 0);
+  assert.equal(oracle.get(raw.request_id).dispatchAttempts, 0);
+  assert.equal(oracle.get(raw.request_id).effectCount, 0);
 });
 
 test("UI observation epoch change after side effect authorizes reverify only", () => {
   const { oracle, raw } = boundNative("epoch-after");
-  oracle.dispatch(raw.id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" });
-  oracle.observeEffect(raw.id);
-  assert.equal(oracle.verificationDecision(raw.id, "epoch-2"), "recapture_reverify_only");
+  oracle.dispatch(raw.request_id, { contextDigest: "ctx-a", observationEpoch: "epoch-1" });
+  oracle.observeEffect(raw.request_id);
+  assert.equal(oracle.verificationDecision(raw.request_id, "epoch-2"), "recapture_reverify_only");
   assert.equal(
-    oracle.dispatch(raw.id, { contextDigest: "ctx-a", observationEpoch: "epoch-2" }).code,
+    oracle.dispatch(raw.request_id, { contextDigest: "ctx-a", observationEpoch: "epoch-2" }).code,
     "STALE_OBSERVATION_EPOCH",
   );
-  assert.equal(oracle.get(raw.id).effectCount, 1);
+  assert.equal(oracle.get(raw.request_id).effectCount, 1);
 });
 
 test("E:\\manhwa protected root and descendants reject before dispatch and are never accessed", () => {
