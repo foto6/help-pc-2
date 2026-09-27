@@ -186,7 +186,12 @@ test("audit log is append-only and ordered", async () => {
 
 test("help-pc-1 and vision-2 adapters keep provider boundaries explicit", async () => {
   const calls = [];
-  const help = new HelpPc1Adapter({ invoke: async (request) => (calls.push(["help", request]), { ok: true }) });
+  const help = new HelpPc1Adapter({
+    invoke: async (request) => {
+      calls.push(["help", request]);
+      return { ok: true, status: "dry_run" };
+    },
+  });
   const vision = new Vision2Adapter({ invoke: async (request) => (calls.push(["vision", request]), { seen: true }) });
   const cp = new ControlPlane({ providers: [help, vision], idFactory: ids() });
   const session = cp.createSession({ desktopId: "desktop-A" });
@@ -194,7 +199,12 @@ test("help-pc-1 and vision-2 adapters keep provider boundaries explicit", async 
   cp.enqueueAction(session.id, { provider: "vision-2", type: "screen.describe", permission: "desktop.observe" });
   await cp.drain();
   assert.deepEqual(calls.map(([name]) => name), ["help", "vision"]);
-  assert.equal(calls[0][1].tool, "mouse.click");
+  assert.deepEqual(calls[0][1], {
+    request_id: "id-2",
+    action: "mouse.click",
+    params: { x: 10, y: 20 },
+    dry_run: true,
+  });
   assert.equal(calls[1][1].tool, "screen.describe");
 });
 
