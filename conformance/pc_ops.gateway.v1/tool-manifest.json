@@ -10,14 +10,8 @@
       "description": "Read gateway, relay and producer health without causing a PC effect.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
+        "additionalProperties": false,
+        "properties": {}
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -34,14 +28,8 @@
       "description": "Read Executor capabilities and policy limits.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
+        "additionalProperties": false,
+        "properties": {}
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -63,14 +51,16 @@
           "argv": {
             "type": "array",
             "minItems": 1,
+            "maxItems": 128,
             "items": {
               "type": "string"
             }
           },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
+          "cwd": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -92,21 +82,42 @@
       "description": "Start a durable long-running shell session.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "operation_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 80
           },
-          "limit": {
+          "argv": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 128,
+            "items": {
+              "type": "string"
+            }
+          },
+          "cwd": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "env": {
+            "type": "object"
+          },
+          "inherit_env": {
+            "type": "boolean"
+          },
+          "output_limit_bytes": {
             "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
+            "minimum": 1024,
+            "maximum": 268435456
           }
         },
         "required": [
-          "operation_id"
+          "operation_id",
+          "argv"
         ]
       },
       "access": "effectful",
@@ -124,17 +135,28 @@
       "description": "Read shell-session output from a cursor.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "operation_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 80
           },
-          "limit": {
+          "cursor": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "max_bytes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000
+            "maximum": 65536
+          },
+          "wait_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2000
           }
         },
         "required": [
@@ -156,7 +178,7 @@
       "description": "Write bounded stdin to a managed shell session.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "operation_id": {
             "type": "string",
@@ -164,12 +186,11 @@
             "maxLength": 80
           },
           "data": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 65536
           },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
+          "append_newline": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -192,17 +213,17 @@
       "description": "Terminate a managed shell session.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "operation_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 80
           },
-          "limit": {
+          "grace_ms": {
             "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
+            "minimum": 0,
+            "maximum": 5000
           }
         },
         "required": [
@@ -224,16 +245,18 @@
       "description": "List a directory with bounded result count.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-          "limit": {
+          "path": {
+            "type": "string"
+          },
+          "max_entries": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000
+            "maximum": 500
           },
-          "path": {
-            "type": "string",
-            "minLength": 1
+          "include_hidden": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -255,16 +278,10 @@
       "description": "Read file or directory metadata.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          },
           "path": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           }
         },
         "required": [
@@ -286,16 +303,29 @@
       "description": "Read bounded UTF-8 text by line/range and byte limits.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-          "limit": {
+          "path": {
+            "type": "string"
+          },
+          "encoding": {
+            "type": "string"
+          },
+          "start_line": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "end_line": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "max_bytes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000
-          },
-          "path": {
-            "type": "string",
-            "minLength": 1
+            "maximum": 1048576
           }
         },
         "required": [
@@ -317,16 +347,19 @@
       "description": "Read bounded bytes encoded as base64.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-          "limit": {
+          "path": {
+            "type": "string"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_bytes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000
-          },
-          "path": {
-            "type": "string",
-            "minLength": 1
+            "maximum": 1048576
           }
         },
         "required": [
@@ -348,16 +381,15 @@
       "description": "Compute a file digest without returning file contents.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-          "limit": {
+          "path": {
+            "type": "string"
+          },
+          "max_bytes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000
-          },
-          "path": {
-            "type": "string",
-            "minLength": 1
+            "maximum": 1073741824
           }
         },
         "required": [
@@ -379,16 +411,27 @@
       "description": "Find or glob paths with a bounded result count.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-          "limit": {
+          "path": {
+            "type": "string"
+          },
+          "name_contains": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 512
+          },
+          "max_results": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000
+            "maximum": 500
           },
-          "path": {
-            "type": "string",
-            "minLength": 1
+          "max_depth": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 32
           }
         },
         "required": [
@@ -410,9 +453,15 @@
       "description": "Write text with expected-current-hash, create-only or overwrite semantics.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
+          "path": {
+            "type": "string"
+          },
           "text": {
+            "type": "string"
+          },
+          "encoding": {
             "type": "string"
           },
           "expected_current_hash": {
@@ -427,19 +476,11 @@
           },
           "overwrite": {
             "type": "boolean"
-          },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          },
-          "path": {
-            "type": "string",
-            "minLength": 1
           }
         },
         "required": [
-          "path"
+          "path",
+          "text"
         ]
       },
       "access": "effectful",
@@ -457,23 +498,31 @@
       "description": "Append bounded text through Executor policy.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
+          "path": {
+            "type": "string"
+          },
           "text": {
             "type": "string"
           },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
+          "encoding": {
+            "type": "string"
           },
-          "path": {
-            "type": "string",
-            "minLength": 1
+          "expected_current_hash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "create": {
+            "type": "boolean"
           }
         },
         "required": [
-          "path"
+          "path",
+          "text"
         ]
       },
       "access": "effectful",
@@ -491,16 +540,16 @@
       "description": "Create a directory through Executor policy.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          },
           "path": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
+          },
+          "parents": {
+            "type": "boolean"
+          },
+          "exist_ok": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -522,24 +571,27 @@
       "description": "Copy a path through Executor policy.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
+          "source": {
+            "type": "string"
+          },
           "destination": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
+          "overwrite": {
+            "type": "boolean"
           },
-          "path": {
-            "type": "string",
-            "minLength": 1
+          "expected_source_hash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$"
           }
         },
         "required": [
-          "path",
+          "source",
           "destination"
         ]
       },
@@ -558,24 +610,27 @@
       "description": "Move a path through Executor policy.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
+          "source": {
+            "type": "string"
+          },
           "destination": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
+          "overwrite": {
+            "type": "boolean"
           },
-          "path": {
-            "type": "string",
-            "minLength": 1
+          "expected_source_hash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$"
           }
         },
         "required": [
-          "path",
+          "source",
           "destination"
         ]
       },
@@ -594,20 +649,28 @@
       "description": "Delete only with explicit policy classification; protected paths always fail closed.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          },
           "path": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
+          },
+          "classification": {
+            "enum": [
+              "file",
+              "empty_directory"
+            ]
+          },
+          "expected_current_hash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$"
           }
         },
         "required": [
-          "path"
+          "path",
+          "classification"
         ]
       },
       "access": "effectful",
@@ -625,16 +688,23 @@
       "description": "Read a bounded tail of a log file.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-          "limit": {
+          "path": {
+            "type": "string"
+          },
+          "encoding": {
+            "type": "string"
+          },
+          "max_lines": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000
+            "maximum": 2000
           },
-          "path": {
-            "type": "string",
-            "minLength": 1
+          "max_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1048576
           }
         },
         "required": [
@@ -656,16 +726,24 @@
       "description": "Read bounded log records since a cursor or timestamp.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-          "limit": {
+          "path": {
+            "type": "string"
+          },
+          "encoding": {
+            "type": "string"
+          },
+          "cursor": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "max_bytes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000
-          },
-          "path": {
-            "type": "string",
-            "minLength": 1
+            "maximum": 1048576
           }
         },
         "required": [
@@ -687,20 +765,39 @@
       "description": "Search logs with bounded matches and output.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-          "limit": {
+          "path": {
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "regex": {
+            "type": "boolean"
+          },
+          "case_sensitive": {
+            "type": "boolean"
+          },
+          "encoding": {
+            "type": "string"
+          },
+          "max_matches": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000
+            "maximum": 500
           },
-          "path": {
-            "type": "string",
-            "minLength": 1
+          "max_bytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1048576
           }
         },
         "required": [
-          "path"
+          "path",
+          "pattern"
         ]
       },
       "access": "read_only",
@@ -718,12 +815,26 @@
       "description": "List processes with bounded fields and result count.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-          "limit": {
+          "pid": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "name_contains": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          },
+          "max_results": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000
+            "maximum": 500
           }
         }
       },
@@ -742,14 +853,16 @@
       "description": "Inspect one process without changing it.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-          "limit": {
+          "pid": {
             "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
+            "minimum": 1
           }
-        }
+        },
+        "required": [
+          "pid"
+        ]
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -766,19 +879,40 @@
       "description": "Start one durable managed process exactly once per operation identity.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
+          "operation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 80
+          },
           "argv": {
             "type": "array",
             "minItems": 1,
+            "maxItems": 128,
             "items": {
               "type": "string"
             }
           },
-          "limit": {
+          "cwd": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "env": {
+            "type": "object"
+          },
+          "inherit_env": {
+            "type": "boolean"
+          },
+          "output_limit_bytes": {
             "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
+            "minimum": 1024,
+            "maximum": 268435456
           }
         },
         "required": [
@@ -800,17 +934,12 @@
       "description": "Read managed-process status.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "operation_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 80
-          },
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
           }
         },
         "required": [
@@ -832,17 +961,28 @@
       "description": "Read managed-process output from a cursor.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "operation_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 80
           },
-          "limit": {
+          "cursor": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "max_bytes": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10000
+            "maximum": 65536
+          },
+          "wait_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2000
           }
         },
         "required": [
@@ -864,17 +1004,17 @@
       "description": "Terminate a managed process through policy.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "operation_id": {
             "type": "string",
             "minLength": 1,
             "maxLength": 80
           },
-          "limit": {
+          "grace_ms": {
             "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
+            "minimum": 0,
+            "maximum": 5000
           }
         },
         "required": [
@@ -897,13 +1037,7 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": true,
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
+        "properties": {}
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -921,13 +1055,7 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": true,
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
+        "properties": {}
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -945,13 +1073,7 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": true,
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
+        "properties": {}
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -969,13 +1091,7 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": true,
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
+        "properties": {}
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -993,13 +1109,7 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": true,
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
+        "properties": {}
       },
       "access": "effectful",
       "destructive_level": "mutating",
@@ -1017,13 +1127,7 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": true,
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
+        "properties": {}
       },
       "access": "effectful",
       "destructive_level": "mutating",
@@ -1041,13 +1145,7 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": true,
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
+        "properties": {}
       },
       "access": "effectful",
       "destructive_level": "mutating",
@@ -1065,13 +1163,7 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": true,
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
+        "properties": {}
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -1089,13 +1181,7 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": true,
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
+        "properties": {}
       },
       "access": "effectful",
       "destructive_level": "mutating",
@@ -1113,13 +1199,7 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": true,
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
+        "properties": {}
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -1137,13 +1217,7 @@
       "input_schema": {
         "type": "object",
         "additionalProperties": true,
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
+        "properties": {}
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -1160,14 +1234,8 @@
       "description": "Read bounded operating-system and host information.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
-          }
-        }
+        "additionalProperties": false,
+        "properties": {}
       },
       "access": "read_only",
       "destructive_level": "none",
@@ -1184,12 +1252,13 @@
       "description": "Read bounded CPU, memory, disk and runtime resource information.",
       "input_schema": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
-          "limit": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 10000
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
