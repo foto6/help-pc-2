@@ -1,22 +1,28 @@
 {
   "schema": "pc_control.state_machine_fault_soak.v1",
-  "seeds": [334462, 12648430],
+  "seeds": [
+    334462,
+    12648430
+  ],
   "logicalActions": 512,
-  "events": 0,
-  "restarts": 0,
-  "duplicates": 0,
-  "cancellations": 0,
-  "leaseExpiryChecks": 0,
+  "events": 11002,
+  "restarts": 717,
+  "duplicates": 801,
+  "cancellations": 143,
+  "leaseExpiryChecks": 770,
   "persistenceFaultChecks": 13,
-  "executionAttempts": 0,
-  "verificationAttempts": 0,
-  "reconciliationAttempts": 0,
-  "sideEffectProviderCalls": 0,
-  "executorEvidenceCalls": 0,
-  "observationCalls": 0,
-  "terminalActions": 0,
-  "quiescentUncertain": 0,
-  "malformedEvidenceActions": 0,
-  "runTransitionHashes": ["pending", "pending"],
-  "aggregateTransitionHash": "pending"
+  "executionAttempts": 386,
+  "verificationAttempts": 409,
+  "reconciliationAttempts": 1990,
+  "sideEffectProviderCalls": 348,
+  "executorEvidenceCalls": 1897,
+  "observationCalls": 409,
+  "terminalActions": 475,
+  "quiescentUncertain": 37,
+  "malformedEvidenceActions": 60,
+  "runTransitionHashes": [
+    "fcf0f061a0b916dd53ee479d53aa54d607adabb4f5acd5e97288c0447a0a5e70",
+    "1e3101b2ce136e2ddb603f2860e676677fa5f2be795b963bb7c2b17814107e6e"
+  ],
+  "aggregateTransitionHash": "445c491b744482b4c244a8f28179b693ff8df58ad0bed589b6e0dcefc3c1408c"
 }
