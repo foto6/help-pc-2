@@ -1,11 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import {
   ConformanceValidationError,
   VisionVerificationResultV1Adapter,
   adaptExecutorActionOutcomeV1,
-  gitBlobSha1,
   parseExecutorActionOutcomeV1,
   parseVisionVerificationInputV1,
   parseVisionVerificationResultV1,
@@ -21,8 +21,8 @@ test("frozen corpus provenance matches exact Git blob hashes", () => {
   assert.equal(provenance.upstreams.executor.commit_sha, "606074456ca00681fac30a40ee28f7bb0f67c79c");
   assert.equal(provenance.upstreams.vision.commit_sha, "f20e2c2e35cbcb9b675c9c1a0568de2e40b5eb82");
   for (const entry of provenance.files) {
-    const content = readFileSync(new URL("../../" + entry.copied_path, import.meta.url), "utf8");
-    assert.equal(gitBlobSha1(content), entry.git_blob_sha1, entry.copied_path);
+    const actual = execFileSync("git", ["rev-parse", `HEAD:${entry.copied_path}`], { encoding: "utf8" }).trim();
+    assert.equal(actual, entry.git_blob_sha1, entry.copied_path);
   }
 });
 
