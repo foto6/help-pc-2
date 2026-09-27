@@ -1,0 +1,87 @@
+{
+  "version": "pc_ops.gateway.producer_fixture_pins.v1",
+  "policy": "exact producer bytes only; no sibling-branch imports",
+  "producers": {
+    "executor": {
+      "repository": "foto6/help-pc-1",
+      "branch": "agent/pc-executor",
+      "commit_sha": "2cc1e40f792a3d74560b726a0d246c90b7f077e9",
+      "ci_run": 36318986551,
+      "ci_conclusion": "success",
+      "fixture_pack": "pc_executor.execution_context_binding.v1"
+    },
+    "vision": {
+      "repository": "foto6/vision-2",
+      "branch": "agent/vision",
+      "commit_sha": "51b96fb41cb72cdfc4a03129d14b9afc5fe750fd",
+      "ci_run": 36317785328,
+      "ci_conclusion": "success",
+      "fixture_pack": "vision.observation_epoch.v1 + target_liveness"
+    }
+  },
+  "files": [
+    {
+      "role": "executor",
+      "source_path": "tests/fixtures/execution_context_binding_v1/manifest.json",
+      "git_blob_sha1": "3529d6952d42b291b6a20671aaf0bfe25f221d5d",
+      "copied_path": "conformance/pc_ops.gateway.v1/producers/executor/2cc1e40f792a3d74560b726a0d246c90b7f077e9/tests/fixtures/execution_context_binding_v1/manifest.json",
+      "copied_git_blob_sha1": "3529d6952d42b291b6a20671aaf0bfe25f221d5d"
+    },
+    {
+      "role": "executor",
+      "source_path": "tests/fixtures/execution_context_binding_v1/manifest.sha256",
+      "git_blob_sha1": "8bdd5eff293b1bff16db3c2ecc4ec4bc4dcb9bf0",
+      "copied_path": "conformance/pc_ops.gateway.v1/producers/executor/2cc1e40f792a3d74560b726a0d246c90b7f077e9/tests/fixtures/execution_context_binding_v1/manifest.sha256",
+      "copied_git_blob_sha1": "8bdd5eff293b1bff16db3c2ecc4ec4bc4dcb9bf0"
+    },
+    {
+      "role": "executor",
+      "source_path": "tests/fixtures/execution_context_binding_v1/context_mismatch.validation.json",
+      "git_blob_sha1": "c3499cc45c263bc6c912f659e13096e949e225a1",
+      "copied_path": "conformance/pc_ops.gateway.v1/producers/executor/2cc1e40f792a3d74560b726a0d246c90b7f077e9/tests/fixtures/execution_context_binding_v1/context_mismatch.validation.json",
+      "copied_git_blob_sha1": "c3499cc45c263bc6c912f659e13096e949e225a1"
+    },
+    {
+      "role": "executor",
+      "source_path": "tests/fixtures/execution_context_binding_v1/foreground.binding.json",
+      "git_blob_sha1": "f86e7d7979633bb84d68a34c81eb587ec7cab694",
+      "copied_path": "conformance/pc_ops.gateway.v1/producers/executor/2cc1e40f792a3d74560b726a0d246c90b7f077e9/tests/fixtures/execution_context_binding_v1/foreground.binding.json",
+      "copied_git_blob_sha1": "f86e7d7979633bb84d68a34c81eb587ec7cab694"
+    },
+    {
+      "role": "executor",
+      "source_path": "tests/fixtures/execution_context_binding_v1/shell.binding.json",
+      "git_blob_sha1": "cffafc823514fb52b4b3d69b882e49497b121cb8",
+      "copied_path": "conformance/pc_ops.gateway.v1/producers/executor/2cc1e40f792a3d74560b726a0d246c90b7f077e9/tests/fixtures/execution_context_binding_v1/shell.binding.json",
+      "copied_git_blob_sha1": "cffafc823514fb52b4b3d69b882e49497b121cb8"
+    },
+    {
+      "role": "executor",
+      "source_path": "tests/fixtures/execution_context_binding_v1/uia.binding.json",
+      "git_blob_sha1": "c03b334753f6be212c762029a7a986001b86508d",
+      "copied_path": "conformance/pc_ops.gateway.v1/producers/executor/2cc1e40f792a3d74560b726a0d246c90b7f077e9/tests/fixtures/execution_context_binding_v1/uia.binding.json",
+      "copied_git_blob_sha1": "c03b334753f6be212c762029a7a986001b86508d"
+    },
+    {
+      "role": "vision",
+      "source_path": "tests/fixtures/observation_epoch_v1/benchmark_report.json",
+      "git_blob_sha1": "b2825a9364f91b74b6ecae2ae6a73113de5c913f",
+      "copied_path": "conformance/pc_ops.gateway.v1/producers/vision/51b96fb41cb72cdfc4a03129d14b9afc5fe750fd/tests/fixtures/observation_epoch_v1/benchmark_report.json",
+      "copied_git_blob_sha1": "b2825a9364f91b74b6ecae2ae6a73113de5c913f"
+    },
+    {
+      "role": "vision",
+      "source_path": "tests/fixtures/observation_epoch_v1/scenarios.json",
+      "git_blob_sha1": "8b4355f27f6ffe85d4eb38e22e337ac222939dbe",
+      "copied_path": "conformance/pc_ops.gateway.v1/producers/vision/51b96fb41cb72cdfc4a03129d14b9afc5fe750fd/tests/fixtures/observation_epoch_v1/scenarios.json",
+      "copied_git_blob_sha1": "8b4355f27f6ffe85d4eb38e22e337ac222939dbe"
+    },
+    {
+      "role": "vision",
+      "source_path": "tests/fixtures/observation_epoch_v1/target_liveness.json",
+      "git_blob_sha1": "f2c59bcd535aeddc47939b91d5614a5e9efbff26",
+      "copied_path": "conformance/pc_ops.gateway.v1/producers/vision/51b96fb41cb72cdfc4a03129d14b9afc5fe750fd/tests/fixtures/observation_epoch_v1/target_liveness.json",
+      "copied_git_blob_sha1": "f2c59bcd535aeddc47939b91d5614a5e9efbff26"
+    }
+  ]
+}
