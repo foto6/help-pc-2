@@ -451,7 +451,7 @@ export class NativeControlFacade {
       provider: "help-pc-1",
       type: tool.executorAction,
       input,
-      resource,
+      ...(resource ? { resource } : {}),
       idempotencyKey: `native:${session.id}:${request.requestId}`,
       correlationId: request.requestId,
       destructive: tool.destructive,
