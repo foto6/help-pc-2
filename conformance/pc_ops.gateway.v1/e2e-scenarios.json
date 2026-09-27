@@ -1,0 +1,147 @@
+{
+  "version": "pc_ops.gateway.e2e_scenarios.v1",
+  "producer_gate": "exact_green_fixture_pack_required",
+  "scenarios": [
+    {
+      "id": "read-edit-verify",
+      "status": "pending_producer_fixture",
+      "steps": [
+        "fs.read_text",
+        "fs.hash",
+        "fs.write_text(expected_current_hash)",
+        "fs.read_text",
+        "fs.hash"
+      ],
+      "restart_boundaries": [
+        "after_enqueue",
+        "after_preflight",
+        "after_dispatch_started",
+        "after_executor_completion_before_gateway_result",
+        "after_terminal_persist"
+      ],
+      "invariants": [
+        "expected hash gates mutation",
+        "no blind replay after uncertain dispatch",
+        "final hash matches returned write evidence"
+      ]
+    },
+    {
+      "id": "log-process-lifecycle",
+      "status": "pending_producer_fixture",
+      "steps": [
+        "log.tail",
+        "process.start(operation_id)",
+        "process.read_output(cursor)",
+        "process.status",
+        "process.terminate"
+      ],
+      "restart_boundaries": [
+        "after_start_identity_persist",
+        "after_start_enqueue",
+        "after_start_dispatch",
+        "after_remote_handle_persist",
+        "after_output_cursor_persist",
+        "before_terminate_reconciliation"
+      ],
+      "invariants": [
+        "same operation_id never starts twice",
+        "cursor resumes monotonically",
+        "terminate only targets gateway-owned handle"
+      ]
+    },
+    {
+      "id": "long-powershell-session",
+      "status": "pending_producer_fixture",
+      "steps": [
+        "shell.session.start(operation_id)",
+        "shell.session.read(cursor)",
+        "shell.session.write_stdin",
+        "shell.session.read(cursor)",
+        "shell.session.terminate"
+      ],
+      "restart_boundaries": [
+        "after_start_identity_persist",
+        "after_start_dispatch",
+        "after_remote_handle_persist",
+        "after_each_cursor_persist",
+        "before_terminate_reconciliation"
+      ],
+      "invariants": [
+        "gateway operation_id is never forwarded to Executor",
+        "session_id is derived only from Executor handle evidence",
+        "sensitive stdin remains Executor-policy blocked"
+      ]
+    },
+    {
+      "id": "git-repo-status-structured",
+      "status": "pending_producer_fixture",
+      "steps": [
+        "process.start(git status --short)",
+        "process.read_output(cursor)",
+        "process.status"
+      ],
+      "restart_boundaries": [
+        "after_start_dispatch",
+        "after_remote_handle_persist",
+        "after_output_cursor_persist"
+      ],
+      "invariants": [
+        "no ad-hoc PowerShell required",
+        "bounded output"
+      ]
+    },
+    {
+      "id": "screenshot-uia-observation",
+      "status": "producer_green_contract_ready",
+      "steps": [
+        "windows.list",
+        "screenshot.capture",
+        "uia.snapshot",
+        "uia.inspect"
+      ],
+      "restart_boundaries": [
+        "after_observation_enqueue",
+        "after_observation_result_persist"
+      ],
+      "invariants": [
+        "desktop ownership preserved",
+        "observation actions remain read-only"
+      ]
+    },
+    {
+      "id": "protected-path-rejection",
+      "status": "gateway_fixture_ready",
+      "steps": [
+        "fs.stat(E:\\\\manhwa)",
+        "fs.write_text(E:\\\\manhwa\\\\blocked.txt)"
+      ],
+      "restart_boundaries": [
+        "before_enqueue"
+      ],
+      "invariants": [
+        "gateway rejects protected root and descendants before enqueue",
+        "client safety bypass keys rejected"
+      ]
+    },
+    {
+      "id": "unknown-outcome-reconciliation",
+      "status": "control_plane_wave8_green",
+      "steps": [
+        "effect_enqueue",
+        "dispatch_started",
+        "transport_outcome_unknown",
+        "outcome.lookup",
+        "reconcile"
+      ],
+      "restart_boundaries": [
+        "dispatch_started",
+        "executor_completed_before_result_publish",
+        "reconciliation_wait"
+      ],
+      "invariants": [
+        "unknown side effects never replay blindly",
+        "only journal not_started may authorize bounded retry"
+      ]
+    }
+  ]
+}
