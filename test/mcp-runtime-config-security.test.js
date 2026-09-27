@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   existsSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -18,7 +19,8 @@ import {
 } from "../src/index.js";
 
 function fixtureRoot(t, prefix) {
-  const root = mkdtempSync(join(tmpdir(), prefix));
+  const created = mkdtempSync(join(tmpdir(), prefix));
+  const root = realpathSync.native(created);
   t.after(() => rmSync(root, { recursive: true, force: true }));
   return root;
 }
