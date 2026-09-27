@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - agent/pc-control-plane
+      - agent/pc-control-mcp-gateway
   pull_request:
 
 permissions:
@@ -28,5 +29,7 @@ jobs:
         run: npm run test:preflight
       - name: Focused Executor journal recovery
         run: npm run test:journal
+      - name: Focused MCP gateway
+        run: npm run test:gateway
       - name: Full test suite
         run: npm test
