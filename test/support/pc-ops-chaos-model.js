@@ -31,7 +31,7 @@ export class RequestLedger {
     const existing = this.records.get(request.id);
     if (!existing) {
       const record = { id: request.id, digest, phase: "received", sideEffects: 0, result: null };
-      this.records.set(logicalId, record);
+      this.records.set(request.id, record);
       return { disposition: "accepted", record: structuredClone(record) };
     }
     if (existing.digest !== digest) return { disposition: "conflict", record: structuredClone(existing) };
@@ -197,7 +197,7 @@ export class NativeCutoverOracle {
       resultDurable: false,
       resultLost: false,
     };
-    this.records.set(request.id, record);
+    this.records.set(logicalId, record);
     return { disposition: "accepted", record: structuredClone(record) };
   }
 
