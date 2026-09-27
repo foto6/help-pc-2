@@ -40,53 +40,6 @@ class InvokeAdapter {
     return this.invoke({ requestId: action.id, sessionId: action.sessionId, tool: action.type, input: action.input, resource: action.resource, signal: context.signal, executionAttempt: context.executionAttempt });
   }
 
-  async readCapabilities(action, context = {}) {
-    if (!this.supportsPreflight) return null;
-    let raw;
-    try {
-      raw = await this._readCapabilities({
-        request_id: action?.id ?? null,
-        action: action?.type ?? null,
-      }, context);
-    } catch (error) {
-      throw readOnlyProviderUnavailable(error, "capabilities_unavailable");
-    }
-    const payload = raw?.data?.capabilities ?? raw?.capabilities ?? raw;
-    try {
-      return adaptExecutorCapabilitiesV1(payload);
-    } catch (error) {
-      throw invalidExecutorCapabilities(error);
-    }
-  }
-
-  async preflightAction(action, context = {}) {
-    if (!this.supportsPreflight) return null;
-    const request = buildExecutorActionPreflightRequestV1(action, {
-      dryRun: this.dryRun,
-      timeoutMs: action.preflightTimeoutMs ?? null,
-    });
-    let raw;
-    try {
-      raw = await this._preflight(structuredClone(request), {
-        signal: context.signal,
-        preflightAttempt: context.preflightAttempt,
-        session: context.session,
-      });
-    } catch (error) {
-      throw readOnlyProviderUnavailable(error, "preflight_unavailable");
-    }
-    const payload = raw?.data?.preflight ?? raw?.preflight ?? raw;
-    try {
-      return adaptExecutorActionPreflightResultV1(payload, {
-        requestId: action.id,
-        action: action.type,
-        capabilitiesDigest: context.capabilitiesDigest ?? null,
-      });
-    } catch (error) {
-      throw invalidExecutorPreflight(error);
-    }
-  }
-
   async readOutcomeEvidence(action, context) {
     if (!this._readEvidence) return { outcome: "unknown", source: this.name, requestId: action.id, reason: "no_evidence_reader" };
     return this._readEvidence({ requestId: action.id, action: action.type, input: action.input, executionAttempt: action.executionAttempts }, context);
@@ -238,6 +191,54 @@ export class HelpPc1Adapter {
       executionAttempt,
       executionId: executorJournalExecutionId(action.id, action.type, executionAttempt),
     });
+  }
+
+  async readCapabilities(action, context = {}) {
+    if (!this.supportsPreflight) return null;
+    let raw;
+    try {
+      raw = await this._readCapabilities({
+        request_id: action?.id ?? null,
+        action: action?.type ?? null,
+      }, context);
+    } catch (error) {
+      throw readOnlyProviderUnavailable(error, "capabilities_unavailable");
+    }
+    const payload = raw?.data?.capabilities ?? raw?.capabilities ?? raw;
+    try {
+      return adaptExecutorCapabilitiesV1(payload);
+    } catch (error) {
+      throw invalidExecutorCapabilities(error);
+    }
+  }
+
+  async preflightAction(action, context = {}) {
+    if (!this.supportsPreflight) return null;
+    const request = buildExecutorActionPreflightRequestV1(action, {
+      dryRun: this.dryRun,
+      timeoutMs: action.preflightTimeoutMs ?? null,
+    });
+    let raw;
+    try {
+      raw = await this._preflight(structuredClone(request), {
+        signal: context.signal,
+        preflightAttempt: context.preflightAttempt,
+        session: context.session,
+        capabilitiesDigest: context.capabilitiesDigest ?? null,
+      });
+    } catch (error) {
+      throw readOnlyProviderUnavailable(error, "preflight_unavailable");
+    }
+    const payload = raw?.data?.preflight ?? raw?.preflight ?? raw;
+    try {
+      return adaptExecutorActionPreflightResultV1(payload, {
+        requestId: action.id,
+        action: action.type,
+        capabilitiesDigest: context.capabilitiesDigest ?? null,
+      });
+    } catch (error) {
+      throw invalidExecutorPreflight(error);
+    }
   }
 
   async execute(action, context) {
