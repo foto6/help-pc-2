@@ -93,7 +93,7 @@ test("frozen producer evidence stays exact-head bound", () => {
   const p = JSON.parse(readFileSync(new URL("../conformance/pc-ops-chaos/PROVENANCE.v1.json", import.meta.url), "utf8"));
   assert.equal(p.version, "pc_ops.chaos_provenance.v1");
   assert.equal(p.control_plane.head, "f082a7e837392240788d7474123c90095891e153");
-  assert.equal(p.relay.head, "fcea28ec18a7e3a72e43a62c2782b5a51414a32f");
+  assert.equal(p.relay.head, "e083eea1b4d36a41ee74c11b7ec00f4062b38c39");
   assert.equal(p.executor.head, "2cc1e40f792a3d74560b726a0d246c90b7f077e9");
   assert.equal(["pending_producer_artifacts", "pending_exact_head_green"].includes(p.gateway.status), true);
   for (const producer of [p.control_plane, p.relay, p.executor]) assert.equal(producer.ci.conclusion, "success");

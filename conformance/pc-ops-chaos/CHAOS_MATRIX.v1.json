@@ -7,15 +7,17 @@
       "conclusion": "success"
     },
     "relay_binding": {
-      "head": "fcea28ec18a7e3a72e43a62c2782b5a51414a32f",
-      "ci_run": 36326683913,
-      "conclusion": "success"
+      "head": "e083eea1b4d36a41ee74c11b7ec00f4062b38c39",
+      "ci_run": 36328814629,
+      "conclusion": "success",
+      "structured_ops_fixture_pack": "absent"
     },
     "relay_latest_observed": {
-      "head": "e0e290403a6e61fa2e4dd9ca063e7c333f5cfa4b",
-      "ci_run": 36328579472,
+      "head": "dd803270a80a7199918361abf1c52b01324745e0",
+      "ci_run": 36329130849,
       "conclusion": "failure",
-      "binding_eligible": false
+      "binding_eligible": false,
+      "pc_ops_v1_fixture_pack_present": true
     },
     "executor": {
       "head": "2cc1e40f792a3d74560b726a0d246c90b7f077e9",
@@ -23,8 +25,8 @@
       "conclusion": "success"
     },
     "gateway_observed": {
-      "head": "642e05349e898514034e4f280e54bb14e4a98fa5",
-      "ci_run": 36328674709,
+      "head": "9413c1148ceeabfd73d35885848a36f4f3f3b068",
+      "ci_run": 36329138331,
       "status": "in_progress",
       "binding_eligible": false
     }
@@ -115,21 +117,21 @@
       "family": "relay",
       "fault": "failed rebase/push with stale rebase metadata",
       "status": "BLOCKED",
-      "blocker": "Last exact-green relay has no explicit stale rebase/rebase-merge/rebase-apply detection or fixture; publication recovery uses fetch/reset without proving stale metadata cleanup."
+      "blocker": "Latest exact-green relay has no explicit stale rebase/rebase-merge/rebase-apply contract fixture; publication recovery evidence does not prove stale rebase metadata cleanup."
     },
     {
       "id": "fs.protected_path_alias_traversal_junction",
       "family": "fs.*|shell.run",
       "fault": "protected path aliases/traversal/junction escape",
       "status": "BLOCKED",
-      "blocker": "Exact-green evidence covers direct protected-path shell forms only; no structured-fs canonical path/junction fixture contract proves alias/junction escape safety."
+      "blocker": "Latest exact-green relay tests cover path alias/symlink safety in source-level tests, but the dedicated pc_ops_v1 fixture pack containing structured-path contracts exists only on failed head dd803270a80a7199918361abf1c52b01324745e0; no admissible exact-green structured fixture contract proves junction escape safety."
     },
     {
       "id": "process.exit_before_read",
       "family": "process.*",
       "fault": "long-running process exits before read",
       "status": "PENDING",
-      "pending_on": "exact-green structured process fixture pack"
+      "pending_on": "pc_ops_v1 fixture pack exists only on relay head dd803270a80a7199918361abf1c52b01324745e0 whose exact-head CI failed"
     },
     {
       "id": "process.hang",
@@ -143,7 +145,7 @@
       "family": "shell.session.*",
       "fault": "shell session host restart",
       "status": "PENDING",
-      "pending_on": "exact-green shell session lifecycle fixture pack"
+      "pending_on": "pc_ops_v1 fixture pack exists only on failed relay head dd803270a80a7199918361abf1c52b01324745e0"
     },
     {
       "id": "output_cursor.stale",
@@ -157,14 +159,14 @@
       "family": "fs.*",
       "fault": "fs expected-hash race",
       "status": "PENDING",
-      "pending_on": "exact-green fs expected-current-hash fixture pack"
+      "pending_on": "pc_ops_v1 fixture pack exists only on failed relay head dd803270a80a7199918361abf1c52b01324745e0"
     },
     {
       "id": "fs.append_write_crash_boundary",
       "family": "fs.*",
       "fault": "append/write crash boundary",
       "status": "PENDING",
-      "pending_on": "exact-green fs mutation restart fixture pack"
+      "pending_on": "pc_ops_v1 fixture pack exists only on failed relay head dd803270a80a7199918361abf1c52b01324745e0"
     },
     {
       "id": "fs.deleted_or_moved_between_operations",
@@ -202,5 +204,5 @@
       "pending_on": "gateway/relay exact-head green tool-family fixtures"
     }
   ],
-  "matrix_sha256": "10a800fc22722d311a08f7a19226219bfa16a44666848949945200501e848544"
+  "matrix_sha256": "0d2e4a90f983b3d9c65e6cdf3d2c0d72dddbc34b7d3cea17d16d53e8943a83eb"
 }

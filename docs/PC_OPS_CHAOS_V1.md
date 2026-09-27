@@ -11,3 +11,5 @@ Two current blockers are intentional and must not be patched here: relay queue r
 The protected path `E:\\manhwa` is referenced only as a deny target in assertions and matrix metadata. The harness never opens, stats, lists, resolves, writes, moves, deletes, or otherwise touches that path.
 
 Frozen producer material lives below `conformance/frozen/pc-ops-chaos/` and is copied only from exact-head green producer commits. No test imports code from another branch or repository at runtime.
+
+Producer cutoff: the latest admissible relay evidence at this freeze is `e083eea1b4d36a41ee74c11b7ec00f4062b38c39` (CI 36328814629 SUCCESS). The successor `dd803270a80a7199918361abf1c52b01324745e0` publishes `tests/fixtures/pc_ops_v1/` but its exact-head CI 36329130849 failed, so those fixtures are intentionally not frozen or used to claim PASS.

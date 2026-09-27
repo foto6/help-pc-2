@@ -28,32 +28,28 @@
   "relay": {
     "repo": "foto6/help-pc-1",
     "branch": "agent/pc-relay-hardening",
-    "head": "fcea28ec18a7e3a72e43a62c2782b5a51414a32f",
+    "head": "e083eea1b4d36a41ee74c11b7ec00f4062b38c39",
     "ci": {
-      "run_id": 36326683913,
+      "run_id": 36328814629,
       "conclusion": "success"
     },
+    "structured_ops_fixture_pack": "absent",
     "files": {
       "schemas/pc_relay.request.v2.schema.json": {
         "git_blob_sha1": "e061ca068110f8f419e7c194e32310216becd521"
       },
       "schemas/pc_relay.result.v2.schema.json": {
         "git_blob_sha1": "f7705d285c3e1c0ba8f8a5d95715b96971c3fef5"
-      },
-      "tests/test_pc_relay.py": {
-        "git_blob_sha1": "b293591fef1b1a7d83acab7057647ac031e91948"
-      },
-      "tools/pc_relay.py": {
-        "git_blob_sha1": "15497ec98426c04cb18479bf96fb2c90be96ed30"
       }
     },
     "latest_observed": {
-      "head": "e0e290403a6e61fa2e4dd9ca063e7c333f5cfa4b",
+      "head": "dd803270a80a7199918361abf1c52b01324745e0",
       "ci": {
-        "run_id": 36328579472,
+        "run_id": 36329130849,
         "conclusion": "failure"
       },
-      "binding_eligible": false
+      "binding_eligible": false,
+      "fixture_pack": "tests/fixtures/pc_ops_v1"
     }
   },
   "executor": {
@@ -73,9 +69,9 @@
   "gateway": {
     "repo": "foto6/help-pc-2",
     "branch": "agent/pc-ops-gateway",
-    "head": "642e05349e898514034e4f280e54bb14e4a98fa5",
+    "head": "9413c1148ceeabfd73d35885848a36f4f3f3b068",
     "ci": {
-      "run_id": 36328674709,
+      "run_id": 36329138331,
       "status": "in_progress",
       "conclusion": null
     },
