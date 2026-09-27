@@ -119,3 +119,26 @@ export {
 } from "./mcp-dc-schemas.js";
 export { startNativeMcpHttpServer, isLoopbackHost as isMcpLoopbackHost } from "./mcp-http-host.js";
 export { createConfiguredNativeMcpRuntime } from "./mcp-runtime-config.js";
+
+export {
+  REMOTE_FRAME_VERSION,
+  DEFAULT_RELAY_LIMITS,
+  REMOTE_FRAME_TYPES,
+  RelayProtocolError,
+  RelayAuthenticationError,
+  RelayReplayError,
+  RelayStaleEpochError,
+  ReplayGuard,
+  StreamAssembler,
+  canonicalJson as canonicalRelayJson,
+  sha256Hex as relaySha256Hex,
+  digestJson as relayDigestJson,
+  encodeRelayFrame,
+  decodeRelayFrame,
+  parseRelayEnvelope,
+  validateRequestPayload,
+  requestFingerprint,
+  assertHelloPayload,
+} from "./native-relay-protocol.js";
+export { JsonRelayStateStore, NativeRelayState, RelayStateError } from "./native-relay-state.js";
+export { NativeRelayServer, NativeRelayServerError } from "./native-relay-server.js";

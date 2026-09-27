@@ -1,0 +1,23 @@
+{
+  "contract_source": {
+    "repository": "foto6/help-pc-1",
+    "ref": "agent/pc-native-remote-transport",
+    "commit": "8df29aad32a6cb142dff6721f92fca74a080e441",
+    "path": "src/pc_remote_transport/protocol.py"
+  },
+  "token": {
+    "generation": 1,
+    "secret_base64": "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="
+  },
+  "frame": {
+    "device_id": "device-1",
+    "session_epoch": "epoch-vector-0001",
+    "sequence": 1,
+    "type": "heartbeat",
+    "payload": {
+      "x": 1,
+      "unicode": "lambda"
+    }
+  },
+  "encoded_utf8": "{\"auth\":{\"scheme\":\"hmac-sha256\",\"tag\":\"0855b1cebf06e9454ce921b7258336d5f1c3bf0cfea9de20e400107999acd6c0\",\"token_generation\":1},\"device_id\":\"device-1\",\"payload\":{\"unicode\":\"lambda\",\"x\":1},\"sequence\":1,\"session_epoch\":\"epoch-vector-0001\",\"type\":\"heartbeat\",\"version\":\"pc_remote_transport.frame.v1\"}"
+}

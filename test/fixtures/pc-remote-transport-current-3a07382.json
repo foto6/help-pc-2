@@ -1,0 +1,60 @@
+{
+  "contract_source": {
+    "commit": "3a07382fa98f3e02a3d1ffbb4cc3c61b806e2e63",
+    "git_blob_sha1": "648d741d11c74d03b2f37039286ce23dc4b8d158",
+    "path": "src/pc_remote_transport/protocol.py",
+    "ref": "agent/pc-native-full-stack",
+    "repository": "foto6/help-pc-1",
+    "sha256": "ce0ffd0937e2d122199ee9aa54c61b22a87c17ca4c0ab57595a53dd3aa325de1"
+  },
+  "encoded_sha256": "4a42872fe890c75ffc1d8f19818fc669f866c4f6f3b8d7cd570958da5f20da78",
+  "encoded_utf8": "{\"auth\":{\"scheme\":\"hmac-sha256\",\"tag\":\"0855b1cebf06e9454ce921b7258336d5f1c3bf0cfea9de20e400107999acd6c0\",\"token_generation\":1},\"device_id\":\"device-1\",\"payload\":{\"unicode\":\"lambda\",\"x\":1},\"sequence\":1,\"session_epoch\":\"epoch-vector-0001\",\"type\":\"heartbeat\",\"version\":\"pc_remote_transport.frame.v1\"}",
+  "frame": {
+    "device_id": "device-1",
+    "payload": {
+      "unicode": "lambda",
+      "x": 1
+    },
+    "sequence": 1,
+    "session_epoch": "epoch-vector-0001",
+    "type": "heartbeat"
+  },
+  "request": {
+    "body": {
+      "opaque": {
+        "n": 1,
+        "operation": "not-interpreted"
+      }
+    },
+    "delivery_id": "delivery-vector-1",
+    "request_id": "req-vector-1",
+    "request_version": "control.request.v1",
+    "semantics": "side_effecting"
+  },
+  "request_fingerprint": "280ab09894c992a3cce8fbdf450a84d6de67e295cd759d399698241b32c5b5c7",
+  "token": {
+    "generation": 1,
+    "secret_base64": "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="
+  },
+  "wire_constants": {
+    "frame_types": [
+      "error",
+      "heartbeat",
+      "heartbeat_ack",
+      "hello",
+      "reconcile_required",
+      "request",
+      "response",
+      "stream_chunk",
+      "stream_end",
+      "token.rotate",
+      "token.rotated",
+      "welcome"
+    ],
+    "frame_version": "pc_remote_transport.frame.v1",
+    "max_chunk_bytes": 65536,
+    "max_frame_bytes": 1048576,
+    "max_request_bytes": 524288,
+    "max_stream_bytes": 8388608
+  }
+}
