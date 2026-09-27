@@ -36,6 +36,21 @@ export {
 } from "./native-facade.js";
 export { LocalNativeHttpTransport } from "./native-http.js";
 export {
+  DC_COMPATIBILITY_REGISTRY_V1,
+  DC_COMPATIBILITY_RESPONSE_V1,
+  DC_COMPATIBILITY_REGISTRY,
+  DC_COMPATIBILITY_REGISTRY_LIST,
+  DC_COMPATIBILITY_REGISTRY_DIGEST,
+  desktopCommanderToolDefinition,
+  desktopCommanderCompatibilityManifestV1,
+} from "./dc-compatibility-registry.js";
+export {
+  DesktopCommanderCompatibilitySurface,
+  DcCompatibilityError,
+  JsonDcCompatibilityStore,
+  normalizeDesktopCommanderError,
+} from "./dc-compatibility.js";
+export {
   EXECUTOR_OUTCOME_V1,
   EXECUTOR_OUTCOME_JOURNAL_RECORD_V1,
   EXECUTOR_OUTCOME_JOURNAL_LOOKUP_V1,
