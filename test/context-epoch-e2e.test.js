@@ -250,16 +250,6 @@ for (const [behavior, changed, mismatch] of [
 }
 
 test("benign move/resize remains same epoch and does not invalidate UIA execution context", async () => {
-  const badBinding = runtime({
-    bindContext: async (request) => {
-      const payload = executionContextBinding(request.request_id, { action: request.action });
-      payload.context_digest = "0".repeat(64);
-      return payload;
-    },
-    idempotencyKey: "wave9-report-bad-binding",
-  });
-  scenarios.push(reportEntry("wrong_context_binding_blocked", badBinding, await badBinding.cp.processNext()));
-
   const corpus = observationEpochCorpus();
   assert.equal(corpus.scenarios.moving_window.expected_relation, "same");
   assert.equal(corpus.scenarios.moving_window.epoch_changed, false);
@@ -708,6 +698,16 @@ test("canonical pc_control.context_epoch_e2e.v1 report matches frozen fixture", 
   completedStale.counters.readOnlyRecaptures += 1;
   completedStale.restart();
   scenarios.push(reportEntry("completed_journal_stale_vision", completedStale, await completedStale.cp.processNext()));
+
+  const badBinding = runtime({
+    bindContext: async (request) => {
+      const payload = executionContextBinding(request.request_id, { action: request.action });
+      payload.context_digest = "0".repeat(64);
+      return payload;
+    },
+    idempotencyKey: "wave9-report-bad-binding",
+  });
+  scenarios.push(reportEntry("wrong_context_binding_blocked", badBinding, await badBinding.cp.processNext()));
 
   const corpus = observationEpochCorpus();
   const fixtureHashes = {
