@@ -10,8 +10,10 @@ import {
   TOOL_REGISTRY_LIST,
   DC_COMPATIBILITY_REGISTRY_DIGEST,
   DC_COMPATIBILITY_REGISTRY_LIST,
+  fullCompatibilityAuditV1,
   startNativeMcpHttpServer,
 } from "../src/index.js";
+import { routeNativeExecutorTool } from "../src/native-relay-registry-route.js";
 
 const TOKEN = "0123456789abcdef0123456789abcdef";
 
@@ -130,6 +132,36 @@ test("official modern client negotiates 2026-07-28, lists native plus versioned 
   assert.equal(compatReadTool._meta["pc.desktop_commander/executor_digest"], "executor-cap-v1");
   assert.equal(compatReadTool._meta["pc.desktop_commander/available"], true);
   assert.equal(compatReadTool.inputSchema.additionalProperties, false);
+
+  // End-to-end discovery must show the exact pinned 37/25 PC Core route,
+  // not label parity aliases with the frozen producer registry version.
+  const routeAudit = fullCompatibilityAuditV1({
+    nativeManifest: await h.facade.capabilities(),
+  });
+  assert.equal(listed.tools.length, 90);
+  assert.equal(routeAudit.native_routes.total, 62);
+  assert.equal(routeAudit.public_catalog.mandatory, 28);
+  for (const tool of TOOL_REGISTRY_LIST) {
+    const listedTool = listed.tools.find((item) => item.name === tool.name);
+    assert.ok(listedTool, tool.name);
+    const route = routeNativeExecutorTool(tool.name, tool.executorAction, tool.effect);
+    assert.equal(listedTool._meta["pc.native/pc_core_wire_registry"], route.registryVersion, tool.name);
+    assert.equal(listedTool._meta["pc.native/pc_core_wire_tool"], route.wireToolName, tool.name);
+    assert.equal(listedTool._meta["pc.native/pc_core_wire_alias"],
+      route.wireToolName !== tool.name, tool.name);
+    assert.equal(listedTool._meta["pc.native/route_digest"], routeAudit.route_digest, tool.name);
+    assert.equal(listedTool._meta["pc.native/effect"], tool.effect, tool.name);
+  }
+  const auditedPublic = new Map(routeAudit.public_catalog.tools.map((tool) => [tool.name, tool]));
+  for (const tool of DC_COMPATIBILITY_REGISTRY_LIST) {
+    const listedTool = listed.tools.find((item) => item.name === tool.name);
+    assert.ok(listedTool, tool.name);
+    assert.equal(listedTool._meta["pc.desktop_commander/mandatory_count"], 28);
+    assert.equal(listedTool._meta["pc.desktop_commander/catalog_count"], 30);
+    assert.equal(listedTool._meta["pc.desktop_commander/native_route_digest"], routeAudit.route_digest);
+    assert.equal(listedTool._meta["pc.desktop_commander/available"],
+      auditedPublic.get(tool.name).available, tool.name);
+  }
 
   const read = await client.callTool({
     name: "file.info",
