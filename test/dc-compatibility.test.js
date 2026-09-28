@@ -13,6 +13,7 @@ import {
   JsonDcCompatibilityStore,
   desktopCommanderCompatibilityManifestV1,
   normalizeDesktopCommanderError,
+  TOOL_REGISTRY_DIGEST,
 } from "../src/index.js";
 
 const REQUIRED_NAMES = [
@@ -68,7 +69,7 @@ class FakeFacade {
     return {
       contract_version: "pc.native.tool_registry.v1",
       protocol_version: "pc.native.control.v1",
-      registry_digest: "native-registry",
+      registry_digest: TOOL_REGISTRY_DIGEST,
       executor: {
         contract_version: "pc_executor.capabilities.v1",
         digest: "exec-digest",
@@ -79,7 +80,12 @@ class FakeFacade {
 
   async invoke(envelope) {
     this.calls.push(structuredClone(envelope));
-    return this.handler(envelope, this.calls.length - 1);
+    const result = await this.handler(envelope, this.calls.length - 1);
+    return {
+      ...result,
+      request_id: result.request_id ?? envelope.request_id,
+      session_id: result.session_id ?? envelope.session_id,
+    };
   }
 }
 
