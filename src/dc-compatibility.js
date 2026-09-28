@@ -1377,19 +1377,50 @@ export class DesktopCommanderCompatibilitySurface {
 
   async #listSessions(sessionId, requestId, _args = {}, signal = null) {
     const { variant } = await this.#selectVariant("list_sessions");
-    let response;
     let nativeProcesses = [];
+    let completeListing = true;
+    let pagesRead = 0;
     if (variant.id === "pc_core") {
-      response = await this.#invokeNative({
-        sessionId,
-        requestId,
-        tool: "process.managed.list",
-        arguments: { include_stale: true, offset: 0, max_results: DEFAULT_NATIVE_LIMITS.maxPageSize },
-        signal,
-      });
-      nativeProcesses = asArray(response.data, ["handles", "items", "processes"]);
+      let offset = 0;
+      const maxPages = 10;
+      for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
+        const response = await this.#invokeNative({
+          sessionId,
+          requestId: pageIndex === 0 ? requestId : `${requestId}:page:${pageIndex}`,
+          tool: "process.managed.list",
+          arguments: {
+            include_stale: true,
+            offset,
+            max_results: DEFAULT_NATIVE_LIMITS.maxPageSize,
+          },
+          signal,
+        });
+        const rows = asArray(response.data, ["handles", "items", "processes"]);
+        if (rows.length > DEFAULT_NATIVE_LIMITS.maxPageSize) {
+          throw new DcCompatibilityError("Native process listing exceeded the requested page bound.", {
+            code: "NATIVE_RESULT_INVALID",
+            category: "native_result",
+          });
+        }
+        nativeProcesses.push(...rows);
+        pagesRead += 1;
+        if (response.data?.has_more !== true) break;
+        if (pageIndex + 1 === maxPages) {
+          completeListing = false;
+          break;
+        }
+        const nextOffset = Number.isInteger(response.data?.next_offset)
+          ? response.data.next_offset : offset + rows.length;
+        if (rows.length === 0 || nextOffset <= offset) {
+          throw new DcCompatibilityError("Native process listing continuation did not advance.", {
+            code: "NATIVE_RESULT_INVALID",
+            category: "native_result",
+          });
+        }
+        offset = nextOffset;
+      }
     } else {
-      response = await this.#invokeNative({
+      const response = await this.#invokeNative({
         sessionId,
         requestId,
         tool: "process.list",
@@ -1398,6 +1429,9 @@ export class DesktopCommanderCompatibilitySurface {
         signal,
       });
       nativeProcesses = asArray(response.data, ["processes", "items", "handles"]);
+      completeListing = response.stream?.next_cursor == null
+        && response.data?.has_more !== true && response.data?.truncated !== true;
+      pagesRead = 1;
     }
 
     const byHandle = new Map(
@@ -1426,7 +1460,7 @@ export class DesktopCommanderCompatibilitySurface {
             item.running = false;
             item.status = "stale_after_restart";
           }
-        } else if (nativeProcesses.length && item.status === "running") {
+        } else if (completeListing && nativeProcesses.length && item.status === "running") {
           item.running = false;
           item.status = "finished";
         }
@@ -1441,7 +1475,14 @@ export class DesktopCommanderCompatibilitySurface {
       })
       .sort((a, b) => a.pid - b.pid);
     this.#persist();
-    return { sessions, count: sessions.length, native_variant: variant.id };
+    return {
+      sessions,
+      count: sessions.length,
+      native_variant: variant.id,
+      native_pages_read: pagesRead,
+      native_listing_complete: completeListing,
+      truncated: !completeListing,
+    };
   }
 
   async #forceTerminate(sessionId, requestId, args, signal = null) {
