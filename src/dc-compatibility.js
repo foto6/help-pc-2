@@ -232,22 +232,22 @@ export function normalizeDesktopCommanderError(error, { tool = null } = {}) {
     && category.toLowerCase() !== "filesystem"
     && !(code.toUpperCase() === "NOT_FOUND" && fileContext)
   );
-  if (!protectedDomain && !structuredOtherNotFound && /enoent|not[_ -]?found|no such file|missing file/.test(haystack)) {
+  if (!protectedDomain && !structuredOtherNotFound && !structuredOtherNotFound && /enoent|not[_ -]?found|no such file|missing file/.test(haystack)) {
     normalizedCode = "FILE_NOT_FOUND";
     normalizedCategory = "filesystem";
-  } else if (!protectedDomain && /eacces|eperm|access[_ -]?denied|permission denied|unauthori[sz]ed/.test(haystack)) {
+  } else if (!protectedDomain && !structuredOtherNotFound && /eacces|eperm|access[_ -]?denied|permission denied|unauthori[sz]ed/.test(haystack)) {
     normalizedCode = "ACCESS_DENIED";
     normalizedCategory = "filesystem";
-  } else if (!protectedDomain && /stale.*handle|stale_process_handle|invalid.*handle|unknown.*handle/.test(haystack)) {
+  } else if (!protectedDomain && !structuredOtherNotFound && /stale.*handle|stale_process_handle|invalid.*handle|unknown.*handle/.test(haystack)) {
     normalizedCode = "STALE_HANDLE";
     normalizedCategory = "process";
-  } else if (!protectedDomain && /replacement.*mismatch|replacement count|expected_replacements/.test(haystack)) {
+  } else if (!protectedDomain && !structuredOtherNotFound && /replacement.*mismatch|replacement count|expected_replacements/.test(haystack)) {
     normalizedCode = "REPLACEMENT_CONFLICT";
     normalizedCategory = "conflict";
-  } else if (!protectedDomain && /range|bounds|offset|page_limit|too large|exceeds.*bound/.test(haystack)) {
+  } else if (!protectedDomain && !structuredOtherNotFound && /range|bounds|offset|page_limit|too large|exceeds.*bound/.test(haystack)) {
     normalizedCode = "RANGE_ERROR";
     normalizedCategory = "range";
-  } else if (!protectedDomain && ((tool && tool.includes("process")) || /process|terminate|spawn|exited/.test(haystack))) {
+  } else if (!protectedDomain && !structuredOtherNotFound && ((tool && tool.includes("process")) || /process|terminate|spawn|exited/.test(haystack))) {
     normalizedCode = "PROCESS_ERROR";
     normalizedCategory = "process";
   }
