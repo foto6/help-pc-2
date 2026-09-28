@@ -368,3 +368,30 @@ test("non-progressing native managed-process page is rejected instead of fabrica
   assert.equal(result.error.code, "NATIVE_RESULT_INVALID");
   assert.equal(facade.calls.length, 1);
 });
+
+test("forged native registry or Executor capability identity rejects public variant before any provider dispatch", async () => {
+  for (const patch of [
+    { registry_digest: "forged-native-registry" },
+    { protocol_version: "pc.native.control.v2" },
+    { executor: { ...manifest().executor, digest: "" } },
+  ]) {
+    const calls = [];
+    const facade = {
+      async capabilities() { return { ...manifest(), ...patch }; },
+      async invoke(envelope) {
+        calls.push(envelope);
+        return nativeResponse(envelope);
+      },
+    };
+    const surface = new DesktopCommanderCompatibilitySurface({ facade });
+    const outcome = await surface.invoke(
+      request("read_file", { path: "C:\\fixture\\identity-only.txt" }, "bad-identity"));
+    assert.equal(outcome.status, "error");
+    assert.ok(["NATIVE_REGISTRY_IDENTITY_MISMATCH", "EXECUTOR_CAPABILITY_IDENTITY_INVALID"]
+      .includes(outcome.error.code));
+    assert.equal(outcome.error.retryable, false);
+    assert.equal(calls.length, 0);
+    await assert.rejects(() => surface.registry(),
+      (error) => error instanceof FullCompatibilityAuditError);
+  }
+});
