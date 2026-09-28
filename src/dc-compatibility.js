@@ -683,14 +683,27 @@ export class DesktopCommanderCompatibilitySurface {
           }
         }
         const hasMore = response.data?.has_more === true || response.data?.truncated === true;
+        if (pageEntries.length > perDirectoryLimit || (hasMore && pageEntries.length === 0)) {
+          throw new DcCompatibilityError("Native file.list returned an invalid bounded page.", {
+            code: "NATIVE_RESULT_INVALID",
+            category: "native_result",
+          });
+        }
         if (nested && hasMore) {
           truncated = true;
           break;
         }
-        if (!hasMore || pageEntries.length === 0) break;
-        offset = Number.isInteger(response.data?.next_offset)
+        if (!hasMore) break;
+        const nextOffset = Number.isInteger(response.data?.next_offset)
           ? response.data.next_offset
           : offset + pageEntries.length;
+        if (nextOffset <= offset) {
+          throw new DcCompatibilityError("Native file.list continuation did not advance.", {
+            code: "NATIVE_RESULT_INVALID",
+            category: "native_result",
+          });
+        }
+        offset = nextOffset;
         pageIndex += 1;
         if (pageIndex >= 10) {
           truncated = true;
