@@ -287,3 +287,84 @@ test("UNKNOWN side-effect completion retains one durable request identity; looku
     ["side-effect-one", "side-effect-one"]);
   assert.deepEqual(facade.calls.map((call) => call.tool), ["file.write", "file.write"]);
 });
+
+test("managed session pagination uses deterministic request children and preserves exact running identity", async () => {
+  const state = {
+    version: 1,
+    processes: [{
+      sessionId: "session-r16", pid: 101, handle: "handle-101",
+      kind: "session", status: "running", running: true, returncode: null,
+      lastCursor: null, startedAtMs: 1, updatedAtMs: 1,
+    }],
+  };
+  const store = {
+    load: () => structuredClone(state),
+    save: (next) => Object.assign(state, structuredClone(next)),
+  };
+  const facade = fakeFacade(["process.managed.list", "process.status"], async (env) => {
+    const offset = env.arguments.offset;
+    if (offset === 0) return nativeResponse(env, {
+      data: { handles: [{ handle_id: "unrelated", pid: 999, status: "running" }],
+        has_more: true, next_offset: 1 },
+    });
+    return nativeResponse(env, {
+      data: { handles: [{ handle_id: "handle-101", pid: 101, status: "running", running: true }],
+        has_more: false },
+    });
+  });
+  const surface = new DesktopCommanderCompatibilitySurface({ facade, store });
+  const result = await surface.invoke(request("list_sessions", {}, "sessions-paged"));
+  assert.equal(result.status, "completed");
+  assert.equal(result.data.count, 1);
+  assert.equal(result.data.native_pages_read, 2);
+  assert.equal(result.data.native_listing_complete, true);
+  assert.equal(result.data.truncated, false);
+  assert.equal(result.data.sessions[0].running, true);
+  assert.deepEqual(facade.calls.map((row) => row.request_id),
+    ["sessions-paged", "sessions-paged:page:1"]);
+  assert.deepEqual(facade.calls.map((row) => row.arguments.offset), [0, 1]);
+});
+
+test("bounded incomplete native process list never marks an unseen live process finished", async () => {
+  const state = {
+    version: 1,
+    processes: [{
+      sessionId: "session-r16", pid: 101, handle: "handle-101",
+      kind: "session", status: "running", running: true, returncode: null,
+      lastCursor: null, startedAtMs: 1, updatedAtMs: 1,
+    }],
+  };
+  const store = {
+    load: () => structuredClone(state),
+    save: (next) => Object.assign(state, structuredClone(next)),
+  };
+  const facade = fakeFacade(["process.managed.list", "process.status"], async (env) => {
+    const offset = env.arguments.offset;
+    return nativeResponse(env, {
+      data: { handles: [{ handle_id: "unrelated-" + offset, pid: 1000 + offset }],
+        has_more: true, next_offset: offset + 1 },
+    });
+  });
+  const surface = new DesktopCommanderCompatibilitySurface({ facade, store });
+  const result = await surface.invoke(request("list_sessions", {}, "sessions-bounded"));
+  assert.equal(result.status, "completed");
+  assert.equal(result.data.native_pages_read, 10);
+  assert.equal(result.data.native_listing_complete, false);
+  assert.equal(result.data.truncated, true);
+  assert.equal(result.data.sessions[0].status, "running");
+  assert.equal(result.data.sessions[0].running, true);
+  assert.equal(facade.calls.length, 10);
+  assert.equal(facade.calls.at(-1).request_id, "sessions-bounded:page:9");
+});
+
+test("non-progressing native managed-process page is rejected instead of fabricating lifecycle status", async () => {
+  const facade = fakeFacade(["process.managed.list", "process.status"], async (env) =>
+    nativeResponse(env, {
+      data: { handles: [{ handle_id: "one", pid: 900 }], has_more: true, next_offset: 0 },
+    }));
+  const surface = new DesktopCommanderCompatibilitySurface({ facade });
+  const result = await surface.invoke(request("list_sessions", {}, "sessions-stalled"));
+  assert.equal(result.status, "error");
+  assert.equal(result.error.code, "NATIVE_RESULT_INVALID");
+  assert.equal(facade.calls.length, 1);
+});
