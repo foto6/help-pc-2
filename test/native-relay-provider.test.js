@@ -292,6 +292,89 @@ test("provider pins current PC transport fixture and publishes package/module id
   assert.equal(bridge.bindExecutionContext, undefined);
 });
 
+test("real relay discovery preserves signed public credential policy boolean without leaking credentials", async (t) => {
+  const { address } = await startRelay(t);
+  // R9 real-PC manifest has exactly this explicitly non-secret boolean.
+  // Previously publicDevice recursively redacted it into "[REDACTED]",
+  // breaking the digest checked by NativeRelayExecutorProvider at startup.
+  const capabilities = {
+    ...deviceCapabilities(),
+    tool_parity: { safety: { credential_entry_allowed: false } },
+  };
+  const peer = await connectDevice(address, { capabilities });
+  t.after(() => peer.close());
+
+  const response = await fetch(new URL("/v1/relay/devices", address.url), {
+    headers: { authorization: `Bearer ${CONTROL_TOKEN}` },
+  });
+  assert.equal(response.status, 200);
+  const discovery = await response.json();
+  const publicDevice = discovery.devices.find((item) => item.device_id === DEVICE_ID);
+  assert.equal(publicDevice.online, true);
+  assert.equal(publicDevice.capabilities.tool_parity.safety.credential_entry_allowed, false);
+  assert.equal(typeof publicDevice.capabilities.tool_parity.safety.credential_entry_allowed, "boolean");
+  assert.equal(relayDigestJson(publicDevice.capabilities), publicDevice.capabilities_digest);
+  assert.equal(publicDevice.capabilities_digest, relayDigestJson(capabilities));
+
+  const p = provider(address);
+  const executor = await p.readCapabilities();
+  assert.equal(executor.digest, EXECUTOR_DIGEST);
+});
+
+test("public relay redaction exception is path- and type-specific; metadata stays private", () => {
+  const state = new NativeRelayState();
+  state.registerDevice({
+    deviceId: DEVICE_ID,
+    generation: DEVICE_TOKEN.generation,
+    secret: DEVICE_TOKEN.secret,
+    metadata: {
+      credential_entry_allowed: false,
+      token: "fixture-private",
+      tool_parity: { safety: { credential_entry_allowed: false } },
+    },
+  });
+  const capabilities = {
+    ...deviceCapabilities(),
+    tool_parity: {
+      safety: {
+        credential_entry_allowed: false,
+        credential_debug: "fixture-private",
+        authorization: "fixture-private",
+      },
+    },
+    arbitrary: { credential_entry_allowed: true },
+  };
+  state.beginSession({
+    deviceId: DEVICE_ID,
+    sessionEpoch: "epoch-public-redaction-0001",
+    capabilities,
+    capabilitiesDigest: relayDigestJson(capabilities),
+    limits: {},
+  });
+  const view = state.deviceView(DEVICE_ID, true);
+  assert.equal(view.capabilities.tool_parity.safety.credential_entry_allowed, false);
+  assert.equal(view.capabilities.tool_parity.safety.credential_debug, "[REDACTED]");
+  assert.equal(view.capabilities.tool_parity.safety.authorization, "[REDACTED]");
+  assert.equal(view.capabilities.arbitrary.credential_entry_allowed, "[REDACTED]");
+  assert.equal(view.metadata.credential_entry_allowed, "[REDACTED]");
+  assert.equal(view.metadata.token, "[REDACTED]");
+  assert.equal(view.metadata.tool_parity.safety.credential_entry_allowed, "[REDACTED]");
+
+  // Malformed type never qualifies for the one public-boolean exception.
+  const wrongType = { ...capabilities, tool_parity: { safety: { credential_entry_allowed: "secret" } } };
+  state.beginSession({
+    deviceId: DEVICE_ID,
+    sessionEpoch: "epoch-public-redaction-0002",
+    capabilities: wrongType,
+    capabilitiesDigest: relayDigestJson(wrongType),
+    limits: {},
+  });
+  assert.equal(
+    state.deviceView(DEVICE_ID, true).capabilities.tool_parity.safety.credential_entry_allowed,
+    "[REDACTED]",
+  );
+});
+
 test("provider accepts only authenticated loopback relay control origins", () => {
   assert.throws(
     () => new NativeRelayExecutorProvider({
