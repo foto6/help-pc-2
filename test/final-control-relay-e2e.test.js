@@ -143,7 +143,8 @@ test("final production chain exposes 28 DC tools and preserves one logical reque
   const readFrame = await h.peer.nextRequest();
   assert.equal(readFrame.payload.request_id, readId);
   assert.equal(readFrame.payload.body.request_id, readId);
-  assert.equal(readFrame.payload.body.tool, "device.ping");
+  assert.equal(readFrame.payload.body.registry_version, "pc.native.parity_tool_registry.v1");
+  assert.equal(readFrame.payload.body.tool, "device.health");
   assert.notEqual(readFrame.payload.delivery_id, readId);
   respond(h.peer, readFrame, { data: { healthy: true } });
   const read = structured(await readPending);
@@ -157,10 +158,12 @@ test("final production chain exposes 28 DC tools and preserves one logical reque
   });
   const infoFrame = await h.peer.nextRequest();
   assert.equal(infoFrame.payload.request_id, shutdownId + ":generation");
+  assert.equal(infoFrame.payload.body.registry_version, "pc.native.parity_tool_registry.v1");
   assert.equal(infoFrame.payload.body.tool, "device.info");
   respond(h.peer, infoFrame, { data: { device_id: "local", generation_id: "generation-final-1" } });
   const shutdownFrame = await h.peer.nextRequest();
   assert.equal(shutdownFrame.payload.request_id, shutdownId);
+  assert.equal(shutdownFrame.payload.body.registry_version, "pc.native.parity_tool_registry.v1");
   assert.equal(shutdownFrame.payload.body.tool, "agent.shutdown");
   assert.deepEqual(shutdownFrame.payload.body.arguments, {
     device_id: TEST_RELAY_DEVICE_ID,
