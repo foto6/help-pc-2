@@ -5,6 +5,8 @@ import {
   NATIVE_TOOL_REGISTRY_V1,
   TOOL_REGISTRY_LIST,
 } from "./native-registry.js";
+import { PC_PARITY_REGISTRY_V1, routeNativeExecutorTool } from "./native-relay-registry-route.js";
+import { assertPinnedNativeManifest, fullCompatibilityAuditV1 } from "./full-compat-observability.js";
 import {
   mcpToolDescription,
   mcpToolSchema,
@@ -155,7 +157,7 @@ export class NativeMcpRuntime {
   }
 
   async ensureCapabilities() {
-    const manifest = await this.facade.capabilities();
+    const manifest = assertPinnedNativeManifest(await this.facade.capabilities());
     const expected = this.initialManifest;
     if (!expected ||
         manifest.protocol_version !== expected.protocol_version ||
@@ -273,6 +275,7 @@ export class NativeMcpRuntime {
   async createServer(ctx = {}) {
     const manifest = await this.ensureCapabilities();
     const compatibilityManifest = desktopCommanderCompatibilityManifestV1({ nativeManifest: manifest });
+    const fullAudit = fullCompatibilityAuditV1({ nativeManifest: manifest });
     const server = new McpServer(
       { name: this.serverName, version: this.serverVersion },
       { capabilities: { tools: {} } },
@@ -282,6 +285,7 @@ export class NativeMcpRuntime {
       Array.isArray(manifest.executor?.actions) ? manifest.executor.actions : [],
     );
     for (const tool of TOOL_REGISTRY_LIST) {
+      const route = routeNativeExecutorTool(tool.name, tool.executorAction, tool.effect);
       server.registerTool(
         tool.name,
         {
@@ -297,6 +301,12 @@ export class NativeMcpRuntime {
             "pc.native/protocol_version": manifest.protocol_version,
             "pc.native/registry_contract": NATIVE_TOOL_REGISTRY_V1,
             "pc.native/registry_digest": manifest.registry_digest,
+            "pc.native/pc_core_wire_registry": route.registryVersion,
+            "pc.native/pc_core_wire_tool": route.wireToolName,
+            "pc.native/pc_core_wire_alias": route.wireToolName !== tool.name,
+            "pc.native/pc_core_parity_route": route.registryVersion === PC_PARITY_REGISTRY_V1,
+            "pc.native/pc_core_frozen_digest": fullAudit.pc_frozen_registry_digest,
+            "pc.native/route_digest": fullAudit.route_digest,
             "pc.native/executor_digest": manifest.executor?.digest ?? null,
             "pc.native/effect": tool.effect,
             "pc.native/streaming": tool.streaming,
@@ -329,6 +339,10 @@ export class NativeMcpRuntime {
           _meta: {
             "pc.desktop_commander/compat_registry_contract": DC_COMPATIBILITY_REGISTRY_V1,
             "pc.desktop_commander/compat_registry_digest": DC_COMPATIBILITY_REGISTRY_DIGEST,
+            "pc.desktop_commander/native_route_digest": fullAudit.route_digest,
+            "pc.desktop_commander/mandatory_count": fullAudit.public_catalog.mandatory,
+            "pc.desktop_commander/catalog_count": fullAudit.public_catalog.mandatory
+              + fullAudit.public_catalog.vendor_non_equivalents.length,
             "pc.desktop_commander/native_protocol_version": manifest.protocol_version,
             "pc.desktop_commander/native_registry_digest": manifest.registry_digest,
             "pc.desktop_commander/executor_digest": manifest.executor?.digest ?? null,
