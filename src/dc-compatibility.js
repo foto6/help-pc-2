@@ -329,7 +329,7 @@ export class DesktopCommanderCompatibilitySurface {
 
   async registry() {
     return desktopCommanderCompatibilityManifestV1({
-      nativeManifest: await this.facade.capabilities(),
+      nativeManifest: assertPinnedNativeManifest(await this.facade.capabilities()),
     });
   }
 
@@ -378,8 +378,8 @@ export class DesktopCommanderCompatibilitySurface {
         category: "tool",
       });
     }
-    const manifest = await this.facade.capabilities();
-    const advertised = new Set(Array.isArray(manifest?.executor?.actions) ? manifest.executor.actions : []);
+    const manifest = assertPinnedNativeManifest(await this.facade.capabilities());
+    const advertised = new Set(manifest.executor.actions);
     const variants = definition.capability_variants.filter(
       (variant) => variantId === null || variant.id === variantId,
     );
