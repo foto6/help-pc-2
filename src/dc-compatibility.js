@@ -232,7 +232,7 @@ export function normalizeDesktopCommanderError(error, { tool = null } = {}) {
     && category.toLowerCase() !== "filesystem"
     && !(code.toUpperCase() === "NOT_FOUND" && fileContext)
   );
-  if (!protectedDomain && !structuredOtherNotFound && !structuredOtherNotFound && /enoent|not[_ -]?found|no such file|missing file/.test(haystack)) {
+  if (!protectedDomain && !structuredOtherNotFound && /enoent|not[_ -]?found|no such file|missing file/.test(haystack)) {
     normalizedCode = "FILE_NOT_FOUND";
     normalizedCategory = "filesystem";
   } else if (!protectedDomain && !structuredOtherNotFound && /eacces|eperm|access[_ -]?denied|permission denied|unauthori[sz]ed/.test(haystack)) {
