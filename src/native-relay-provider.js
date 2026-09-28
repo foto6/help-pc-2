@@ -5,6 +5,7 @@ import {
   toolDefinition,
 } from "./native-registry.js";
 import { digestJson as relayDigestJson } from "./native-relay-protocol.js";
+import { PC_PARITY_REGISTRY_V1, routeNativeExecutorTool } from "./native-relay-registry-route.js";
 
 export const NATIVE_RELAY_PROVIDER_IDENTITY = Object.freeze({
   package: "pc-control-plane",
@@ -406,11 +407,21 @@ export class NativeRelayExecutorProvider {
         generation_id: generationId,
       });
     }
+    // Facade tool identity remains the public Control name; only the exact
+    // PC Core wire registry/name is translated. Frozen v1 payloads are kept
+    // byte-compatible (no new registry_version field). An explicit parity
+    // version is mandatory for names absent from PC Core's frozen v1 registry.
+    // This is deterministic and fail-closed BEFORE relay dispatch.
+    const wire = routeNativeExecutorTool(
+      bridge.nativeTool, bridge.tool.executorAction, bridge.tool.effect,
+    );
     const envelope = {
       contract_version: NATIVE_CONTROL_PROTOCOL_V1,
+      ...(wire.registryVersion === PC_PARITY_REGISTRY_V1
+        ? { registry_version: wire.registryVersion } : {}),
       session_id: bridge.nativeSessionId,
       request_id: bridge.logicalRequestId,
-      tool: bridge.nativeTool,
+      tool: wire.wireToolName,
       arguments: arguments_,
     };
     if (request.execution_context_binding !== undefined) {
