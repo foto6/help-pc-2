@@ -10,6 +10,7 @@ on:
       - agent/pc-native-control-full-dc
       - agent/pc-native-control-final-candidate
       - agent/pc-control-wire-registry-r15-20260928
+      - agent/pc-r16-full-compat-observability-20260928
   pull_request:
 
 permissions:
@@ -47,6 +48,8 @@ jobs:
         run: npm run test:final-control
       - name: Desktop Commander compatibility surface
         run: npm run test:dc-compat
+      - name: R16 full native compatibility and observability
+        run: npm run test:r16-compat
       - name: Focused execution-context and Vision epoch reconciliation
         run: npm run test:context-epoch
       - name: Frozen Wave 8 E2E readiness
