@@ -47,6 +47,12 @@ export {
   desktopCommanderCompatibilityManifestV1,
 } from "./dc-compatibility-registry.js";
 export {
+  FULL_COMPAT_AUDIT_V1,
+  FullCompatibilityAuditError,
+  assertPinnedNativeManifest,
+  fullCompatibilityAuditV1,
+} from "./full-compat-observability.js";
+export {
   DesktopCommanderCompatibilitySurface,
   DcCompatibilityError,
   JsonDcCompatibilityStore,
