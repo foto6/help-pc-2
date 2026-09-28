@@ -227,7 +227,7 @@ export function normalizeDesktopCommanderError(error, { tool = null } = {}) {
   // such as "file", "not found", or "permission") cannot recategorize them.
   // A bare NOT_FOUND may mean a filesystem miss only in an actual file route.
   const structuredOtherNotFound = protectedDomain || (
-    /_NOT_FOUND$/i.test(code)
+    (/_NOT_FOUND$/i.test(code) || code.toUpperCase() === "NOT_FOUND")
     && !["FILE_NOT_FOUND", "PATH_NOT_FOUND", "DIRECTORY_NOT_FOUND"].includes(code.toUpperCase())
     && category.toLowerCase() !== "filesystem"
     && !(code.toUpperCase() === "NOT_FOUND" && fileContext)
