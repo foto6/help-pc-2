@@ -19,7 +19,8 @@
     "mcp:http": "node bin/pc-native-mcp-http.js",
     "test:provider": "node --test test/native-relay-provider.test.js",
     "test:security": "node --test test/mcp-runtime-config-security.test.js",
-    "test:final-control": "node --test test/final-control-relay-e2e.test.js"
+    "test:final-control": "node --test test/final-control-relay-e2e.test.js",
+    "test:r16-compat": "node --test test/full-compat-observability.test.js test/native-relay-registry-route.test.js test/dc-compatibility.test.js test/mcp-host.integration.test.js"
   },
   "engines": {
     "node": ">=20"
