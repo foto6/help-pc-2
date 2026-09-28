@@ -2,14 +2,16 @@
 
 This host exposes the existing `pc.native.control.v1` facade as a standards-compliant Model Context Protocol server. It uses the official Model Context Protocol TypeScript SDK v2 packages pinned at `2.1.0`, serves the modern `2026-07-28` protocol revision, and keeps the SDK's supported 2025-era compatibility path enabled.
 
-The MCP host contains no filesystem, process, shell, UI, input, clipboard, or other machine-side effect implementation. Every `tools/call` delegates to `NativeControlFacade`, which in turn creates or resumes the existing durable Control Plane action targeting the injected help-pc-1 Executor bridge.
+The MCP host contains no filesystem, process, shell, UI, input, clipboard, or other machine-side effect implementation. Every `tools/call` delegates to `NativeControlFacade`, which creates or resumes the existing durable Control Plane action targeting the shipped built-in native relay provider.
 
 ## Transports
 
 For local spawned clients, use stdio:
 
 ```text
-PC_NATIVE_EXECUTOR_MODULE=/absolute/path/to/executor-bridge.js
+PC_NATIVE_RELAY_URL=http://127.0.0.1:8765
+PC_NATIVE_RELAY_TOKEN=<at-least-32-character-secret>
+PC_NATIVE_DEVICE_ID=<provisioned-device-id>
 PC_NATIVE_STATE_DIR=/absolute/path/to/state
 npm run mcp:stdio
 ```
@@ -17,7 +19,9 @@ npm run mcp:stdio
 For network clients, use Streamable HTTP:
 
 ```text
-PC_NATIVE_EXECUTOR_MODULE=/absolute/path/to/executor-bridge.js
+PC_NATIVE_RELAY_URL=http://127.0.0.1:8765
+PC_NATIVE_RELAY_TOKEN=<at-least-32-character-secret>
+PC_NATIVE_DEVICE_ID=<provisioned-device-id>
 PC_NATIVE_STATE_DIR=/absolute/path/to/state
 PC_NATIVE_MCP_TOKEN=<at-least-24-character-secret>
 PC_NATIVE_MCP_HOST=127.0.0.1
@@ -29,23 +33,13 @@ The MCP endpoint is `/mcp`. HTTP defaults to `127.0.0.1`, requires a Bearer toke
 
 The host uses Streamable HTTP via the SDK's `createMcpHandler` and Node adapter. It does not add a new deprecated HTTP+SSE endpoint. The SDK may use SSE framing inside Streamable HTTP when required by the current transport specification.
 
-## Executor bridge boundary
+## Production bridge boundary
 
-`PC_NATIVE_EXECUTOR_MODULE` points to a local module exporting either `createExecutorBridge()` or a default factory. The returned object must provide:
+Production stdio and HTTP entrypoints statically construct the shipped `src/native-relay-provider.js` bridge. `PC_NATIVE_EXECUTOR_MODULE` is rejected in normal runtime before any dynamic import, so a local path cannot replace the production provider.
 
-```js
-{
-  desktopId?: string,
-  dryRun?: boolean,
-  invoke(request, context),
-  readCapabilities(request, context),
-  readEvidence?(request, context),
-  preflight?(request, context),
-  bindExecutionContext?(request, context)
-}
-```
+The built-in provider implements only the bridge surface consumed by `HelpPc1Adapter`: `invoke`, `readCapabilities`, and read-only `readEvidence`, plus non-secret identity metadata. It speaks only the authenticated loopback relay control API and never implements filesystem, process, shell, UI, PDF, or Executor actions itself.
 
-The bridge is dependency injection only. help-pc-2 does not import help-pc-1 source or require a sibling repository checkout. The injected functions must speak the existing Executor wire/action contracts already consumed by `HelpPc1Adapter`.
+An external module can be loaded only through the explicit in-process `testConfig.enabled=true` seam. The pinned-module form verifies canonical module/package paths, SHA-256 digests, package name/version, and package-manifest digest before import. This seam is not exposed by the normal CLI/server entrypoints.
 
 ## MCP tool contract
 

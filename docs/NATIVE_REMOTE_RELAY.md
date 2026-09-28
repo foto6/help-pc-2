@@ -1,6 +1,6 @@
 # Native remote relay server
 
-This server is the transport-only counterpart for the outbound device transport currently pinned at `foto6/help-pc-1` branch `agent/pc-native-core-finalized`, commit `60d1bdd24ce9530cdd6cbf4c6fe38ac3d989c51c`.
+This server is the transport-only counterpart for the current outbound device-transport contract evidence at `foto6/help-pc-1` branch `agent/pc-native-core-final-candidate`, commit `b62da531ac045c2ccd3b4c6b82da7bb55cb93b8c`. This is contract evidence, not the final release pin.
 
 ## Scope
 
@@ -30,7 +30,7 @@ The WebSocket endpoint defaults to `/v1/device/connect` and implements
 - token rotation acknowledgement using the new generation;
 - ordered chunk streams with per-chunk and whole-stream SHA-256 validation.
 
-`test/fixtures/pc-remote-transport-vector-v1.json` is the frozen wire vector. Its provenance pins `src/pc_remote_transport/protocol.py` at commit `60d1bdd24ce9530cdd6cbf4c6fe38ac3d989c51c`, Git blob `648d741d11c74d03b2f37039286ce23dc4b8d158`. Before updating this provenance, the producer's own Python `encode_frame` was run against the fixture and produced byte-for-byte identical UTF-8 (`pc_remote_transport.frame.v1`, 296 bytes). The blob SHA is also identical on the original verified transport producer, so no protocol adaptation was introduced.
+`test/fixtures/pc-remote-transport-vector-v1.json` is the frozen wire vector. Its provenance pins `src/pc_remote_transport/protocol.py` at commit `b62da531ac045c2ccd3b4c6b82da7bb55cb93b8c`, Git blob `648d741d11c74d03b2f37039286ce23dc4b8d158`. Before updating this provenance, the producer's own Python `encode_frame` was run against the fixture and produced byte-for-byte identical UTF-8 (`pc_remote_transport.frame.v1`, 296 bytes). The blob SHA is also identical on the original verified transport producer, so no protocol adaptation was introduced.
 
 ## Device registry and credentials
 

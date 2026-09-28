@@ -516,12 +516,20 @@ export class DesktopCommanderCompatibilitySurface {
   }
 
   async #shutdown(sessionId, requestId, _args, signal = null) {
-    const { variant } = await this.#selectVariant("shutdown");
+    await this.#selectVariant("shutdown");
+    const identity = await this.#invokeNative({
+      sessionId,
+      requestId: `${requestId}:generation`,
+      tool: "device.info",
+      arguments: {},
+      signal,
+    });
+    const generationId = nonemptyString(identity.data?.generation_id, "device.info generation_id");
     const response = await this.#invokeNative({
       sessionId,
       requestId,
-      tool: variant.native_tools[0],
-      arguments: {},
+      tool: "agent.shutdown",
+      arguments: { generation_id: generationId },
       signal,
     });
     return {
@@ -943,7 +951,7 @@ export class DesktopCommanderCompatibilitySurface {
   }
 
   async #readFile(sessionId, requestId, args, signal = null) {
-    await this.#requireCapabilities("read_file", ["fs.read_text"]);
+    await this.#selectVariant("read_file");
     if (args.isUrl === true || args.sheet !== undefined || args.range !== undefined || args.options !== undefined) {
       this.#unsupportedMode(
         "read_file",

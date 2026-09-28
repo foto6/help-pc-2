@@ -178,7 +178,7 @@ test("pinned help-pc-1 protocol byte vector is exact", () => {
   ));
   assert.equal(
     fixture.contract_source.commit,
-    "60d1bdd24ce9530cdd6cbf4c6fe38ac3d989c51c",
+    "b62da531ac045c2ccd3b4c6b82da7bb55cb93b8c",
   );
   assert.equal(
     fixture.contract_source.blob_sha,

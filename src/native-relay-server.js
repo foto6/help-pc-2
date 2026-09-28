@@ -300,13 +300,18 @@ export class NativeRelayServer {
       this.sweepTimer = null;
     }
     for (const connection of [...this.connections]) {
-      try { connection.ws.close(1001, "relay stopping"); } catch {}
       this.#handleConnectionLoss(connection, "relay_stopping");
+      try {
+        if (typeof connection.ws.terminate === "function") connection.ws.terminate();
+        else connection.ws.close(1001, "relay stopping");
+      } catch {}
     }
     const server = this.httpServer;
     this.httpServer = null;
     const wsServer = this.wsServer;
     this.wsServer = null;
+    server.closeIdleConnections?.();
+    server.closeAllConnections?.();
     await new Promise((resolve) => server.close(() => resolve()));
     wsServer?.close();
   }

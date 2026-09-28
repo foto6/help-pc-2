@@ -6,28 +6,36 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
+import {
+  connectDevice,
+  relayEnv,
+  respond,
+  startRelay,
+} from "./support/native-relay-fixture.js";
 
 const serverBin = fileURLToPath(new URL("../bin/pc-native-mcp-stdio.js", import.meta.url));
-const bridgeModule = fileURLToPath(new URL("./fixtures/mock-mcp-executor-bridge.js", import.meta.url));
 
 function inheritedEnv(extra) {
-  return {
-    ...Object.fromEntries(Object.entries(process.env).filter(([, value]) => typeof value === "string")),
-    ...extra,
-  };
+  const env = Object.fromEntries(
+    Object.entries(process.env)
+      .filter(([key, value]) => key !== "PC_NATIVE_EXECUTOR_MODULE" && typeof value === "string"),
+  );
+  return { ...env, ...extra };
 }
 
-async function runStdio({ modern }) {
+async function runStdio(t, { modern }) {
+  const { address } = await startRelay(t);
+  const peer = await connectDevice(address);
+  t.after(() => peer.close());
+
   const stateDir = mkdtempSync(join(tmpdir(), modern ? "mcp-stdio-modern-" : "mcp-stdio-legacy-"));
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [serverBin],
     cwd: fileURLToPath(new URL("..", import.meta.url)),
-    env: inheritedEnv({
-      PC_NATIVE_EXECUTOR_MODULE: bridgeModule,
+    env: inheritedEnv(relayEnv(address, {
       PC_NATIVE_STATE_DIR: stateDir,
-      PC_NATIVE_DESKTOP_ID: "stdio-test-desktop",
-    }),
+    })),
     stderr: "pipe",
   });
   const client = new Client(
@@ -40,10 +48,30 @@ async function runStdio({ modern }) {
     try {
       await client.connect(transport);
       const tools = await client.listTools();
-      const result = await client.callTool({
-        name: "device.health",
-        arguments: { request_id: modern ? "stdio-modern-health" : "stdio-legacy-health" },
+      const requestId = modern ? "stdio-modern-health" : "stdio-legacy-health";
+      const pending = client.callTool({
+        name: "device.ping",
+        arguments: { request_id: requestId },
       });
+      const first = await Promise.race([
+        peer.nextRequest().then((frame) => ({ frame })),
+        pending.then(
+          (result) => ({ earlyResult: result }),
+          (error) => ({ earlyError: error }),
+        ),
+      ]);
+      if (!first.frame) {
+        throw new Error("stdio MCP call completed before relay dispatch: " + JSON.stringify({
+          result: first.earlyResult ?? null,
+          error: first.earlyError ? { message: first.earlyError.message, code: first.earlyError.code } : null,
+        }));
+      }
+      const frame = first.frame;
+      assert.equal(frame.payload.request_id, requestId);
+      assert.equal(frame.payload.body.request_id, requestId);
+      assert.equal(frame.payload.body.tool, "device.ping");
+      respond(peer, frame, { data: { stdio: true, healthy: true } });
+      const result = await pending;
       return {
         era: client.getProtocolEra(),
         revision: client.getNegotiatedProtocolVersion(),
@@ -51,9 +79,7 @@ async function runStdio({ modern }) {
         result,
       };
     } catch (error) {
-      error.message = `${error.message}
-stdio server stderr:
-${stderr}`;
+      error.message = `${error.message}\nstdio server stderr:\n${stderr}`;
       throw error;
     }
   } finally {
@@ -68,19 +94,19 @@ function resultBody(result) {
   return JSON.parse(text);
 }
 
-test("official stdio client serves modern 2026-07-28 when pinned", async () => {
-  const result = await runStdio({ modern: true });
+test("official stdio client serves modern 2026-07-28 through built-in relay provider", async (t) => {
+  const result = await runStdio(t, { modern: true });
   assert.equal(result.era, "modern");
   assert.equal(result.revision, "2026-07-28");
-  assert.equal(result.tools.tools.some((tool) => tool.name === "device.health"), true);
+  assert.equal(result.tools.tools.some((tool) => tool.name === "device.ping"), true);
   assert.equal(resultBody(result.result).status, "completed");
   assert.equal(resultBody(result.result).data.stdio, true);
 });
 
-test("official stdio client serves supported 2025-era initialize handshake", async () => {
-  const result = await runStdio({ modern: false });
+test("official stdio client serves supported 2025-era handshake through built-in relay provider", async (t) => {
+  const result = await runStdio(t, { modern: false });
   assert.equal(result.era, "legacy");
   assert.match(result.revision, /^2025-/);
-  assert.equal(result.tools.tools.some((tool) => tool.name === "device.health"), true);
+  assert.equal(result.tools.tools.some((tool) => tool.name === "device.ping"), true);
   assert.equal(resultBody(result.result).status, "completed");
 });

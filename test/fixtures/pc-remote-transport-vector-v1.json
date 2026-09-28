@@ -1,8 +1,8 @@
 {
   "contract_source": {
     "repository": "foto6/help-pc-1",
-    "ref": "agent/pc-native-core-finalized",
-    "commit": "60d1bdd24ce9530cdd6cbf4c6fe38ac3d989c51c",
+    "ref": "agent/pc-native-core-final-candidate",
+    "commit": "b62da531ac045c2ccd3b4c6b82da7bb55cb93b8c",
     "path": "src/pc_remote_transport/protocol.py",
     "blob_sha": "648d741d11c74d03b2f37039286ce23dc4b8d158"
   },

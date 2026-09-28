@@ -311,7 +311,14 @@ export class HelpPc1Adapter {
       if (action.executionContextBinding?.raw) request.execution_context_binding = structuredClone(action.executionContextBinding.raw);
       result = await this.invoke(
         request,
-        { signal: context.signal, executionAttempt: context.executionAttempt, session: context.session },
+        {
+          signal: context.signal,
+          executionAttempt: context.executionAttempt,
+          session: context.session,
+          controlActionId: action.id,
+          logicalRequestId: action.correlationId ?? action.id,
+          actionMetadata: structuredClone(action.metadata ?? {}),
+        },
       );
     } catch (error) {
       if (error && typeof error === "object") {
@@ -362,7 +369,12 @@ export class HelpPc1Adapter {
       request_id: action.id,
       action: action.type,
       execution_attempt: action.executionAttempts,
-    }, context);
+    }, {
+      ...context,
+      controlActionId: action.id,
+      logicalRequestId: action.correlationId ?? action.id,
+      actionMetadata: structuredClone(action.metadata ?? {}),
+    });
     if (raw === null || raw === undefined) {
       return { outcome: "unknown", source: this.name, requestId: action.id, reason: "journal_missing", journalMissing: true };
     }

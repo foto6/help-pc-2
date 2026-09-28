@@ -8,6 +8,7 @@ on:
       - agent/pc-native-mcp-host
       - agent/pc-native-control-integrated
       - agent/pc-native-control-full-dc
+      - agent/pc-native-control-final-candidate
   pull_request:
 
 permissions:
@@ -33,8 +34,14 @@ jobs:
         run: npm run test:mcp-host
       - name: Native MCP/control facade
         run: npm run test:native-mcp
+      - name: Production bridge identity security
+        run: npm run test:security
+      - name: Native relay provider bridge
+        run: npm run test:provider
       - name: Native remote relay
         run: npm run test:relay
+      - name: Final MCP to relay end-to-end
+        run: npm run test:final-control
       - name: Desktop Commander compatibility surface
         run: npm run test:dc-compat
       - name: Focused execution-context and Vision epoch reconciliation

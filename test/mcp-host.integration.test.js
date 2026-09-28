@@ -704,10 +704,10 @@ test("MCP host preserves bounded native pagination and opaque continuation curso
 test("Desktop Commander tools/list exposes current capability availability and fails closed for missing mutable/PDF/batch/meta actions", async (t) => {
   const currentActions = [
     "device.info", "health.get", "config.get",
-    "fs.read_text", "fs.write_text", "fs.append_text", "fs.mkdir", "fs.list",
+    "fs.read_text", "fs.read_bytes", "log.tail", "fs.write_text", "fs.append_text", "fs.mkdir", "fs.list",
     "fs.move", "fs.stat", "fs.hash", "fs.edit_text",
-    "process.start", "process.read_output", "process.managed.list",
-    "process.terminate", "process.list", "system.process.kill",
+    "process.start", "process.read_output", "process.managed.list", "process.status",
+    "process.terminate", "process.list", "process.inspect", "system.process.kill",
   ];
   const h = await createHarness({
     actions: currentActions,
@@ -799,10 +799,10 @@ test("Desktop Commander tools/list exposes current capability availability and f
 test("official MCP current finalized PC Core exposes admin/batch/shutdown/PDF capabilities", async (t) => {
   const actions = [
     "device.info", "health.get", "config.get", "config.set", "agent.shutdown",
-    "fs.read_text", "fs.read_multiple", "fs.write_text", "fs.append_text", "fs.mkdir", "fs.list", "fs.move", "fs.stat", "fs.hash", "fs.edit_text", "pdf.write",
+    "fs.read_text", "fs.read_bytes", "log.tail", "fs.read_multiple", "fs.write_text", "fs.append_text", "fs.mkdir", "fs.list", "fs.move", "fs.stat", "fs.hash", "fs.edit_text", "pdf.write",
     "search.start", "search.read", "search.list", "search.stop",
     "shell.session.start", "shell.session.read", "shell.session.write_stdin", "shell.session.terminate",
-    "process.managed.list", "process.list", "system.process.kill",
+    "process.managed.list", "process.status", "process.list", "process.inspect", "system.process.kill",
     "identity.who_am_i", "diagnostics.usage_stats", "diagnostics.recent_tool_calls",
   ];
   const seen = [];
@@ -810,6 +810,7 @@ test("official MCP current finalized PC Core exposes admin/batch/shutdown/PDF ca
     actions,
     invoke: async (request) => {
       seen.push(structuredClone(request));
+      if (request.action === "device.info") return success(request, { device_id: "local", generation_id: "gen-core" });
       if (request.action === "config.set") return success(request, { key: request.params.key, config: { [request.params.key]: request.params.value }, revision: "a".repeat(64) });
       if (request.action === "fs.read_multiple") return success(request, {
         results: request.params.paths.map((path, index) => ({ path, ok: true, text: String(index), encoding: "utf-8", returned_bytes: 1, file_bytes: 1, truncated: false, sha256: "b".repeat(64) })),
@@ -874,7 +875,7 @@ test("official MCP current finalized PC Core exposes admin/batch/shutdown/PDF ca
   const shutdown = structured(await client.callTool({ name: "shutdown", arguments: { request_id: "core-shutdown" } }));
   assert.equal(shutdown.status, "completed");
   assert.equal(shutdown.data.native.shutdown_requested, true);
-  assert.deepEqual(seen.filter((item) => item.action === "agent.shutdown")[0].params, {});
+  assert.deepEqual(seen.filter((item) => item.action === "agent.shutdown")[0].params, { generation_id: "gen-core" });
 });
 
 test("official MCP filesystem compatibility category stays Executor-bound and bounded", async (t) => {
@@ -1059,7 +1060,7 @@ test("official MCP process/system and sanitized meta compatibility delegate thro
   const h = await createHarness({
     actions: [
       "shell.session.start", "shell.session.read", "shell.session.write_stdin", "shell.session.terminate",
-      "process.managed.list", "process.list", "system.process.kill",
+      "process.managed.list", "process.status", "process.list", "process.inspect", "system.process.kill",
       "identity.who_am_i", "diagnostics.usage_stats", "diagnostics.recent_tool_calls",
     ],
     invoke: async (request) => {

@@ -53,8 +53,12 @@ const definitions = [
   {
     name: "shutdown",
     effect: "side_effect",
-    native_tools: ["agent.shutdown"],
-    capability_variants: [{ id: "executor_bound", executor_actions: ["agent.shutdown"], native_tools: ["agent.shutdown"] }],
+    native_tools: ["agent.shutdown", "device.info"],
+    capability_variants: [{
+      id: "executor_bound",
+      executor_actions: ["agent.shutdown", "device.info"],
+      native_tools: ["agent.shutdown", "device.info"],
+    }],
     input_schema: requestObject([], {}),
     semantics: "Fails closed unless the Executor explicitly publishes agent.shutdown; the control host never exits or shuts down the PC directly.",
   },
@@ -94,8 +98,20 @@ const definitions = [
   {
     name: "read_file",
     effect: "read_only",
-    native_tools: ["file.read"],
-    capability_variants: [{ id: "text_file", executor_actions: ["fs.read_text"], native_tools: ["file.read"] }],
+    native_tools: ["file.read", "file.read_bytes", "log.tail"],
+    capability_variants: [
+      {
+        id: "pc_core_full",
+        executor_actions: ["fs.read_text", "fs.read_bytes", "log.tail"],
+        native_tools: ["file.read", "file.read_bytes", "log.tail"],
+      },
+      {
+        id: "legacy_text",
+        executor_actions: ["fs.read_text"],
+        unless_executor_actions: ["fs.read_bytes", "log.tail"],
+        native_tools: ["file.read"],
+      },
+    ],
     input_schema: requestObject(["path"], {
       path: string(1),
       isUrl: boolean(),
@@ -327,7 +343,11 @@ const definitions = [
     effect: "read_only",
     native_tools: ["process.managed.list", "process.list"],
     capability_variants: [
-      { id: "pc_core", executor_actions: ["process.managed.list"], native_tools: ["process.managed.list"] },
+      {
+        id: "pc_core",
+        executor_actions: ["process.managed.list", "process.status"],
+        native_tools: ["process.managed.list", "process.status"],
+      },
       {
         id: "legacy_facade",
         executor_actions: ["process.list"],
@@ -341,9 +361,13 @@ const definitions = [
   {
     name: "list_processes",
     effect: "read_only",
-    native_tools: ["process.list", "system.process.list"],
+    native_tools: ["process.list", "system.process.inspect", "system.process.list"],
     capability_variants: [
-      { id: "pc_core", executor_actions: ["process.list"], native_tools: ["process.list"] },
+      {
+        id: "pc_core",
+        executor_actions: ["process.list", "process.inspect"],
+        native_tools: ["process.list", "system.process.inspect"],
+      },
       { id: "legacy_facade", executor_actions: ["system.process.list"], native_tools: ["system.process.list"] },
     ],
     input_schema: requestObject([], {}),

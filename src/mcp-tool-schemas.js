@@ -27,9 +27,6 @@ const schemas = {
   "device.info": strict({}),
   "device.ping": strict({}),
   "agent.shutdown": strict({
-    device_id: z.string().min(1),
-    session_id: z.string().min(1),
-    session_epoch: z.string().min(1),
     generation_id: z.string().min(1),
   }),
   "config.get": strict({}),
@@ -69,6 +66,12 @@ const schemas = {
     path: textPath,
     offset_bytes: z.number().int().min(0).optional(),
     length_bytes: z.number().int().min(1).max(1048576).optional(),
+  }),
+  "log.tail": strict({
+    path: textPath,
+    encoding: z.string().min(1).optional(),
+    max_lines: z.number().int().min(1).max(2000).optional(),
+    max_bytes: z.number().int().min(1).max(1048576).optional(),
   }),
   "file.hash": strict({ path: textPath, algorithm: z.enum(["sha256", "sha512"]).optional() }),
   "file.search": paged({
@@ -154,6 +157,7 @@ const schemas = {
   }),
   "process.interact": strict({ handle, input: z.string() }),
   "process.list": paged({}),
+  "system.process.inspect": strict({ pid: z.number().int().positive() }),
   "process.terminate": strict({ handle, force: z.boolean().optional() }),
 
   "system.process.list": paged({ filter: z.string().optional() }),
@@ -244,6 +248,7 @@ const descriptions = {
   "file.read": "Read bounded text from a file; use page/offset controls for large output.",
   "file.read_multiple": "Read a true bounded batch of files when the Executor publishes fs.read_multiple.",
   "file.read_bytes": "Read bounded binary bytes from a file.",
+  "log.tail": "Read a bounded log tail through the Executor.",
   "file.hash": "Compute a file hash through the Executor.",
   "file.search": "Search filesystem paths with bounded paginated results.",
   "content.search": "Search file content with bounded paginated results.",
@@ -266,6 +271,7 @@ const descriptions = {
   "process.read": "Read bounded output from a process handle.",
   "process.interact": "Write input to a process handle.",
   "process.list": "List native process-session handles with bounded results.",
+  "system.process.inspect": "Inspect one system process by PID through the Executor.",
   "process.terminate": "Terminate a process-session handle.",
   "system.process.list": "List system processes with bounded results.",
   "system.process.kill": "Kill a system process; destructive and policy-gated.",

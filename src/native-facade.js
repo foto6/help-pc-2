@@ -478,7 +478,13 @@ export class NativeControlFacade {
       correlationId: request.requestId,
       destructive: tool.destructive,
       requiresDesktop: false,
-      metadata: { native_tool: tool.name, effect: tool.effect },
+      metadata: {
+        native_tool: tool.name,
+        effect: tool.effect,
+        native_session_id: session.id,
+        native_request_id: request.requestId,
+        native_executor_digest: session.executorDigest,
+      },
     });
     request.actionId = action.id;
     request.status = "queued";

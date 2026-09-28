@@ -118,7 +118,7 @@ export {
   mcpCompatibilityToolDescription,
 } from "./mcp-tool-schemas.js";
 export { startNativeMcpHttpServer, isLoopbackHost as isMcpLoopbackHost } from "./mcp-http-host.js";
-export { createConfiguredNativeMcpRuntime } from "./mcp-runtime-config.js";
+export { createConfiguredNativeMcpRuntime, PRODUCTION_BRIDGE_CONTRACT } from "./mcp-runtime-config.js";
 
 export {
   REMOTE_FRAME_VERSION,
@@ -142,3 +142,18 @@ export {
 } from "./native-relay-protocol.js";
 export { JsonRelayStateStore, NativeRelayState, RelayStateError } from "./native-relay-state.js";
 export { NativeRelayServer, NativeRelayServerError } from "./native-relay-server.js";
+
+export {
+  NATIVE_RELAY_PROVIDER_IDENTITY,
+  NativeRelayProviderError,
+  NativeRelayExecutorProvider,
+  createNativeRelayExecutorBridge,
+  createExecutorBridge as createNativeRelayExecutorBridgeModule,
+} from "./native-relay-provider.js";
+export {
+  EXECUTOR_MODULE_PIN_V1,
+  inspectExecutorModuleIdentity,
+  verifyExecutorModuleIdentity,
+  importPinnedExecutorModule,
+  readExecutorModulePin,
+} from "./executor-module-identity.js";

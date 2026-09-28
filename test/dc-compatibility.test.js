@@ -26,6 +26,17 @@ const REQUIRED_NAMES = [
   "get_recent_tool_calls",
 ].sort();
 
+const CANONICAL_PC_ACTIONS = [
+  "device.info", "health.get", "config.get", "config.set", "identity.who_am_i", "agent.shutdown",
+  "fs.read_text", "fs.read_bytes", "log.tail", "fs.read_multiple",
+  "fs.write_text", "fs.append_text", "pdf.write", "fs.edit_text", "fs.list", "fs.move", "fs.mkdir",
+  "fs.stat", "fs.hash", "search.start", "search.read", "search.stop", "search.list",
+  "process.start", "shell.session.start", "process.read_output", "shell.session.read",
+  "shell.session.write_stdin", "process.managed.list", "process.status", "process.terminate",
+  "process.list", "process.inspect", "system.process.kill", "diagnostics.usage_stats",
+  "diagnostics.recent_tool_calls",
+].sort();
+
 function completed(data, stream = null) {
   return {
     contract_version: "pc.native.response.v1",
@@ -96,6 +107,14 @@ test("compatibility registry is versioned, exact, and MCP-host consumable withou
     assert.ok(Array.isArray(tool.native_tools));
     assert.ok(tool.capability_variants.length >= 1);
   }
+  const advertisedActions = [...new Set(
+    DC_COMPATIBILITY_REGISTRY_LIST.flatMap((tool) =>
+      tool.capability_variants.flatMap((variant) => variant.executor_actions),
+    ),
+  )].sort();
+  for (const action of CANONICAL_PC_ACTIONS) {
+    assert.equal(advertisedActions.includes(action), true, action);
+  }
 
   const manifest = desktopCommanderCompatibilityManifestV1({
     nativeManifest: await new FakeFacade({
@@ -113,7 +132,7 @@ test("future mutable/PDF/batch/search capabilities become available from the liv
   const manifest = desktopCommanderCompatibilityManifestV1({
     nativeManifest: await new FakeFacade({
       actions: [
-        "agent.shutdown", "config.set", "fs.read_multiple", "pdf.write",
+        "device.info", "agent.shutdown", "config.set", "fs.read_multiple", "pdf.write",
         "search.start", "search.read", "search.list", "search.stop",
         "identity.who_am_i", "diagnostics.usage_stats", "diagnostics.recent_tool_calls",
       ],
@@ -132,10 +151,10 @@ test("future mutable/PDF/batch/search capabilities become available from the liv
 test("current finalized PC Core capability set exposes every required compatibility tool", async () => {
   const currentActions = [
     "device.info", "health.get", "config.get", "config.set", "agent.shutdown",
-    "fs.read_text", "fs.read_multiple", "fs.write_text", "fs.append_text", "fs.mkdir", "fs.list", "fs.move", "fs.stat", "fs.hash", "fs.edit_text", "pdf.write",
+    "fs.read_text", "fs.read_bytes", "log.tail", "fs.read_multiple", "fs.write_text", "fs.append_text", "fs.mkdir", "fs.list", "fs.move", "fs.stat", "fs.hash", "fs.edit_text", "pdf.write",
     "search.start", "search.read", "search.list", "search.stop",
     "shell.session.start", "shell.session.read", "shell.session.write_stdin", "shell.session.terminate",
-    "process.managed.list", "process.list", "system.process.kill",
+    "process.managed.list", "process.status", "process.list", "process.inspect", "system.process.kill",
     "identity.who_am_i", "diagnostics.usage_stats", "diagnostics.recent_tool_calls",
   ];
   const facade = new FakeFacade({ actions: currentActions });
@@ -154,6 +173,26 @@ test("write_pdf is explicit capability unavailable and never dispatches without 
     path: "C:\\tmp\\out.pdf",
     content: "# document",
   }, "pdf-gap"));
+  assert.equal(result.status, "error");
+  assert.equal(result.error.code, "CAPABILITY_UNAVAILABLE");
+  assert.equal(facade.calls.length, 0);
+});
+
+test("read_file fails closed on partial current read capability set before dispatch", async () => {
+  const facade = new FakeFacade({ actions: ["fs.read_text", "fs.read_bytes"] });
+  const manifest = desktopCommanderCompatibilityManifestV1({
+    nativeManifest: await facade.capabilities(),
+  });
+  const advertised = manifest.tools.find((tool) => tool.name === "read_file");
+  assert.equal(advertised.available, false);
+  assert.equal(advertised.availability_reason, "required_native_capability_unavailable");
+
+  const surface = new DesktopCommanderCompatibilitySurface({ facade });
+  const result = await surface.invoke(request("read_file", {
+    path: "C:\tmp\partial.txt",
+    offset: 0,
+    length: 1,
+  }, "partial-read"));
   assert.equal(result.status, "error");
   assert.equal(result.error.code, "CAPABILITY_UNAVAILABLE");
   assert.equal(facade.calls.length, 0);
@@ -458,7 +497,7 @@ test("current PC Core process/session and sanitized meta contracts are translate
   const facade = new FakeFacade({
     actions: [
       "shell.session.start", "shell.session.read", "shell.session.write_stdin", "shell.session.terminate",
-      "process.managed.list", "diagnostics.usage_stats", "diagnostics.recent_tool_calls", "identity.who_am_i",
+      "process.managed.list", "process.status", "diagnostics.usage_stats", "diagnostics.recent_tool_calls", "identity.who_am_i",
     ],
     handler: async (envelope) => {
       if (envelope.tool === "shell.session.start") {
