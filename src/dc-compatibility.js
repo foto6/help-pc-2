@@ -214,7 +214,16 @@ export function normalizeDesktopCommanderError(error, { tool = null } = {}) {
 
   let normalizedCode = code || "NATIVE_ERROR";
   let normalizedCategory = category || "native";
-  if (/enoent|not[_ -]?found|no such file|missing file/.test(haystack)) {
+  // Never relabel a structured non-file registry/device lookup failure as a
+  // missing filesystem path merely because its code/message says "not found".
+  // Real R14b: TOOL_NOT_FOUND for the frozen PC Core registry was incorrectly
+  // rendered FILE_NOT_FOUND for list_devices, ping and get_config.
+  const structuredOtherNotFound = (
+    /_NOT_FOUND$/i.test(code)
+    && !["FILE_NOT_FOUND", "PATH_NOT_FOUND", "DIRECTORY_NOT_FOUND"].includes(code.toUpperCase())
+    && category.toLowerCase() !== "filesystem"
+  ) || category.toLowerCase() === "tool";
+  if (!structuredOtherNotFound && /enoent|not[_ -]?found|no such file|missing file/.test(haystack)) {
     normalizedCode = "FILE_NOT_FOUND";
     normalizedCategory = "filesystem";
   } else if (/eacces|eperm|access[_ -]?denied|permission denied|unauthori[sz]ed/.test(haystack)) {
