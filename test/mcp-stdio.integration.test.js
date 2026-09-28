@@ -69,7 +69,10 @@ async function runStdio(t, { modern }) {
       const frame = first.frame;
       assert.equal(frame.payload.request_id, requestId);
       assert.equal(frame.payload.body.request_id, requestId);
-      assert.equal(frame.payload.body.tool, "device.ping");
+      // The public MCP tool is still device.ping. The exact pinned PC Core
+      // requires the parity registry and its wire alias device.health.
+      assert.equal(frame.payload.body.registry_version, "pc.native.parity_tool_registry.v1");
+      assert.equal(frame.payload.body.tool, "device.health");
       respond(peer, frame, { data: { stdio: true, healthy: true } });
       const result = await pending;
       return {
