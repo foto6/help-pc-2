@@ -3,7 +3,9 @@ import { dirname } from "node:path";
 import {
   NATIVE_CONTROL_PROTOCOL_V1,
   DEFAULT_NATIVE_LIMITS,
+  NATIVE_RESPONSE_V1,
 } from "./native-registry.js";
+import { assertPinnedNativeManifest } from "./full-compat-observability.js";
 import {
   DC_COMPATIBILITY_RESPONSE_V1,
   desktopCommanderCompatibilityManifestV1,
@@ -218,27 +220,34 @@ export function normalizeDesktopCommanderError(error, { tool = null } = {}) {
   // missing filesystem path merely because its code/message says "not found".
   // Real R14b: TOOL_NOT_FOUND for the frozen PC Core registry was incorrectly
   // rendered FILE_NOT_FOUND for list_devices, ping and get_config.
-  const structuredOtherNotFound = (
+  const fileContext = /^(read_file|read_multiple_files|write_file|edit_block|create_directory|list_directory|move_file|get_file_info|write_pdf)$/.test(tool ?? "");
+  const protectedDomain = /^(TOOL_NOT_FOUND|SCHEMA_VERSION_MISMATCH|CAPABILITY_MISMATCH|CAPABILITY_DRIFT|CAPABILITY_UNAVAILABLE|NATIVE_REGISTRY_IDENTITY_MISMATCH|EXECUTOR_CAPABILITY_IDENTITY_INVALID|DUPLICATE_REQUEST_MISMATCH|REQUEST_ID_CONFLICT|STALE_SESSION|SEARCH_SESSION_NOT_FOUND|STALE_EXECUTION_CONTEXT|PROTECTED_PATH_BLOCKED|UNKNOWN_RECONCILE|UNKNOWN_OUTCOME|RECONCILIATION_REQUIRED|TIMEOUT|REQUEST_TIMEOUT|DEADLINE_EXCEEDED|CANCELLED)$/i.test(code)
+    || /^(tool|session|search|idempotency|capability|capability_mismatch|bridge_context|timeout|cancelled|policy)$/i.test(category);
+  // Structured non-file domains are authoritative; prose (including words
+  // such as "file", "not found", or "permission") cannot recategorize them.
+  // A bare NOT_FOUND may mean a filesystem miss only in an actual file route.
+  const structuredOtherNotFound = protectedDomain || (
     /_NOT_FOUND$/i.test(code)
     && !["FILE_NOT_FOUND", "PATH_NOT_FOUND", "DIRECTORY_NOT_FOUND"].includes(code.toUpperCase())
     && category.toLowerCase() !== "filesystem"
-  ) || category.toLowerCase() === "tool";
-  if (!structuredOtherNotFound && /enoent|not[_ -]?found|no such file|missing file/.test(haystack)) {
+    && !(code.toUpperCase() === "NOT_FOUND" && fileContext)
+  );
+  if (!protectedDomain && !structuredOtherNotFound && /enoent|not[_ -]?found|no such file|missing file/.test(haystack)) {
     normalizedCode = "FILE_NOT_FOUND";
     normalizedCategory = "filesystem";
-  } else if (/eacces|eperm|access[_ -]?denied|permission denied|unauthori[sz]ed/.test(haystack)) {
+  } else if (!protectedDomain && /eacces|eperm|access[_ -]?denied|permission denied|unauthori[sz]ed/.test(haystack)) {
     normalizedCode = "ACCESS_DENIED";
     normalizedCategory = "filesystem";
-  } else if (/stale.*handle|stale_process_handle|invalid.*handle|unknown.*handle/.test(haystack)) {
+  } else if (!protectedDomain && /stale.*handle|stale_process_handle|invalid.*handle|unknown.*handle/.test(haystack)) {
     normalizedCode = "STALE_HANDLE";
     normalizedCategory = "process";
-  } else if (/replacement.*mismatch|replacement count|expected_replacements/.test(haystack)) {
+  } else if (!protectedDomain && /replacement.*mismatch|replacement count|expected_replacements/.test(haystack)) {
     normalizedCode = "REPLACEMENT_CONFLICT";
     normalizedCategory = "conflict";
-  } else if (/range|bounds|offset|page_limit|too large|exceeds.*bound/.test(haystack)) {
+  } else if (!protectedDomain && /range|bounds|offset|page_limit|too large|exceeds.*bound/.test(haystack)) {
     normalizedCode = "RANGE_ERROR";
     normalizedCategory = "range";
-  } else if ((tool && tool.includes("process")) || /process|terminate|spawn|exited/.test(haystack)) {
+  } else if (!protectedDomain && ((tool && tool.includes("process")) || /process|terminate|spawn|exited/.test(haystack))) {
     normalizedCode = "PROCESS_ERROR";
     normalizedCategory = "process";
   }
@@ -341,8 +350,8 @@ export class DesktopCommanderCompatibilitySurface {
   }
 
   async #requireCapabilities(toolName, actions) {
-    const manifest = await this.facade.capabilities();
-    const advertised = new Set(Array.isArray(manifest?.executor?.actions) ? manifest.executor.actions : []);
+    const manifest = assertPinnedNativeManifest(await this.facade.capabilities());
+    const advertised = new Set(manifest.executor.actions);
     const missing = actions.filter((action) => !advertised.has(action));
     if (missing.length) {
       throw new DcCompatibilityError(
@@ -414,10 +423,21 @@ export class DesktopCommanderCompatibilitySurface {
     } catch (error) {
       throw normalizeDesktopCommanderError(error, { tool });
     }
-    if (response?.status === "error") {
+    // The facade response identity/version is part of the same durable
+    // request. An unrelated completion must never become a compatibility success.
+    if (!response || response.contract_version !== NATIVE_RESPONSE_V1
+        || response.request_id !== requestId || response.session_id !== sessionId
+        || !["completed", "error", "pending", "reconciliation_required", "cancelled"].includes(response.status)) {
+      throw new DcCompatibilityError("Native response contract or logical request identity changed.", {
+        code: "NATIVE_RESULT_INVALID",
+        category: "native_result",
+        retryable: false,
+      });
+    }
+    if (response.status === "error") {
       throw normalizeDesktopCommanderError(response, { tool });
     }
-    if (response?.status !== "completed") {
+    if (response.status !== "completed") {
       throw new NativeStatusSignal(response);
     }
     return response;
@@ -1013,6 +1033,19 @@ export class DesktopCommanderCompatibilitySurface {
 
     const results = rawResults.map((item, index) => {
       const path = paths[index];
+      if (!item || typeof item !== "object" || Array.isArray(item)
+          || typeof item.ok !== "boolean"
+          || (item.ok && (item.error != null || (
+            typeof item.text !== "string" && typeof item.content !== "string"
+            && (!item.data || typeof item.data !== "object" || Array.isArray(item.data))
+          )))
+          || (!item.ok && (!item.error || typeof item.error !== "object"))) {
+        throw new DcCompatibilityError("Native fs.read_multiple returned a malformed partial-file record.", {
+          code: "NATIVE_RESULT_INVALID",
+          category: "native_result",
+          details: { index },
+        });
+      }
       if (item?.path !== undefined && item.path !== path) {
         throw new DcCompatibilityError("Native fs.read_multiple changed deterministic batch ordering.", {
           code: "NATIVE_RESULT_INVALID",
@@ -1020,7 +1053,7 @@ export class DesktopCommanderCompatibilitySurface {
           details: { index, expected_path: path, actual_path: item.path },
         });
       }
-      const ok = item?.ok !== false && !item?.error;
+      const ok = item.ok;
       if (ok) {
         const data = item?.data && typeof item.data === "object"
           ? clone(item.data)
@@ -1678,8 +1711,10 @@ export class DesktopCommanderCompatibilitySurface {
           requestId: requestId ?? null,
           sessionId: sessionId ?? null,
           tool: toolName ?? null,
-          status: error.response?.status ?? "pending",
-          data: clone(error.response?.data ?? null),
+          status: error.response.status,
+          data: error.response.status === "reconciliation_required"
+            ? { ...clone(error.response.data ?? {}), lookup_required: true, automatic_replay: false }
+            : clone(error.response.data ?? null),
           error: null,
         });
       }
