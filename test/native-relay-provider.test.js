@@ -426,6 +426,56 @@ test("read-only request preserves facade request_id through relay and returns pr
   assert.equal(result.relay_delivery.logical_request_id, "facade-read-1");
 });
 
+test("real authenticated relay routes frozen v1 unchanged and parity-only rootless actions by explicit registry", async (t) => {
+  const { address } = await startRelay(t);
+  const capabilities = nativeCapabilityManifestV1({
+    executorCapabilities: {
+      contract_version: "pc_executor.capabilities.v1",
+      digest: EXECUTOR_DIGEST,
+      actions: ["device.info", "health.get", "config.get", "fs.stat"],
+    },
+  });
+  const peer = await connectDevice(address, { capabilities });
+  t.after(() => peer.close());
+  const p = provider(address);
+  await p.readCapabilities();
+
+  for (const [name, wire, action] of [
+    ["device.info", "device.info", "device.info"],
+    ["device.ping", "device.health", "health.get"],
+    ["config.get", "device.get_config", "config.get"],
+  ]) {
+    const rid = "r15-route-" + name.replaceAll(".", "-");
+    const pending = p.invoke(bridgeRequest("control-" + rid, name), contextFor(rid, name));
+    const frame = await receiveRequest(peer);
+    assert.equal(frame.payload.request_id, rid);
+    assert.equal(frame.payload.body.request_id, rid);
+    assert.equal(frame.payload.body.registry_version, "pc.native.parity_tool_registry.v1");
+    assert.equal(frame.payload.body.tool, wire);
+    assert.equal(frame.payload.semantics, "read_only");
+    assert.deepEqual(frame.payload.body.arguments, {});
+    peer.send("response", nativeResponse(frame, { data: { routed: true } }));
+    const result = await pending;
+    assert.equal(result.ok, true);
+    assert.equal(result.request_id, "control-" + rid);
+    assert.equal(result.action, action);
+  }
+
+  const legacyPending = p.invoke(
+    bridgeRequest("control-frozen-exact", "file.info", { path: "C:\\fixture\\known.txt" }),
+    contextFor("r15-frozen-exact", "file.info"),
+  );
+  const frozen = await receiveRequest(peer);
+  assert.equal(frozen.payload.body.registry_version, undefined,
+    "frozen v1 must remain byte-compatible, with no injected version field");
+  assert.equal(frozen.payload.body.tool, "file.info");
+  assert.equal(frozen.payload.semantics, "read_only");
+  peer.send("response", nativeResponse(frozen, { data: { size: 5 } }));
+  const success = await legacyPending;
+  assert.equal(success.ok, true);
+  assert.equal(success.action, "fs.stat");
+});
+
 test("side effect completes once and duplicate same logical request never redelivers", async (t) => {
   const { address } = await startRelay(t);
   const peer = await connectDevice(address);
