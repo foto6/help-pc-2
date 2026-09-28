@@ -63,15 +63,26 @@ function clone(value) {
   return value === undefined ? undefined : structuredClone(value);
 }
 
-function redactSensitive(value) {
-  if (Array.isArray(value)) return value.map(redactSensitive);
+function redactSensitive(value, path = "") {
+  if (Array.isArray(value)) return value.map((item) => redactSensitive(item, path));
   if (!value || typeof value !== "object") return value;
   const result = {};
   for (const [key, item] of Object.entries(value)) {
-    if (/(secret|token|password|credential|authorization|auth)/i.test(key)) {
+    const fieldPath = path ? `${path}.${key}` : key;
+    // The signed, public native capability advertises this boolean safety
+    // restriction. Do not redact it merely for containing "credential":
+    // altering even one field corrupts capabilities_digest and blocks MCP
+    // startup. This is the ONLY exception; metadata and arbitrary credential
+    // fields remain redacted, including same-named fields in other locations.
+    if (
+      fieldPath === "capabilities.tool_parity.safety.credential_entry_allowed"
+      && typeof item === "boolean"
+    ) {
+      result[key] = item;
+    } else if (/(secret|token|password|credential|authorization|auth)/i.test(key)) {
       result[key] = "[REDACTED]";
     } else {
-      result[key] = redactSensitive(item);
+      result[key] = redactSensitive(item, fieldPath);
     }
   }
   return result;
@@ -97,10 +108,10 @@ function publicDevice(record, online = null) {
     last_session_epoch: record.lastSessionEpoch ?? null,
     last_seen_at_ms: record.lastSeenAtMs ?? null,
     capabilities_digest: record.capabilitiesDigest ?? null,
-    capabilities: redactSensitive(clone(record.capabilities ?? null)),
+    capabilities: redactSensitive(clone(record.capabilities ?? null), "capabilities"),
     limits: clone(record.limits ?? null),
     previous_generation_expires_at_ms: record.previousCredential?.validUntilMs ?? null,
-    metadata: redactSensitive(clone(record.metadata ?? {})),
+    metadata: redactSensitive(clone(record.metadata ?? {}), "metadata"),
   };
 }
 
