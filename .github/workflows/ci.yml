@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches:
+      - agent/r22-independent-integration-20260929
       - agent/pc-control-plane
       - agent/pc-native-mcp
       - agent/pc-native-mcp-host
