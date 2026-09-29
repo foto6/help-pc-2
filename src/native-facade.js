@@ -592,6 +592,64 @@ export class NativeControlFacade {
     return this.state.requests.find((item) => item.sessionId === sessionId && item.requestId === requestId) ?? null;
   }
 
+  // A two-store crash can persist the Control action while the Facade request
+  // still says "allocating" with no actionId. A stale/closed journal cannot
+  // call enqueueAction: even an apparently safe retry would manufacture a
+  // new mutation. Reconnect ONLY to the original durable Control record,
+  // checking the exact owner, logical key, input and immutable provenance.
+  #recoverPersistedActionLink(session, request) {
+    if (request.actionId) return this.controlPlane.getAction(request.actionId);
+    if (request.status !== "allocating") {
+      throw new NativeFacadeError("Lost action link has an inconsistent Facade state.", {
+        code: "REQUEST_STATE_CORRUPTED", category: "state", httpStatus: 409,
+      });
+    }
+    const tool = toolDefinition(request.tool);
+    if (!tool) {
+      throw new NativeFacadeError("Original native tool is no longer available.", {
+        code: "SESSION_REQUEST_RECONCILIATION_REQUIRED", category: "state", httpStatus: 409,
+      });
+    }
+    const key = "native:" + session.id + ":" + request.requestId;
+    const matches = this.controlPlane.listActions({ sessionId: session.controlSessionId })
+      .filter((action) => action.idempotencyKey === key);
+    if (matches.length === 0) return null; // No Control allocation: never dispatch here.
+    if (matches.length !== 1) {
+      throw new NativeFacadeError("Multiple Control records claim the same durable request.", {
+        code: "REQUEST_STATE_CORRUPTED", category: "state", httpStatus: 409,
+      });
+    }
+    const action = matches[0];
+    const meta = action.metadata ?? {};
+    const input = clone(request.args);
+    if (tool.streaming && request.pageRequested) {
+      // Cursor material is not stored in old Facade request records, so a
+      // non-null inner cursor cannot be reconstructed with certainty.
+      if (Object.hasOwn(action.input ?? {}, "cursor")) {
+        throw new NativeFacadeError("Paged historical action needs manual cursor reconciliation.", {
+          code: "SESSION_REQUEST_RECONCILIATION_REQUIRED", category: "state", httpStatus: 409,
+        });
+      }
+      input.limit = request.pageLimit;
+    }
+    if (action.provider !== "help-pc-1" || action.type !== tool.executorAction ||
+        canonicalJson(action.input) !== canonicalJson(input) ||
+        action.sessionId !== session.controlSessionId ||
+        meta.native_session_id !== session.id ||
+        meta.native_request_id !== request.requestId ||
+        meta.native_tool !== request.tool ||
+        meta.effect !== tool.effect ||
+        meta.native_executor_digest !== session.executorDigest) {
+      throw new NativeFacadeError("Persisted Control action provenance does not match original Facade request.", {
+        code: "DUPLICATE_REQUEST_MISMATCH", category: "idempotency", httpStatus: 409,
+      });
+    }
+    request.actionId = action.id;
+    request.status = "queued";
+    this.#persist();
+    return action;
+  }
+
   #projectAction(session, request, tool, action) {
     const raw = action.result ?? action.executionResult ?? null;
     const data = raw?.data ?? raw;
@@ -820,7 +878,7 @@ export class NativeControlFacade {
             code: "DUPLICATE_REQUEST_MISMATCH", category: "idempotency", httpStatus: 409,
           });
         }
-        if (historical.length !== 1 || !historical[0].actionId) {
+        if (historical.length !== 1) {
           throw new NativeFacadeError("Ambiguous historical request requires manual reconciliation.", {
             code: "SESSION_REQUEST_RECONCILIATION_REQUIRED", category: "idempotency", httpStatus: 409,
           });
@@ -830,6 +888,12 @@ export class NativeControlFacade {
         if (!owner) {
           throw new NativeFacadeError("Old facade session is missing from durable journal.", {
             code: "FACADE_STATE_CORRUPTED", category: "state", httpStatus: 500,
+          });
+        }
+        if (!oldRequest.actionId) this.#recoverPersistedActionLink(owner, oldRequest);
+        if (!oldRequest.actionId) {
+          throw new NativeFacadeError("No durable Control action link exists; never replay the old mutation.", {
+            code: "SESSION_REQUEST_RECONCILIATION_REQUIRED", category: "idempotency", httpStatus: 409,
           });
         }
         // A historical terminal receipt must be returned as saved: projecting
@@ -918,7 +982,11 @@ export class NativeControlFacade {
     const session = this.#lookupSession(sessionId, resumeToken);
     const request = this.#request(session.id, requestId);
     if (!request) throw new NativeFacadeError("Request was not found.", { code: "REQUEST_NOT_FOUND", category: "request", httpStatus: 404 });
-    if (!request.actionId) return responseEnvelope({ requestId, sessionId, status: request.status });
+    if (!request.actionId) this.#recoverPersistedActionLink(session, request);
+    if (!request.actionId) {
+      return responseEnvelope({ requestId, sessionId, status: "reconciliation_required",
+        data: { lookup_required: true, reason: "control_action_not_allocated" } });
+    }
     const action = this.controlPlane.getAction(request.actionId);
     const tool = toolDefinition(request.tool);
     return this.#projectJournalReceipt(session, request, tool, action);
@@ -932,9 +1000,10 @@ export class NativeControlFacade {
         code: "REQUEST_NOT_FOUND", category: "request", httpStatus: 404,
       });
     }
+    if (!request.actionId) this.#recoverPersistedActionLink(session, request);
     if (!request.actionId) {
       return responseEnvelope({ requestId, sessionId, status: "reconciliation_required",
-        data: { lookup_required: true, reason: "facade_action_link_missing" } });
+        data: { lookup_required: true, reason: "control_action_not_allocated" } });
     }
     let action = this.controlPlane.getAction(request.actionId);
     if (RECONCILING.has(action.status)) {
