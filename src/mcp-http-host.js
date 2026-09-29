@@ -74,6 +74,12 @@ export async function startNativeMcpHttpServer({
           { "www-authenticate": 'Bearer realm="pc-native-mcp"' },
         );
       }
+      // MCP HTTP DNS-rebinding guard: authenticated browser requests with an
+      // Origin must be same-origin, including the exact local port.
+      const origin = request.headers.get("origin");
+      if (origin !== null && origin !== url.origin) {
+        return jsonResponse(403, { error: "invalid_origin" });
+      }
 
       return mcpHandler.fetch(request, {
         authInfo: {

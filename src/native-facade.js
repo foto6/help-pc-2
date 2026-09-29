@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import {
@@ -189,6 +189,7 @@ export class NativeControlFacade {
     }
     if (this.clock() - session.lastSeenAtMs > this.sessionTtlMs) {
       session.status = "stale";
+      session.staleReason = "ttl_expired";
       this.#persist();
       throw new NativeFacadeError("Session expired.", { code: "STALE_SESSION", category: "session", httpStatus: 409 });
     }
@@ -244,12 +245,57 @@ export class NativeControlFacade {
     const manifest = await this.#negotiate(client);
     if ((manifest.executor?.digest ?? null) !== session.executorDigest) {
       session.status = "stale";
+      session.staleReason = "capability_drift";
       this.#persist();
       throw new NativeFacadeError("Executor capabilities drifted since session creation.", { code: "CAPABILITY_DRIFT", category: "capability_mismatch", httpStatus: 409 });
     }
     session.lastSeenAtMs = this.clock();
     this.#persist();
     return { session_id: session.id, capability_manifest: manifest };
+  }
+
+  // TTL is a security boundary. Renew only a specifically authenticated, provably
+  // expired session; do not revive it, replay its requests, or steal a desktop lease.
+  async renewExpiredSession({ sessionId, resumeToken, desktopId, client }) {
+    const prior = this.state.sessions.find((item) => item.id === sessionId);
+    const supplied = typeof resumeToken === "string" ? Buffer.from(resumeToken, "utf8") : null;
+    const expected = typeof prior?.resumeToken === "string" ? Buffer.from(prior.resumeToken, "utf8") : null;
+    if (!prior || !supplied || !expected || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+      throw new NativeFacadeError("Renewal credentials are invalid.", { code: "SESSION_AUTH_FAILED", category: "auth", httpStatus: 401 });
+    }
+    if (desktopId !== prior.desktopId) {
+      throw new NativeFacadeError("Desktop identity changed.", { code: "SESSION_DESKTOP_DRIFT", category: "session", httpStatus: 409 });
+    }
+    if (prior.status !== "stale" || prior.staleReason !== "ttl_expired" ||
+        this.clock() - prior.lastSeenAtMs <= this.sessionTtlMs) {
+      throw new NativeFacadeError("Only proven TTL expiry can be renewed.", { code: "STALE_SESSION", category: "session", httpStatus: 409 });
+    }
+    const manifest = await this.#negotiate(client);
+    if (manifest.registry_digest !== prior.registryDigest ||
+        (manifest.executor?.digest ?? null) !== prior.executorDigest) {
+      throw new NativeFacadeError("Renewal capabilities drifted.", { code: "CAPABILITY_DRIFT", category: "capability_mismatch", httpStatus: 409 });
+    }
+    // No old in-flight action or session-bound process handle may be detached.
+    const activeActions = this.controlPlane.listActions({ sessionId: prior.controlSessionId })
+      .filter((action) => !TERMINAL.has(action.status));
+    const activeHandles = this.state.handles.some((handle) => handle.sessionId === prior.id && handle.status === "open");
+    if (activeActions.length || activeHandles) {
+      throw new NativeFacadeError("Old session still owns live work; reconcile it first.", {
+        code: "SESSION_RENEWAL_BLOCKED", category: "session", httpStatus: 409,
+      });
+    }
+    try {
+      this.controlPlane.closeSession(prior.controlSessionId);
+    } catch {
+      throw new NativeFacadeError("Old desktop lease could not be released.", {
+        code: "SESSION_RENEWAL_BLOCKED", category: "session", httpStatus: 409,
+      });
+    }
+    const renewed = await this.openSession({ desktopId: prior.desktopId, client });
+    const next = this.state.sessions.find((session) => session.id === renewed.session_id);
+    next.renewalOf = prior.id;
+    this.#persist();
+    return renewed;
   }
 
   closeSession(sessionId) {
@@ -266,6 +312,7 @@ export class NativeControlFacade {
     const digest = current?.digest ?? current?.capabilities_digest ?? null;
     if (digest !== session.executorDigest) {
       session.status = "stale";
+      session.staleReason = "capability_drift";
       this.#persist();
       throw new NativeFacadeError("Executor capability digest changed.", { code: "CAPABILITY_DRIFT", category: "capability_mismatch", httpStatus: 409 });
     }
@@ -439,6 +486,26 @@ export class NativeControlFacade {
       args,
       page: page.requested ? { limit: page.limit, inner: page.innerCursor } : null,
     });
+    // A completed mutation in an expired ancestor must never silently become
+    // a fresh mutation just because the renewed session has a different ID.
+    if (tool.effect !== "read_only") {
+      const visited = new Set([session.id]);
+      let ancestorId = session.renewalOf ?? null;
+      while (ancestorId) {
+        if (visited.has(ancestorId)) {
+          throw new NativeFacadeError("Invalid session renewal lineage.", { code: "FACADE_STATE_CORRUPTED", httpStatus: 500 });
+        }
+        visited.add(ancestorId);
+        const ancestor = this.state.sessions.find((entry) => entry.id === ancestorId);
+        if (!ancestor) throw new NativeFacadeError("Missing renewal ancestor.", { code: "FACADE_STATE_CORRUPTED", httpStatus: 500 });
+        if (this.#request(ancestorId, envelope.request_id)) {
+          throw new NativeFacadeError("Prior session used this request ID; reconcile rather than replay.", {
+            code: "SESSION_REQUEST_RECONCILIATION_REQUIRED", category: "idempotency", httpStatus: 409,
+          });
+        }
+        ancestorId = ancestor.renewalOf ?? null;
+      }
+    }
     let request = this.#request(session.id, envelope.request_id);
     if (request) {
       if (request.fingerprint !== fingerprint) throw new NativeFacadeError("Duplicate request_id was reused with different input.", { code: "DUPLICATE_REQUEST_MISMATCH", category: "idempotency", httpStatus: 409 });
