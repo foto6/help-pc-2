@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/server";
+import { randomUUID } from "node:crypto";
 import {
   NATIVE_CONTROL_PROTOCOL_V1,
   NATIVE_RESPONSE_V1,
@@ -92,7 +93,10 @@ function boundedResult(value, maxBytes) {
 
 function requestIdentity(toolName, args, ctx) {
   if (typeof args.request_id === "string" && args.request_id) return args.request_id;
-  return `mcp:${toolName}:${String(ctx.mcpReq.id)}`;
+  // MCP numeric request IDs are local to individual transports and can
+  // restart from 1 on reconnect. Never recycle one across durable mutations.
+  // To retry an uncertain mutation, the caller should set a stable request_id.
+  return "mcp:" + toolName + ":" + randomUUID();
 }
 
 function splitHostArguments(args) {
@@ -257,7 +261,7 @@ export class NativeMcpRuntime {
         };
         throw error;
       }
-      await this.ensureFacadeSession({ allowExpiredRenewal: tool.effect === "read_only" });
+      await this.ensureFacadeSession({ allowExpiredRenewal: true });
       const request = {
         contract_version: NATIVE_CONTROL_PROTOCOL_V1,
         session_id: this.facadeSession.session_id,
@@ -286,7 +290,7 @@ export class NativeMcpRuntime {
     const { request_id: _requestId, ...compatibilityArguments } = args;
     let response;
     try {
-      await this.ensureFacadeSession({ allowExpiredRenewal: tool.effect === "read_only" });
+      await this.ensureFacadeSession({ allowExpiredRenewal: true });
       response = await this.compatibilitySurface.invoke({
         session_id: this.facadeSession.session_id,
         request_id: requestId,

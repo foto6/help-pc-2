@@ -345,6 +345,21 @@ export class NativeRelayExecutorProvider {
     return executor;
   }
 
+  // A device boot epoch is not interchangeable with a static capability digest.
+  // Keep the private relay binding authoritative for long-lived native handles.
+  async readDeviceIdentity(_request = {}, context = {}) {
+    if (context.signal?.aborted) throw cancelledBeforeDispatch();
+    const { binding } = await this.#deviceSnapshot({
+      signal: context.signal,
+      establish: true,
+    });
+    return Object.freeze({
+      deviceId: binding.deviceId,
+      sessionEpoch: binding.sessionEpoch,
+      executorDigest: binding.executorDigest,
+    });
+  }
+
   #bridgeContext(request, context, binding) {
     const logicalRequestId = requireText(
       context.logicalRequestId ?? context.actionMetadata?.native_request_id,
@@ -751,6 +766,7 @@ export function createNativeRelayExecutorBridge(options = {}) {
   return Object.freeze({
     invoke: provider.invoke,
     readCapabilities: provider.readCapabilities,
+    readDeviceIdentity: provider.readDeviceIdentity.bind(provider),
     readEvidence: provider.readEvidence,
     dryRun: false,
     desktopId: provider.desktopId,

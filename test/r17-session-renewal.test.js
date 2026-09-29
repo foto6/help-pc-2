@@ -88,15 +88,17 @@ test("R17 unknown side-effect receipt and live handle both block renewal",async 
  await assert.rejects(k.runtime.ensureFacadeSession({allowExpiredRenewal:true}),e=>e.code==="SESSION_RENEWAL_BLOCKED");
 });
 
-test("R17 old completed mutation request ID cannot replay in renewed session",async t=>{
+test("R17 old mutation request returns original durable receipt without replay",async t=>{
  const h=await make();t.after(h.close);await h.runtime.ensureFacadeSession();
  const sid=h.runtime.facadeSession.session_id;
  const old=await h.facade.invoke(req(sid,"previous-write","file.write",{path:"C:\\isolated\\x.txt",text:"one"}));
  assert.equal(old.status,"completed");assert.equal(h.state.calls,1);
  h.advance(TTL+1);await h.runtime.ensureFacadeSession({allowExpiredRenewal:true});
  const renewed=h.runtime.facadeSession.session_id;
- await assert.rejects(h.facade.invoke(req(renewed,"previous-write","file.write",
- {path:"C:\\isolated\\x.txt",text:"one"})),e=>e.code==="SESSION_REQUEST_RECONCILIATION_REQUIRED");
+ const original=await h.facade.invoke(req(renewed,"previous-write","file.write",
+ {path:"C:\\isolated\\x.txt",text:"one"}));
+ assert.equal(original.status,"completed");
+ assert.equal(original.request_id,"previous-write");
  assert.equal(h.state.calls,1);
 });
 

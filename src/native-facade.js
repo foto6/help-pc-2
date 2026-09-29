@@ -153,6 +153,7 @@ export class NativeControlFacade {
     controlPlane,
     store = null,
     capabilityProvider = async () => null,
+    deviceIdentityProvider = null,
     idFactory = randomUUID,
     secretFactory = () => randomBytes(24).toString("base64url"),
     sessionTtlMs = 30 * 60 * 1000,
@@ -161,9 +162,13 @@ export class NativeControlFacade {
   } = {}) {
     if (!controlPlane) throw new TypeError("controlPlane is required.");
     if (typeof capabilityProvider !== "function") throw new TypeError("capabilityProvider must be a function.");
+    if (deviceIdentityProvider !== null && typeof deviceIdentityProvider !== "function") {
+      throw new TypeError("deviceIdentityProvider must be a function or null.");
+    }
     this.controlPlane = controlPlane;
     this.store = store;
     this.capabilityProvider = capabilityProvider;
+    this.deviceIdentityProvider = deviceIdentityProvider;
     this.idFactory = idFactory;
     this.secretFactory = secretFactory;
     this.sessionTtlMs = sessionTtlMs;
@@ -173,6 +178,67 @@ export class NativeControlFacade {
   }
 
   #persist() { this.store?.save(this.state); }
+
+  async #captureDeviceIdentity(executorDigest) {
+    if (!this.deviceIdentityProvider) return null;
+    const identity = await this.deviceIdentityProvider();
+    if (!identity || typeof identity.deviceId !== "string" || !identity.deviceId ||
+        typeof identity.sessionEpoch !== "string" || !identity.sessionEpoch ||
+        identity.executorDigest !== executorDigest) {
+      throw new NativeFacadeError("Authenticated device/epoch binding is invalid.", {
+        code: "DEVICE_IDENTITY_MISMATCH", category: "session", httpStatus: 409,
+      });
+    }
+    return {
+      deviceId: identity.deviceId,
+      sessionEpoch: identity.sessionEpoch,
+      executorDigest: identity.executorDigest,
+    };
+  }
+
+  #assertDeviceIdentity(before, after) {
+    if (!before || !after || before.deviceId !== after.deviceId ||
+        before.sessionEpoch !== after.sessionEpoch ||
+        before.executorDigest !== after.executorDigest) {
+      throw new NativeFacadeError("Device boot/session epoch cannot be proved unchanged.", {
+        code: "STALE_DEVICE_SESSION", category: "session", httpStatus: 409,
+      });
+    }
+  }
+
+  #controlOwner(desktopId) {
+    const snapshot = this.controlPlane.snapshot();
+    return snapshot.desktopOwners.find(([name]) => name === desktopId)?.[1] ?? null;
+  }
+
+  // Rehydrate only known terminal Executor action results. Never query/replay
+  // the provider here. A crash after Control persisted process.start but before
+  // the facade recorded the handle must not silently orphan that process.
+  #synchronizeHandleJournal(session) {
+    const actions = this.controlPlane.listActions({ sessionId: session.controlSessionId })
+      // Control's append-only action insertion order survives persistence.
+      // Do not sort by same-millisecond timestamps/random UUID: that could
+      // replay process.close BEFORE process.start and resurrect a dead handle.
+      .filter((action) => action.metadata?.native_session_id === session.id &&
+        action.status === "succeeded");
+    for (const action of actions) {
+      const tool = toolDefinition(action.metadata.native_tool);
+      if (!tool || !["create", "close"].includes(tool.handleMode)) continue;
+      if (tool.handleMode === "create") {
+        const raw = action.result ?? action.executionResult ?? null;
+        const handle = extractHandle(raw?.data ?? raw);
+        if (!handle) {
+          throw new NativeFacadeError("Completed process creation lacks durable handle evidence.", {
+            code: "SESSION_HANDLE_RECONCILIATION_REQUIRED", category: "process_handle", httpStatus: 409,
+          });
+        }
+        this.#registerHandle(session, tool, { process_handle: handle });
+      } else {
+        this.#closeHandle(session, tool, action.input);
+      }
+    }
+    this.#persist();
+  }
 
   async capabilities() {
     const executorCapabilities = await this.capabilityProvider();
@@ -215,6 +281,7 @@ export class NativeControlFacade {
       throw new NativeFacadeError("desktopId is required.", { code: "INVALID_ARGUMENT" });
     }
     const manifest = await this.#negotiate(client);
+    const deviceIdentity = await this.#captureDeviceIdentity(manifest.executor?.digest ?? null);
     const controlSession = this.controlPlane.createSession({ desktopId: desktopId.trim() });
     const now = this.clock();
     const session = {
@@ -227,6 +294,7 @@ export class NativeControlFacade {
       lastSeenAtMs: now,
       registryDigest: TOOL_REGISTRY_DIGEST,
       executorDigest: manifest.executor?.digest ?? null,
+      deviceIdentity,
     };
     this.state.sessions.push(session);
     this.#persist();
@@ -248,6 +316,20 @@ export class NativeControlFacade {
       session.staleReason = "capability_drift";
       this.#persist();
       throw new NativeFacadeError("Executor capabilities drifted since session creation.", { code: "CAPABILITY_DRIFT", category: "capability_mismatch", httpStatus: 409 });
+    }
+    if (session.deviceIdentity) {
+      const currentIdentity = await this.#captureDeviceIdentity(manifest.executor?.digest ?? null);
+      this.#assertDeviceIdentity(session.deviceIdentity, currentIdentity);
+    } else if (this.deviceIdentityProvider) {
+      // Upgrading a legacy R15 snapshot must not silently carry an open
+      // process handle into a new boot epoch with no historical identity.
+      this.#synchronizeHandleJournal(session);
+      if (this.state.handles.some((record) =>
+          record.sessionId === session.id && record.status === "open")) {
+        throw new NativeFacadeError("Legacy process handle has no frozen device epoch.", {
+          code: "SESSION_DEVICE_BINDING_MISSING", category: "process_handle", httpStatus: 409,
+        });
+      }
     }
     session.lastSeenAtMs = this.clock();
     this.#persist();
@@ -275,15 +357,42 @@ export class NativeControlFacade {
         (manifest.executor?.digest ?? null) !== prior.executorDigest) {
       throw new NativeFacadeError("Renewal capabilities drifted.", { code: "CAPABILITY_DRIFT", category: "capability_mismatch", httpStatus: 409 });
     }
-    // No old in-flight action or session-bound process handle may be detached.
     const activeActions = this.controlPlane.listActions({ sessionId: prior.controlSessionId })
       .filter((action) => !TERMINAL.has(action.status));
-    const activeHandles = this.state.handles.some((handle) => handle.sessionId === prior.id && handle.status === "open");
-    if (activeActions.length || activeHandles) {
-      throw new NativeFacadeError("Old session still owns live work; reconcile it first.", {
+    const controlSession = this.controlPlane.listSessions()
+      .find((entry) => entry.id === prior.controlSessionId);
+    if (activeActions.length || controlSession?.status !== "active" ||
+        this.#controlOwner(prior.desktopId) !== prior.controlSessionId) {
+      throw new NativeFacadeError("Old desktop still owns unsettled work or ownership drifted.", {
         code: "SESSION_RENEWAL_BLOCKED", category: "session", httpStatus: 409,
       });
     }
+    this.#synchronizeHandleJournal(prior);
+    const activeHandles = this.state.handles.some((handle) =>
+      handle.sessionId === prior.id && handle.status === "open");
+    const currentIdentity = await this.#captureDeviceIdentity(manifest.executor?.digest ?? null);
+    if (prior.deviceIdentity) this.#assertDeviceIdentity(prior.deviceIdentity, currentIdentity);
+    if (activeHandles) {
+      if (!prior.deviceIdentity) {
+        throw new NativeFacadeError("A live handle cannot be rebound without frozen boot/epoch evidence.", {
+          code: "SESSION_RENEWAL_BLOCKED", category: "process_handle", httpStatus: 409,
+        });
+      }
+      // Keep the SAME Control/facade session so already-running process handles
+      // retain their owner. Token rotates; nothing is sent to the Executor.
+      prior.status = ACTIVE_SESSION;
+      prior.staleReason = null;
+      prior.resumeToken = this.secretFactory();
+      prior.lastSeenAtMs = this.clock();
+      prior.renewalCount = (prior.renewalCount ?? 0) + 1;
+      this.#persist();
+      return {
+        session_id: prior.id,
+        resume_token: prior.resumeToken,
+        capability_manifest: manifest,
+      };
+    }
+    // Prepare all fallible negotiation/identity checks before releasing lease.
     try {
       this.controlPlane.closeSession(prior.controlSessionId);
     } catch {
@@ -291,11 +400,69 @@ export class NativeControlFacade {
         code: "SESSION_RENEWAL_BLOCKED", category: "session", httpStatus: 409,
       });
     }
+    // Retain the historical TTL-stale facade marker for durable audit.
+    // The old Control owner is already persisted closed at this boundary.
+    this.#persist();
     const renewed = await this.openSession({ desktopId: prior.desktopId, client });
     const next = this.state.sessions.find((session) => session.id === renewed.session_id);
     next.renewalOf = prior.id;
     this.#persist();
     return renewed;
+  }
+
+  // Explicit LOCAL single-owner upgrade of historical R15 stale snapshots.
+  // Never revive a session with an unknown stale reason or touch the Executor.
+  async migrateLegacyQuiescentSession({ sessionId, desktopId, client }) {
+    const prior = this.state.sessions.find((entry) => entry.id === sessionId);
+    if (!prior || prior.desktopId !== desktopId ||
+        prior.status !== "stale" || prior.staleReason != null ||
+        !Number.isFinite(prior.lastSeenAtMs) ||
+        this.clock() - prior.lastSeenAtMs <= this.sessionTtlMs) {
+      throw new NativeFacadeError("Legacy migration is not an expired quiescent session.", {
+        code: "SESSION_MIGRATION_BLOCKED", category: "session", httpStatus: 409,
+      });
+    }
+    const manifest = await this.#negotiate(client);
+    if (manifest.registry_digest !== prior.registryDigest ||
+        (manifest.executor?.digest ?? null) !== prior.executorDigest) {
+      throw new NativeFacadeError("Legacy capability identity changed.", {
+        code: "CAPABILITY_DRIFT", category: "capability_mismatch", httpStatus: 409,
+      });
+    }
+    if (this.state.sessions.some((entry) => entry !== prior &&
+      entry.desktopId === desktopId && entry.status === ACTIVE_SESSION)) {
+      throw new NativeFacadeError("Concurrent facade owner prevents legacy migration.", {
+        code: "SESSION_MIGRATION_BLOCKED", category: "session", httpStatus: 409,
+      });
+    }
+    const actions = this.controlPlane.listActions({ sessionId: prior.controlSessionId });
+    if (actions.some((action) => !TERMINAL.has(action.status))) {
+      throw new NativeFacadeError("Old action must be reconciled before migration.", {
+        code: "SESSION_MIGRATION_BLOCKED", category: "session", httpStatus: 409,
+      });
+    }
+    this.#synchronizeHandleJournal(prior);
+    if (this.state.handles.some((item) => item.sessionId === prior.id && item.status === "open")) {
+      throw new NativeFacadeError("A live process handle prevents migration; preserve its owner.", {
+        code: "SESSION_MIGRATION_BLOCKED", category: "process_handle", httpStatus: 409,
+      });
+    }
+    const control = this.controlPlane.listSessions().find((item) => item.id === prior.controlSessionId);
+    const owner = this.#controlOwner(desktopId);
+    // This also resumes an interrupted two-store migration after Control
+    // closed its old owner but before Facade persisted the closed marker.
+    if (control?.status === "active" && owner === prior.controlSessionId) {
+      this.controlPlane.closeSession(prior.controlSessionId);
+    } else if (control?.status !== "closed" || owner !== null) {
+      throw new NativeFacadeError("Legacy Control ownership does not match snapshot.", {
+        code: "SESSION_MIGRATION_BLOCKED", category: "session", httpStatus: 409,
+      });
+    }
+    prior.status = "closed";
+    prior.staleReason = "legacy_quiescent_migrated";
+    prior.lastSeenAtMs = this.clock();
+    this.#persist();
+    return { session_id: prior.id, status: "closed", migrated: true };
   }
 
   closeSession(sessionId) {
@@ -311,15 +478,15 @@ export class NativeControlFacade {
           session.staleReason !== "ttl_expired") throw error;
       expired = true;
     }
-    if (expired) {
-      const unfinished = this.controlPlane.listActions({ sessionId: session.controlSessionId })
-        .some((action) => !TERMINAL.has(action.status));
-      const handles = this.state.handles.some((entry) => entry.sessionId === session.id && entry.status === "open");
-      if (unfinished || handles) {
-        throw new NativeFacadeError("Expired session still owns work; explicit reconciliation is required.", {
-          code: "SESSION_CLOSE_BLOCKED", category: "session", httpStatus: 409,
-        });
-      }
+    const unfinished = this.controlPlane.listActions({ sessionId: session.controlSessionId })
+      .some((action) => !TERMINAL.has(action.status));
+    if (!unfinished) this.#synchronizeHandleJournal(session);
+    const handles = this.state.handles.some((entry) =>
+      entry.sessionId === session.id && entry.status === "open");
+    if (unfinished || handles) {
+      throw new NativeFacadeError("Session still owns unfinished work or live handles; explicit reconciliation is required.", {
+        code: "SESSION_CLOSE_BLOCKED", category: "session", httpStatus: 409,
+      });
     }
     try {
       this.controlPlane.closeSession(session.controlSessionId);
@@ -342,6 +509,10 @@ export class NativeControlFacade {
       session.staleReason = "capability_drift";
       this.#persist();
       throw new NativeFacadeError("Executor capability digest changed.", { code: "CAPABILITY_DRIFT", category: "capability_mismatch", httpStatus: 409 });
+    }
+    if (session.deviceIdentity) {
+      const currentIdentity = await this.#captureDeviceIdentity(digest);
+      this.#assertDeviceIdentity(session.deviceIdentity, currentIdentity);
     }
   }
 
@@ -460,6 +631,66 @@ export class NativeControlFacade {
     return clone(request.response);
   }
 
+  // Control persists the idempotency key before provider dispatch. If a
+  // crash occurs while Facade still says "allocating", asking Control for
+  // this SAME key returns its original action and can never run it twice.
+  #ensureDurableAction(session, request, tool, page) {
+    if (request.actionId) return;
+    if (request.status !== "allocating") {
+      throw new NativeFacadeError("Unlinked request state needs manual reconciliation.", {
+        code: "REQUEST_STATE_CORRUPTED", category: "state", httpStatus: 409,
+      });
+    }
+    const input = clone(request.args);
+    if (tool.streaming && request.pageRequested) {
+      input.limit = request.pageLimit;
+      if (page.innerCursor !== null) input.cursor = page.innerCursor;
+    }
+    const handle = inputHandle(request.args);
+    const resource = typeof request.args.path === "string" ? request.args.path : handle ?? null;
+    const idempotencyKey = "native:" + session.id + ":" + request.requestId;
+    const spec = {
+      provider: "help-pc-1",
+      type: tool.executorAction,
+      input,
+      ...(resource ? { resource } : {}),
+      idempotencyKey,
+      correlationId: request.requestId,
+      destructive: tool.destructive,
+      requiresDesktop: false,
+      metadata: {
+        native_tool: tool.name,
+        effect: tool.effect,
+        native_session_id: session.id,
+        native_request_id: request.requestId,
+        native_executor_digest: session.executorDigest,
+      },
+    };
+    const old = this.controlPlane.listActions({ sessionId: session.controlSessionId })
+      .find((action) => action.idempotencyKey === idempotencyKey);
+    if (old && (old.type !== tool.executorAction ||
+        canonicalJson(old.input) !== canonicalJson(input) ||
+        old.metadata?.native_tool !== tool.name ||
+        old.metadata?.native_session_id !== session.id ||
+        old.metadata?.native_request_id !== request.requestId)) {
+      throw new NativeFacadeError("Control action conflicts with original request.", {
+        code: "DUPLICATE_REQUEST_MISMATCH", category: "idempotency", httpStatus: 409,
+      });
+    }
+    if (!old) this.#assertHandle(session, tool, request.args);
+    const action = this.controlPlane.enqueueAction(session.controlSessionId, spec);
+    if (action.type !== tool.executorAction ||
+        canonicalJson(action.input) !== canonicalJson(input) ||
+        action.idempotencyKey !== idempotencyKey) {
+      throw new NativeFacadeError("Control identity changed at durable enqueue.", {
+        code: "DUPLICATE_REQUEST_MISMATCH", category: "idempotency", httpStatus: 409,
+      });
+    }
+    request.actionId = action.id;
+    request.status = "queued";
+    this.#persist();
+  }
+
   async #advance(session, request, tool) {
     let action = request.actionId ? this.controlPlane.getAction(request.actionId) : null;
     if (action && !TERMINAL.has(action.status) && !RECONCILING.has(action.status)) {
@@ -506,37 +737,47 @@ export class NativeControlFacade {
     if (hasProtectedPath(args)) {
       throw new NativeFacadeError("Protected path is outside facade dispatch scope.", { code: "PROTECTED_PATH_BLOCKED", category: "policy", httpStatus: 403 });
     }
-    this.#assertHandle(session, tool, args);
     const page = this.#validatePage(session.id, tool.name, envelope.page);
     const fingerprint = sha256({
       tool: tool.name,
       args,
       page: page.requested ? { limit: page.limit, inner: page.innerCursor } : null,
     });
-    // A completed mutation in an expired ancestor must never silently become
-    // a fresh mutation just because the renewed session has a different ID.
+    // PERSONAL / ONE OWNER: a logical mutation ID is durable across normal
+    // close/restart and TTL renewal. Never reenque a historical mutation.
     if (tool.effect !== "read_only") {
-      const visited = new Set([session.id]);
-      let ancestorId = session.renewalOf ?? null;
-      while (ancestorId) {
-        if (visited.has(ancestorId)) {
-          throw new NativeFacadeError("Invalid session renewal lineage.", { code: "FACADE_STATE_CORRUPTED", httpStatus: 500 });
+      const historical = this.state.requests.filter((entry) =>
+        entry.requestId === envelope.request_id &&
+        entry.sessionId !== session.id &&
+        (entry.effect !== "read_only" || toolDefinition(entry.tool)?.effect !== "read_only"));
+      if (historical.length) {
+        if (historical.some((entry) => entry.fingerprint !== fingerprint)) {
+          throw new NativeFacadeError("Single-owner request ID was reused with different input.", {
+            code: "DUPLICATE_REQUEST_MISMATCH", category: "idempotency", httpStatus: 409,
+          });
         }
-        visited.add(ancestorId);
-        const ancestor = this.state.sessions.find((entry) => entry.id === ancestorId);
-        if (!ancestor) throw new NativeFacadeError("Missing renewal ancestor.", { code: "FACADE_STATE_CORRUPTED", httpStatus: 500 });
-        if (this.#request(ancestorId, envelope.request_id)) {
-          throw new NativeFacadeError("Prior session used this request ID; reconcile rather than replay.", {
+        if (historical.length !== 1 || !historical[0].actionId) {
+          throw new NativeFacadeError("Ambiguous historical request requires manual reconciliation.", {
             code: "SESSION_REQUEST_RECONCILIATION_REQUIRED", category: "idempotency", httpStatus: 409,
           });
         }
-        ancestorId = ancestor.renewalOf ?? null;
+        const oldRequest = historical[0];
+        const owner = this.state.sessions.find((item) => item.id === oldRequest.sessionId);
+        if (!owner) {
+          throw new NativeFacadeError("Old facade session is missing from durable journal.", {
+            code: "FACADE_STATE_CORRUPTED", category: "state", httpStatus: 500,
+          });
+        }
+        const oldAction = this.controlPlane.getAction(oldRequest.actionId);
+        // Lookup only: do not call Control.processNext or enqueueAction.
+        return this.#projectAction(owner, oldRequest, tool, oldAction);
       }
     }
     let request = this.#request(session.id, envelope.request_id);
     if (request) {
       if (request.fingerprint !== fingerprint) throw new NativeFacadeError("Duplicate request_id was reused with different input.", { code: "DUPLICATE_REQUEST_MISMATCH", category: "idempotency", httpStatus: 409 });
       if (request.status === "completed" || request.status === "cancelled" || request.status === "error") return clone(request.response);
+      if (!request.actionId) this.#ensureDurableAction(session, request, tool, page);
       return this.#advanceWithCancellation(session, request, tool, signal);
     }
 
@@ -556,33 +797,7 @@ export class NativeControlFacade {
     this.state.requests.push(request);
     this.#persist();
 
-    const input = clone(args);
-    if (tool.streaming && page.requested) {
-      input.limit = page.limit;
-      if (page.innerCursor !== null) input.cursor = page.innerCursor;
-    }
-    const handle = inputHandle(args);
-    const resource = typeof args.path === "string" ? args.path : handle ?? null;
-    const action = this.controlPlane.enqueueAction(session.controlSessionId, {
-      provider: "help-pc-1",
-      type: tool.executorAction,
-      input,
-      ...(resource ? { resource } : {}),
-      idempotencyKey: `native:${session.id}:${request.requestId}`,
-      correlationId: request.requestId,
-      destructive: tool.destructive,
-      requiresDesktop: false,
-      metadata: {
-        native_tool: tool.name,
-        effect: tool.effect,
-        native_session_id: session.id,
-        native_request_id: request.requestId,
-        native_executor_digest: session.executorDigest,
-      },
-    });
-    request.actionId = action.id;
-    request.status = "queued";
-    this.#persist();
+    this.#ensureDurableAction(session, request, tool, page);
     return this.#advanceWithCancellation(session, request, tool, signal);
   }
 

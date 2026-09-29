@@ -961,3 +961,24 @@ test("NativeFacade reconciles cached relay result after control response loss wi
   assert.equal(action.executionAttempts, 1);
   assert.equal(action.reconciliationAttempts, 1);
 });
+
+test("R18 real loopback relay provides frozen device boot epoch and rejects a different epoch",async t=>{
+ const {address}=await startRelay(t);
+ const old=await connectDevice(address,{epoch:"epoch-r18-real-0001"});
+ t.after(()=>old.close());
+ const bridge=createNativeRelayExecutorBridge({
+  relayUrl:address.url,relayToken:CONTROL_TOKEN,deviceId:DEVICE_ID,
+ });
+ const pinned=await bridge.readDeviceIdentity();
+ assert.deepEqual(pinned,{
+  deviceId:DEVICE_ID,sessionEpoch:"epoch-r18-real-0001",
+  executorDigest:EXECUTOR_DIGEST,
+ });
+ const closed=once(old.ws,"close");
+ old.close();
+ await closed;
+ const fresh=await connectDevice(address,{epoch:"epoch-r18-real-0002"});
+ t.after(()=>fresh.close());
+ await assert.rejects(bridge.readDeviceIdentity(),
+  e=>e.code==="STALE_DEVICE_SESSION");
+});
