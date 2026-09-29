@@ -121,6 +121,10 @@ export class LocalNativeHttpTransport {
         sendJson(res, 200, this.facade.lookupRequest(body));
         return;
       }
+      if (req.method === "POST" && path === "/v1/request/reconcile") {
+        sendJson(res, 200, await this.facade.reconcileRequest(body));
+        return;
+      }
       if (req.method === "POST" && path === "/v1/request/cancel") {
         sendJson(res, 200, this.facade.cancelRequest(body));
         return;

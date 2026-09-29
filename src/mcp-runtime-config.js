@@ -97,6 +97,7 @@ export async function createConfiguredNativeMcpRuntime({
   desktopId = process.env.PC_NATIVE_DESKTOP_ID ?? "desktop-A",
   mode = "mcp",
   testConfig = undefined,
+  legacyMigrationSessionId = null,
 } = {}) {
   const { createBridge, moduleIdentity } = await resolveBridgeFactory({ mode, testConfig });
   const bridge = await createBridge({ mode });
@@ -104,6 +105,7 @@ export async function createConfiguredNativeMcpRuntime({
   requireFunction(bridge.invoke, "invoke");
   requireFunction(bridge.readCapabilities, "readCapabilities");
 
+  if (bridge.readDeviceIdentity !== undefined) requireFunction(bridge.readDeviceIdentity, "readDeviceIdentity");
   if (bridge.preflight !== undefined) requireFunction(bridge.preflight, "preflight");
   if (bridge.readEvidence !== undefined) requireFunction(bridge.readEvidence, "readEvidence");
   if (bridge.bindExecutionContext !== undefined) requireFunction(bridge.bindExecutionContext, "bindExecutionContext");
@@ -130,12 +132,36 @@ export async function createConfiguredNativeMcpRuntime({
       { request_id: null, action: null },
       { source: "pc-native-mcp-host" },
     )),
+    deviceIdentityProvider: bridge.readDeviceIdentity
+      ? async () => bridge.readDeviceIdentity(
+        { request_id: null, action: null },
+        { source: "pc-native-mcp-host" },
+      )
+      : null,
   });
 
   const compatibilitySurface = new DesktopCommanderCompatibilitySurface({
     facade,
     store: new JsonDcCompatibilityStore(join(stateDir, "dc-compatibility.json")),
   });
+
+  // Explicit one-time PERSONAL installation upgrade only. Never guess an old
+  // owner's identity or silently cancel an unresolved Executor operation.
+  if (legacyMigrationSessionId !== null) {
+    if (typeof legacyMigrationSessionId !== "string" || !legacyMigrationSessionId) {
+      throw runtimeConfigError("A pinned legacy facade session ID is required.", "SESSION_MIGRATION_PIN_REQUIRED");
+    }
+    const manifest = await facade.capabilities();
+    await facade.migrateLegacyQuiescentSession({
+      sessionId: legacyMigrationSessionId,
+      desktopId: bridge.desktopId ?? desktopId,
+      client: {
+        protocol_version: manifest.protocol_version,
+        registry_digest: manifest.registry_digest,
+        executor_digest: manifest.executor?.digest ?? null,
+      },
+    });
+  }
 
   const runtime = await NativeMcpRuntime.create({
     facade,
