@@ -14,6 +14,12 @@ const STORE_VERSION = 1;
 const MAX_READ_LINES = 1000;
 const MAX_BATCH_FILES = 64;
 const MAX_TEXT_BYTES = 256 * 1024;
+// Exact pinned Python pc_executor.operations.MAX_READ_OUTPUT_BYTES.
+// The compatibility API's line count is only an estimate for an underlying
+// durable BYTE-cursor read. Never request beyond the producer's 64 KiB bound;
+// otherwise the real signed provider rejects it even though MCP advertised
+// read_process_output available.
+const PC_CORE_MAX_OUTPUT_READ_BYTES = 64 * 1024;
 const MAX_COMMAND_CHARS = 32768;
 
 function clone(value) {
@@ -1266,7 +1272,7 @@ export class DesktopCommanderCompatibilitySurface {
         arguments: {
           session_id: record.handle,
           ...(record.lastCursor ? { cursor: record.lastCursor } : {}),
-          max_bytes: Math.min(this.maxTextBytes, Math.max(1024, length * 4096)),
+          max_bytes: Math.min(this.maxTextBytes, PC_CORE_MAX_OUTPUT_READ_BYTES, Math.max(1024, length * 4096)),
           wait_ms: Math.min(timeout, 2000),
         },
         signal,
@@ -1283,7 +1289,7 @@ export class DesktopCommanderCompatibilitySurface {
         arguments: {
           handle_id: record.handle,
           ...(record.lastCursor ? { cursor: record.lastCursor } : {}),
-          max_bytes: Math.min(this.maxTextBytes, Math.max(1024, length * 4096)),
+          max_bytes: Math.min(this.maxTextBytes, PC_CORE_MAX_OUTPUT_READ_BYTES, Math.max(1024, length * 4096)),
           wait_ms: Math.min(timeout, 2000),
         },
         signal,
