@@ -240,6 +240,42 @@ export class NativeControlFacade {
     this.#persist();
   }
 
+  // A persisted ACTIVE R15c session has no historical epoch stamp. Attach
+  // the NEW current boot epoch only when its old Control owner is exact and
+  // quiescent and all prior process handles are demonstrably closed. This
+  // cannot retroactively prove an unsettled action ran on the current boot.
+  async #bindLegacyQuiescentIdentity(session, executorDigest) {
+    if (!this.deviceIdentityProvider || session.deviceIdentity) return;
+    const control = this.controlPlane.listSessions()
+      .find((entry) => entry.id === session.controlSessionId);
+    const unfinished = this.controlPlane.listActions({ sessionId: session.controlSessionId })
+      .some((action) => !TERMINAL.has(action.status));
+    if (control?.status !== "active" ||
+        this.#controlOwner(session.desktopId) !== session.controlSessionId ||
+        unfinished) {
+      throw new NativeFacadeError("Active legacy session has unsettled work or ownership mismatch; epoch cannot be rebound.", {
+        code: "SESSION_DEVICE_BINDING_MISSING", category: "session", httpStatus: 409,
+      });
+    }
+    this.#synchronizeHandleJournal(session);
+    const handles = this.state.handles.some((record) =>
+      record.sessionId === session.id && record.status === "open");
+    if (handles) {
+      throw new NativeFacadeError("Active historical process handle has no frozen boot epoch.", {
+        code: "SESSION_DEVICE_BINDING_MISSING", category: "process_handle", httpStatus: 409,
+      });
+    }
+    // Failure to fetch an authoritative private relay identity blocks
+    // migration, rather than minting a local or derived epoch.
+    session.deviceIdentity = await this.#captureDeviceIdentity(executorDigest);
+    if (!session.deviceIdentity) {
+      throw new NativeFacadeError("No authenticated device epoch is available for legacy binding.", {
+        code: "SESSION_DEVICE_BINDING_MISSING", category: "session", httpStatus: 409,
+      });
+    }
+    this.#persist();
+  }
+
   async capabilities() {
     const executorCapabilities = await this.capabilityProvider();
     return nativeCapabilityManifestV1({
@@ -321,15 +357,7 @@ export class NativeControlFacade {
       const currentIdentity = await this.#captureDeviceIdentity(manifest.executor?.digest ?? null);
       this.#assertDeviceIdentity(session.deviceIdentity, currentIdentity);
     } else if (this.deviceIdentityProvider) {
-      // Upgrading a legacy R15 snapshot must not silently carry an open
-      // process handle into a new boot epoch with no historical identity.
-      this.#synchronizeHandleJournal(session);
-      if (this.state.handles.some((record) =>
-          record.sessionId === session.id && record.status === "open")) {
-        throw new NativeFacadeError("Legacy process handle has no frozen device epoch.", {
-          code: "SESSION_DEVICE_BINDING_MISSING", category: "process_handle", httpStatus: 409,
-        });
-      }
+      await this.#bindLegacyQuiescentIdentity(session, manifest.executor?.digest ?? null);
     }
     session.lastSeenAtMs = this.clock();
     this.#persist();
@@ -510,6 +538,9 @@ export class NativeControlFacade {
       this.#persist();
       throw new NativeFacadeError("Executor capability digest changed.", { code: "CAPABILITY_DRIFT", category: "capability_mismatch", httpStatus: 409 });
     }
+    if (!session.deviceIdentity && this.deviceIdentityProvider) {
+      await this.#bindLegacyQuiescentIdentity(session, digest);
+    }
     if (session.deviceIdentity) {
       const currentIdentity = await this.#captureDeviceIdentity(digest);
       this.#assertDeviceIdentity(session.deviceIdentity, currentIdentity);
@@ -629,6 +660,39 @@ export class NativeControlFacade {
     request.response = responseEnvelope({ requestId: request.requestId, sessionId: session.id, status: "pending", data: { action_id: action.id, action_status: action.status } });
     this.#persist();
     return clone(request.response);
+  }
+
+  // A lookup is a historical RECEIPT read, not a second projection of
+  // process lifecycle events. Re-projecting a completed process.start can
+  // resurrect an old closed handle after its matching process.terminate.
+  #projectJournalReceipt(session, request, tool, action) {
+    if (["completed", "cancelled", "error"].includes(request.status)) {
+      if (!request.response) {
+        throw new NativeFacadeError("Terminal Facade receipt is missing from the durable journal.", {
+          code: "FACADE_STATE_CORRUPTED", category: "state", httpStatus: 409,
+        });
+      }
+      return clone(request.response);
+    }
+    if (!tool) {
+      throw new NativeFacadeError("Historical native tool is missing from the registry.", {
+        code: "FACADE_STATE_CORRUPTED", category: "state", httpStatus: 409,
+      });
+    }
+    if (session.status !== ACTIVE_SESSION && tool.handleMode !== null &&
+        action.status === "succeeded") {
+      // An expired process creation whose original Facade receipt was lost
+      // cannot be re-attached to a possibly different Windows process/epoch.
+      return responseEnvelope({
+        requestId: request.requestId, sessionId: session.id,
+        status: "reconciliation_required",
+        data: {
+          action_id: action.id, action_status: action.status,
+          lookup_required: true, reason: "historical_handle_receipt_missing",
+        },
+      });
+    }
+    return this.#projectAction(session, request, tool, action);
   }
 
   // Control persists the idempotency key before provider dispatch. If a
@@ -857,7 +921,7 @@ export class NativeControlFacade {
     if (!request.actionId) return responseEnvelope({ requestId, sessionId, status: request.status });
     const action = this.controlPlane.getAction(request.actionId);
     const tool = toolDefinition(request.tool);
-    return this.#projectAction(session, request, tool, action);
+    return this.#projectJournalReceipt(session, request, tool, action);
   }
 
   async reconcileRequest({ sessionId, requestId, resumeToken = null }) {
@@ -876,7 +940,7 @@ export class NativeControlFacade {
     if (RECONCILING.has(action.status)) {
       action = await this.controlPlane.reconcileNext(request.actionId);
     }
-    return this.#projectAction(session, request, toolDefinition(request.tool), action);
+    return this.#projectJournalReceipt(session, request, toolDefinition(request.tool), action);
   }
 
   cancelRequest({ sessionId, requestId, reason = "client_cancelled" }) {

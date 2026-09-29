@@ -435,3 +435,70 @@ test("R18 replaying old process creation after termination cannot reopen its clo
  assert.equal(h.cp.listActions().length,2);
  h.facade.closeSession(next.session_id);
 });
+
+test("R18 active quiescent legacy R15 session obtains a fresh epoch binding before NEW process creation",async t=>{
+ const h=await fixture({withEpoch:true});t.after(h.close);
+ await h.runtime.ensureFacadeSession();
+ const sid=h.runtime.facadeSession.session_id;
+ const stored=h.facade.state.sessions.find(s=>s.id===sid);
+ delete stored.deviceIdentity; // Simulates an R15c session persisted before identity pins existed.
+ const manifest=await h.facade.capabilities();
+ const client={protocol_version:manifest.protocol_version,
+  registry_digest:manifest.registry_digest,executor_digest:manifest.executor.digest};
+ await h.facade.reconnectSession({sessionId:sid,
+  resumeToken:h.runtime.facadeSession.resume_token,client});
+ const after=h.facade.debugSnapshot().sessions.find(s=>s.id===sid);
+ assert.equal(after.deviceIdentity.sessionEpoch,"device-boot-A");
+ const started=await h.facade.invoke(req(sid,"legacy-then-new-process","process.start",
+  {command:"isolated-echo"}));
+ assert.equal(started.status,"completed");
+ h.st.now+=TTL+1;
+ await h.runtime.ensureFacadeSession({allowExpiredRenewal:true});
+ assert.equal(h.runtime.facadeSession.session_id,sid);
+ assert.equal(h.cp.listSessions().filter(s=>s.status==="active").length,1);
+});
+
+test("R18 no retroactive boot epoch pin while historical old action is uncertain",async t=>{
+ const h=await fixture({withEpoch:true});t.after(h.close);
+ await h.runtime.ensureFacadeSession();
+ const sid=h.runtime.facadeSession.session_id;
+ const original=await h.facade.invoke(req(sid,"unresolved-prior-epoch","file.write",
+  {path:"C:\\Temp\\r18-unsettled-epoch-fixture.txt",text:"once"}));
+ assert.equal(original.status,"completed");
+ const action=h.cp.listActions()[0];
+ h.cp.actions.get(action.id).status="uncertain_outcome";
+ // Historical R15c state: the unsettled action existed BEFORE the R18
+ // runtime could ever capture its authenticated device boot epoch.
+ delete h.facade.state.sessions.find(s=>s.id===sid).deviceIdentity;
+ const mf=await h.facade.capabilities();
+ await assert.rejects(h.facade.reconnectSession({sessionId:sid,
+  resumeToken:h.runtime.facadeSession.resume_token,client:{
+   protocol_version:mf.protocol_version,registry_digest:mf.registry_digest,
+   executor_digest:mf.executor.digest,
+  }}),e=>e.code==="SESSION_DEVICE_BINDING_MISSING");
+ assert.equal(h.facade.debugSnapshot().sessions.find(s=>s.id===sid).deviceIdentity,undefined);
+ assert.equal(h.st.effectCalls,1);
+});
+
+test("R18 closed journal lookup/reconcile cannot resurrect terminated process handles",async t=>{
+ const h=await fixture({withEpoch:true});t.after(h.close);
+ await h.runtime.ensureFacadeSession();
+ const opened=h.runtime.facadeSession;
+ const started=await h.facade.invoke(req(opened.session_id,"closed-journal-process-start",
+  "process.start",{command:"isolated-echo"}));
+ assert.equal(started.status,"completed");
+ const handle=started.data.process_handle;
+ assert.equal((await h.facade.invoke(req(opened.session_id,"closed-journal-process-stop",
+  "process.terminate",{handle}))).status,"completed");
+ assert.equal(h.facade.debugSnapshot().handles.filter(x=>x.status==="open").length,0);
+ h.facade.closeSession(opened.session_id);
+ const params={sessionId:opened.session_id,requestId:"closed-journal-process-start",
+  resumeToken:opened.resume_token};
+ const receipt=h.facade.lookupRequest(params);
+ assert.equal(receipt.status,"completed");
+ assert.equal(h.facade.debugSnapshot().handles.filter(x=>x.status==="open").length,0);
+ const reconciled=await h.facade.reconcileRequest(params);
+ assert.equal(reconciled.status,"completed");
+ assert.equal(h.facade.debugSnapshot().handles.filter(x=>x.status==="open").length,0);
+ assert.equal(h.st.calls,2,"one real start, one real stop, no extra dispatch");
+});

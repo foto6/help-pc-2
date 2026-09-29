@@ -53,3 +53,18 @@ actions are terminal AND all handles are closed can the pinned historical
 migration run. Absent/wrong old token blocks stale-journal access. A current
 runtime with an open process handle should instead retain the SAME epoch-bound
 owner session where proven, not run the quiescent migration.
+
+## ACTIVE historical session (different from stale-session migration)
+
+Do not run the old stale quiescent migration for a still-ACTIVE session whose
+Control desktop ownership is valid. When no historical action is unsettled
+and no legacy process handle is open/unprojected, the R18 reconnect or first
+safe direct invocation may capture a FRESH, authoritative device boot epoch
+from the already bound local Relay. That epoch applies to NEW process handles
+only; it is never treated as evidence of the boot on which an old unfinished
+action might have executed. An unsettled old action, stale Control ownership,
+or a previous open process handle blocks this epoch binding.
+
+Old closed-session process-start journal receipts are immutable historical
+results, NOT proof the old PID/handle is still alive. Looking one up or asking
+for a reconciliation tick must never recreate the handle or a process.

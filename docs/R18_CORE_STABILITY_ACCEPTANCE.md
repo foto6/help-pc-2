@@ -112,3 +112,31 @@ The exact final HEAD and Win+Ubuntu CI outcomes must be recorded after the
 follow-up commit; the earlier 59abb Windows full run (306/306 PASS) is evidence
 ONLY for that earlier head. This follow-up is still source-only; running R15c
 has not been changed.
+
+### 8. Active R15c legacy epoch pin and immutable process receipts (final hardening)
+
+A previously ACTIVE (not TTL-stale) historical R15c Facade session may lack the
+new deviceIdentity field even though Control still holds the correct desktop.
+On reconnect or first direct invoke, R18 is allowed to capture a fresh
+authenticated Relay boot epoch only after validating the exact ACTIVE Control
+desktop owner, ZERO nonterminal historical actions and ZERO open or unprojected
+process handles. Once attached, a newly created long-lived process handle is
+eligible for later in-place TTL renewal on that SAME pinned boot epoch.
+No old process/action is retroactively claimed to belong to a new device boot:
+an unsettled old action or open old handle makes the binding fail closed
+(SESSION_DEVICE_BINDING_MISSING) until separately reconciled.
+
+The historical journal lookup and targeted reconciliation also return immutable
+cached terminal Facade receipts rather than projecting process lifecycle
+receipts a second time. A process.start that previously succeeded and whose
+process.terminate later closed its handle CANNOT be resurrected by a later
+lookupRequest/reconcileRequest on the old closed session. If an expired handle
+creation succeeded in Control but its original Facade receipt was lost, the
+journal returns reconciliation_required rather than claiming it can safely
+reattach an old handle to a potentially different Windows process or epoch.
+
+Dedicated negative tests first proved that the active historical owner did
+NOT acquire a device binding, that an old uncertain action was accepted as a
+new binding, and that closed journal lookup reopened a terminated handle.
+All three were corrected with new focused regression coverage. No user
+credentials, OAuth, roles or public listeners were introduced.
