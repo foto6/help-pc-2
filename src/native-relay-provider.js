@@ -2,10 +2,38 @@ import { createHash } from "node:crypto";
 import {
   NATIVE_CONTROL_PROTOCOL_V1,
   NATIVE_RESPONSE_V1,
+  TOOL_REGISTRY_LIST,
   toolDefinition,
 } from "./native-registry.js";
 import { digestJson as relayDigestJson } from "./native-relay-protocol.js";
 import { PC_PARITY_REGISTRY_V1, routeNativeExecutorTool } from "./native-relay-registry-route.js";
+
+// The genuine Python producer's executor.actions is the PARITY action list,
+// while the frozen 37-tool Control native registry advertises COMPATIBILITY
+// action names. A signed Python manifest also includes a verified
+// compatibility.routes map. Project ONLY aliases that its original parity
+// or legacy Executor inventory actually supports. Never invent a capability,
+// weaken the frozen registry digest, or change the real Executor digest.
+export function projectProducerExecutorActions(capabilities, executor) {
+  const original = Array.isArray(executor?.actions) ? executor.actions : null;
+  if (!original) return executor;
+  const supportedParity = new Set(original);
+  const routes = capabilities?.compatibility?.routes;
+  const supportedLegacy = new Set(
+    Array.isArray(capabilities?.compatibility?.legacy_executor?.actions)
+      ? capabilities.compatibility.legacy_executor.actions : [],
+  );
+  if (!routes || typeof routes !== "object" || Array.isArray(routes)) return executor;
+  const projected = new Set(original);
+  for (const tool of TOOL_REGISTRY_LIST) {
+    const route = routes[tool.name];
+    if (route?.status !== "translated" || typeof route.target_action !== "string") continue;
+    const proven = (route.surface === "parity" && supportedParity.has(route.target_action))
+      || (route.surface === "legacy_executor" && supportedLegacy.has(route.target_action));
+    if (proven) projected.add(tool.executorAction);
+  }
+  return { ...executor, actions: [...projected].sort() };
+}
 
 export const NATIVE_RELAY_PROVIDER_IDENTITY = Object.freeze({
   package: "pc-control-plane",
@@ -338,11 +366,11 @@ export class NativeRelayExecutorProvider {
 
   async readCapabilities(_request = {}, context = {}) {
     if (context.signal?.aborted) throw cancelledBeforeDispatch();
-    const { executor } = await this.#deviceSnapshot({
+    const { device, executor } = await this.#deviceSnapshot({
       signal: context.signal,
       establish: true,
     });
-    return executor;
+    return projectProducerExecutorActions(device.capabilities, executor);
   }
 
   // A device boot epoch is not interchangeable with a static capability digest.
