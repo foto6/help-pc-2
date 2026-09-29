@@ -122,3 +122,20 @@ test("R17 genuine read-only runtime call after TTL renews once pre-dispatch",asy
  assert.equal(h.facade.debugSnapshot().sessions.length,2);
  assert.equal(h.state.calls,1);
 });
+
+test("R17 close after a quiet TTL retires the old desktop owner without renewal",async()=>{
+ const h=await make();await h.runtime.ensureFacadeSession();
+ h.advance(TTL+1);await h.runtime.close();
+ assert.equal(h.plane.listSessions()[0].status,"closed");
+ assert.equal(h.facade.debugSnapshot().sessions[0].status,"closed");
+ assert.equal(h.state.calls,0);
+});
+
+test("R17 shutdown waits for single-flight session admission before closing",async()=>{
+ const h=await make();
+ const opening=h.runtime.ensureFacadeSession();
+ await h.runtime.close();
+ await opening;
+ assert.equal(h.plane.listSessions()[0].status,"closed");
+ assert.equal(h.state.calls,0);
+});

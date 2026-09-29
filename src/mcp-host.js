@@ -375,6 +375,11 @@ export class NativeMcpRuntime {
   }
 
   async close() {
+    // Do not allow an in-progress session negotiation to open a new owner
+    // after shutdown has already checked a null facadeSession.
+    if (this.facadeSessionPending) {
+      try { await this.facadeSessionPending; } catch {}
+    }
     if (!this.facadeSession) return;
     try {
       this.facade.closeSession(this.facadeSession.session_id);

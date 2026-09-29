@@ -299,10 +299,37 @@ export class NativeControlFacade {
   }
 
   closeSession(sessionId) {
-    const session = this.#session(sessionId);
+    let session;
+    let expired = false;
+    try {
+      session = this.#session(sessionId);
+    } catch (error) {
+      // A deliberate close after an idle TTL must not strand an otherwise
+      // unowned Control desktop. Never retire an ambiguous/in-flight session.
+      session = this.state.sessions.find((entry) => entry.id === sessionId);
+      if (error?.code !== "STALE_SESSION" || session?.status !== "stale" ||
+          session.staleReason !== "ttl_expired") throw error;
+      expired = true;
+    }
+    if (expired) {
+      const unfinished = this.controlPlane.listActions({ sessionId: session.controlSessionId })
+        .some((action) => !TERMINAL.has(action.status));
+      const handles = this.state.handles.some((entry) => entry.sessionId === session.id && entry.status === "open");
+      if (unfinished || handles) {
+        throw new NativeFacadeError("Expired session still owns work; explicit reconciliation is required.", {
+          code: "SESSION_CLOSE_BLOCKED", category: "session", httpStatus: 409,
+        });
+      }
+    }
+    try {
+      this.controlPlane.closeSession(session.controlSessionId);
+    } catch {
+      throw new NativeFacadeError("Control desktop close failed.", {
+        code: "SESSION_CLOSE_BLOCKED", category: "session", httpStatus: 409,
+      });
+    }
     session.status = "closed";
     session.lastSeenAtMs = this.clock();
-    try { this.controlPlane.closeSession(session.controlSessionId); } catch {}
     this.#persist();
     return { session_id: session.id, status: session.status };
   }
