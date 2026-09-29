@@ -39,3 +39,17 @@ Blocked results are intentional, not a reason to force-reset:
 - SESSION_DEVICE_BINDING_MISSING or STALE_DEVICE_SESSION: an old live handle cannot be attached without exact original device boot/epoch evidence.
 
 Tests include: safe quiescent migration, wrong pinned ID, open handle refusal, half-complete two-store migration recovery, and configuration API recovery from real JSON stores. A live R15c installation is NOT mutated by those fixture tests.
+
+## Resolving an expired session with an old uncertain action
+
+Do not force-migrate or reset a stale owner whose old write/process result is
+uncertain. Retrieve the original internal resume token from its existing
+private runtime context; do NOT print or store it in GitHub/CLI arguments.
+Within the already restricted loopback control transport, call
+lookupRequest({sessionId,requestId,resumeToken}) to inspect that old journal
+and, if necessary, reconcileRequest with the SAME exact tuple. This is
+journal-only; it never substitutes a fresh user mutation. Only after original
+actions are terminal AND all handles are closed can the pinned historical
+migration run. Absent/wrong old token blocks stale-journal access. A current
+runtime with an open process handle should instead retain the SAME epoch-bound
+owner session where proven, not run the quiescent migration.

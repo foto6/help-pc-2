@@ -257,11 +257,16 @@ export class ControlPlane {
     if (recovered.length) this.#persist(); return recovered;
   }
 
-  leaseNext({ workerId = "local-worker", leaseMs = this.defaultLeaseMs } = {}) {
+  leaseNext({ workerId = "local-worker", leaseMs = this.defaultLeaseMs, reconciliationOnlyActionId = null } = {}) {
     if (!Number.isInteger(leaseMs) || leaseMs < 1) throw new ValidationError("leaseMs must be a positive integer.");
+    if (reconciliationOnlyActionId !== null &&
+        (typeof reconciliationOnlyActionId !== "string" || !reconciliationOnlyActionId)) {
+      throw new ValidationError("reconciliationOnlyActionId must be a nonempty action ID.");
+    }
     this.recoverExpiredLeases(); const now = this.#time();
     for (let i = 0; i < this.queue.length; i += 1) {
       const action = this.actions.get(this.queue[i]); if (!action) continue;
+      if (reconciliationOnlyActionId !== null && action.id !== reconciliationOnlyActionId) continue;
       if (action.status === "retry_wait") { if ((action.nextAttemptAtMs ?? 0) > now.ms) continue; action.status = "queued"; }
       if (action.status === "preflight_wait") { if ((action.nextPreflightAtMs ?? 0) > now.ms) continue; action.status = "queued"; }
       if (action.status === "reconciliation_wait") { if ((action.nextReconciliationAtMs ?? 0) > now.ms) continue; action.status = "uncertain_outcome"; }
@@ -278,6 +283,8 @@ export class ControlPlane {
         } else mode = "execute";
       } else if (action.status === "uncertain_outcome") mode = "reconcile";
       if (!mode) continue;
+      // An explicit journal-only tick must NEVER pick a queued executable.
+      if (reconciliationOnlyActionId !== null && mode !== "reconcile") continue;
       const lanes = mode === "reconcile" ? reconciliationLanes(action) : action.lanes;
       if (!this.#locksAvailable(lanes)) continue;
       if (action.requiresDesktop && this.desktopOwners.get(action.desktopId) !== action.sessionId) {
@@ -727,6 +734,19 @@ export class ControlPlane {
   }
 
   async processNext({ workerId = "processNext", leaseMs = this.defaultLeaseMs } = {}) { const leased = this.leaseNext({ workerId, leaseMs }); if (!leased) return null; return this.executeLeased(leased.id, { workerId }); }
+
+  async reconcileNext(actionId, { workerId = "reconcile-only", leaseMs = this.defaultLeaseMs } = {}) {
+    const action = this.#action(actionId);
+    if (!["uncertain_outcome", "reconciliation_wait"].includes(action.status)) return clone(action);
+    const leased = this.leaseNext({ workerId, leaseMs, reconciliationOnlyActionId: actionId });
+    if (!leased) return this.getAction(actionId);
+    if (leased.lease?.mode !== "reconcile") {
+      throw new ControlPlaneError("Reconciliation-only selector attempted a side effect.", "RECONCILIATION_MODE_MISMATCH");
+    }
+    // executeLeased dispatches ONLY readOutcomeEvidence/verification in reconcile mode.
+    return this.executeLeased(leased.id, { workerId });
+  }
+
   async drain({ limit = 1000, workerId = "drain" } = {}) { const processed = []; while (processed.length < limit) { const action = await this.processNext({ workerId }); if (!action) break; processed.push(action); } return processed; }
 
   #recoverInFlight(reason) {

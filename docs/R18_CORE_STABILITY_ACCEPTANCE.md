@@ -74,3 +74,41 @@ Native ChatGPT plugin registration / private outbound transport belongs to later
 ## Source-only safety rules followed
 
 No merge into frozen release branches; no overwrite of R15c, no live Windows service restart; no public bind; no login/credential lookup; no arbitrary user-file mutation; no protected-folder traversal. All writes in integration tests occur under newly created isolated operating-system TEMP fixtures, and the only spawned process is a fixture child that is terminated and cleaned up.
+
+### 7. Expired uncertain-outcome journal recovery (post-59abb follow-up)
+
+R17 safe admission refused to renew a TTL-stale session when the old action
+needed reconciliation. Previously its ordinary lookup also refused the stale
+session; this could prevent the owner from resolving the journal and moving
+forward. R18 adds two narrowly scoped operations to the existing local
+Facade/HTTP control transport, not new public Native MCP tools:
+
+- lookupRequest({sessionId, requestId, resumeToken}) reads the durable old
+  action even when the session is stale or closed, provided that the original
+  internal session resume token is verified in constant time. Fresh active
+  sessions retain the old lookup contract. A stale journal lookup never
+  invokes the Executor, queues a mutation, or renews the old command.
+- reconcileRequest({sessionId, requestId, resumeToken}) performs at most one
+  specifically selected Control action RECONCILIATION tick. It cannot select
+  or dispatch unrelated queued work or an ordinary execute-mode lease.
+  Reconciliation uses read-only journal evidence and established verification.
+  When evidence is unknown, the action remains reconciliation_required; when
+  the Executor journal proves success, the original receipt becomes completed,
+  without replaying the old side effect. A genuinely proven not-started result
+  retains the Control policy for explicit, bounded safe retry.
+- LocalNativeHttpTransport provides the loopback /v1/request/reconcile route,
+  under its existing automatic bearer protection, with no OAuth/user accounts.
+
+The new test/r18-stale-reconciliation.test.js proves missing/wrong old session
+token is denied, correct old token allows read-only lookup, targeted reconciliation
+cannot run an unrelated queued write, evidence=unknown never redispatches, and
+evidence=succeeded releases the blocked session with the effect count remaining 1.
+Existing session invoke still refuses expired state. An additional regression
+proves replaying a previously completed process.start on a new session cannot
+resurrect an already closed native process handle: historical terminal receipts
+are returned as originally persisted, never projected a second time.
+
+The exact final HEAD and Win+Ubuntu CI outcomes must be recorded after the
+follow-up commit; the earlier 59abb Windows full run (306/306 PASS) is evidence
+ONLY for that earlier head. This follow-up is still source-only; running R15c
+has not been changed.

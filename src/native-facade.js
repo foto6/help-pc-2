@@ -768,8 +768,27 @@ export class NativeControlFacade {
             code: "FACADE_STATE_CORRUPTED", category: "state", httpStatus: 500,
           });
         }
+        // A historical terminal receipt must be returned as saved: projecting
+        // a second time could re-register a process.start handle on a CLOSED
+        // ancestor and resurrect a process that had already been terminated.
+        if (["completed", "cancelled", "error"].includes(oldRequest.status) && oldRequest.response) {
+          return clone(oldRequest.response);
+        }
         const oldAction = this.controlPlane.getAction(oldRequest.actionId);
-        // Lookup only: do not call Control.processNext or enqueueAction.
+        if (RECONCILING.has(oldAction.status) || !TERMINAL.has(oldAction.status)) {
+          return responseEnvelope({
+            requestId: oldRequest.requestId, sessionId: owner.id,
+            status: "reconciliation_required",
+            data: { action_id: oldAction.id, action_status: oldAction.status, lookup_required: true },
+          });
+        }
+        if (tool.handleMode !== null) {
+          throw new NativeFacadeError("Historical process receipt requires explicit journal reconciliation.", {
+            code: "SESSION_REQUEST_RECONCILIATION_REQUIRED", category: "idempotency", httpStatus: 409,
+          });
+        }
+        // No enqueue, processNext or side effect: rebuild a non-handle
+        // terminal result only when the old Facade receipt was never saved.
         return this.#projectAction(owner, oldRequest, tool, oldAction);
       }
     }
@@ -801,14 +820,63 @@ export class NativeControlFacade {
     return this.#advanceWithCancellation(session, request, tool, signal);
   }
 
-  lookupRequest({ sessionId, requestId }) {
-    const session = this.#session(sessionId);
+  #lookupSession(sessionId, resumeToken = null) {
+    const session = this.state.sessions.find((entry) => entry.id === sessionId);
+    if (!session) {
+      throw new NativeFacadeError("Journal session was not found.", {
+        code: "STALE_SESSION", category: "session", httpStatus: 409,
+      });
+    }
+    if (session.status === ACTIVE_SESSION) {
+      if (this.clock() - session.lastSeenAtMs <= this.sessionTtlMs) return session;
+      session.status = "stale";
+      session.staleReason = "ttl_expired";
+      this.#persist();
+    }
+    // This grants ONLY a journal read/reconciliation tick, never invoke.
+    if (!["stale", "closed"].includes(session.status)) {
+      throw new NativeFacadeError("Journal session is not accessible.", {
+        code: "STALE_SESSION", category: "session", httpStatus: 409,
+      });
+    }
+    const actual = typeof resumeToken === "string" ? Buffer.from(resumeToken, "utf8") : null;
+    const expected = typeof session.resumeToken === "string" ? Buffer.from(session.resumeToken, "utf8") : null;
+    if (!actual || !expected || actual.length !== expected.length ||
+        !timingSafeEqual(actual, expected)) {
+      throw new NativeFacadeError("Original local session token is required for expired journal access.", {
+        code: "SESSION_AUTH_FAILED", category: "auth", httpStatus: 401,
+      });
+    }
+    return session;
+  }
+
+  lookupRequest({ sessionId, requestId, resumeToken = null }) {
+    const session = this.#lookupSession(sessionId, resumeToken);
     const request = this.#request(session.id, requestId);
     if (!request) throw new NativeFacadeError("Request was not found.", { code: "REQUEST_NOT_FOUND", category: "request", httpStatus: 404 });
     if (!request.actionId) return responseEnvelope({ requestId, sessionId, status: request.status });
     const action = this.controlPlane.getAction(request.actionId);
     const tool = toolDefinition(request.tool);
     return this.#projectAction(session, request, tool, action);
+  }
+
+  async reconcileRequest({ sessionId, requestId, resumeToken = null }) {
+    const session = this.#lookupSession(sessionId, resumeToken);
+    const request = this.#request(session.id, requestId);
+    if (!request) {
+      throw new NativeFacadeError("Request was not found.", {
+        code: "REQUEST_NOT_FOUND", category: "request", httpStatus: 404,
+      });
+    }
+    if (!request.actionId) {
+      return responseEnvelope({ requestId, sessionId, status: "reconciliation_required",
+        data: { lookup_required: true, reason: "facade_action_link_missing" } });
+    }
+    let action = this.controlPlane.getAction(request.actionId);
+    if (RECONCILING.has(action.status)) {
+      action = await this.controlPlane.reconcileNext(request.actionId);
+    }
+    return this.#projectAction(session, request, toolDefinition(request.tool), action);
   }
 
   cancelRequest({ sessionId, requestId, reason = "client_cancelled" }) {

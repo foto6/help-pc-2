@@ -408,3 +408,30 @@ test("R18 installed runtime supports pinned one-time migration of R15 stale owne
  assert.equal(upgraded.facade.debugSnapshot().sessions.find(x=>x.id===sid).status,"closed");
  assert.equal(effects,0);
 });
+
+test("R18 replaying old process creation after termination cannot reopen its closed handle",async t=>{
+ const h=await fixture({withEpoch:true});t.after(h.close);
+ await h.runtime.ensureFacadeSession();
+ const original=h.runtime.facadeSession.session_id;
+ const startArgs={command:"isolated-echo"};
+ const created=await h.facade.invoke(req(original,"same-old-process-start","process.start",startArgs));
+ assert.equal(created.status,"completed");
+ const handle=created.data.process_handle;
+ assert.equal((await h.facade.invoke(req(original,"stop-old-process","process.terminate",
+  {handle}))).status,"completed");
+ assert.equal(h.facade.debugSnapshot().handles.filter(x=>x.status==="open").length,0);
+ h.facade.closeSession(original);
+ const mf=await h.facade.capabilities();
+ const next=await h.facade.openSession({desktopId:"r18-private-fixture",client:{
+  protocol_version:mf.protocol_version,registry_digest:mf.registry_digest,
+  executor_digest:mf.executor.digest,
+ }});
+ const duplicate=await h.facade.invoke(req(next.session_id,"same-old-process-start",
+  "process.start",startArgs));
+ assert.equal(duplicate.status,"completed");
+ assert.equal(h.st.calls,2,"one process.start + one process.terminate only");
+ assert.equal(h.facade.debugSnapshot().handles.filter(x=>x.status==="open").length,0,
+  "cached old start must never resurrect a closed handle");
+ assert.equal(h.cp.listActions().length,2);
+ h.facade.closeSession(next.session_id);
+});
