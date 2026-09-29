@@ -1060,7 +1060,7 @@ test("official MCP process/system and sanitized meta compatibility delegate thro
   const h = await createHarness({
     actions: [
       "shell.session.start", "shell.session.read", "shell.session.write_stdin", "shell.session.terminate",
-      "process.managed.list", "process.status", "process.list", "process.inspect", "system.process.kill",
+      "process.managed.list", "process.status", "process.list", "system.process.list", "process.inspect", "system.process.kill",
       "identity.who_am_i", "diagnostics.usage_stats", "diagnostics.recent_tool_calls",
     ],
     invoke: async (request) => {
@@ -1095,6 +1095,7 @@ test("official MCP process/system and sanitized meta compatibility delegate thro
         case "shell.session.terminate":
           return success(request, { handle_id: "handle-88", already_exited: true, returncode: 0 });
         case "process.list":
+        case "system.process.list":
           return success(request, {
             processes: [{ pid: request.params.pid ?? 321, ppid: 1, name: "worker.exe" }],
             has_more: false,
@@ -1174,7 +1175,7 @@ test("official MCP process/system and sanitized meta compatibility delegate thro
   assert.equal(killed.error.code, "PROCESS_ERROR");
   assert.match(killed.error.message, /destructive actions are disabled/i);
   const killProviderCalls = h.calls.slice(providerCallsBeforeKill);
-  assert.deepEqual(killProviderCalls.map((item) => item.request.action), ["process.list"]);
+  assert.deepEqual(killProviderCalls.map((item) => item.request.action), ["system.process.list"]);
 
   const stopped = structured(await client.callTool({
     name: "force_terminate",
