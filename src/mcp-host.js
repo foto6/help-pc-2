@@ -114,6 +114,7 @@ export class NativeMcpRuntime {
     this.facade = facade;
     this.desktopId = desktopId;
     this.facadeSession = facadeSession;
+    this.facadeSessionPending = null;
     this.initialManifest = initialManifest;
     this.compatibilitySurface = compatibilitySurface;
     this.serverName = serverName;
@@ -136,6 +137,21 @@ export class NativeMcpRuntime {
       ?.filter((session) => session.status === "active" && session.desktopId === desktopId)
       ?.sort((a, b) => (a.createdAtMs ?? 0) - (b.createdAtMs ?? 0))
       ?.at(-1) ?? null;
+    // A previous frozen runtime can persist an expired facade session while
+    // its Control desktop owner is still active. Never create an extra ghost
+    // Control session when that legacy ownership needs explicit reconciliation.
+    if (typeof facade.controlPlane?.listSessions === "function") {
+      const owners = facade.controlPlane.listSessions()
+        .filter((session) => session.desktopId === desktopId && session.status === "active");
+      if ((owners.length && (!reusable || owners.length !== 1 || owners[0].id !== reusable.controlSessionId)) ||
+          (reusable && owners.length !== 1)) {
+        const error = new Error("Persisted facade/Control desktop ownership requires explicit migration or reconciliation.");
+        error.code = "SESSION_MIGRATION_REQUIRED";
+        error.category = "session";
+        error.retryable = false;
+        throw error;
+      }
+    }
     const facadeSession = reusable ? {
       session_id: reusable.id,
       resume_token: reusable.resumeToken,
@@ -182,21 +198,44 @@ export class NativeMcpRuntime {
     return manifest;
   }
 
-  async ensureFacadeSession() {
-    const manifest = await this.ensureCapabilities();
-    if (!this.facadeSession) {
-      this.facadeSession = await this.facade.openSession({
-        desktopId: this.desktopId,
-        client: negotiationClient(manifest),
-      });
-    } else {
-      await this.facade.reconnectSession({
-        sessionId: this.facadeSession.session_id,
-        resumeToken: this.facadeSession.resume_token,
-        client: negotiationClient(manifest),
-      });
+  async ensureFacadeSession({ allowExpiredRenewal = false } = {}) {
+    // Single-flight is necessary: two simultaneous first tools must not
+    // negotiate two desktop ownership sessions before either has been cached.
+    if (this.facadeSessionPending) return this.facadeSessionPending;
+    const pending = (async () => {
+      const manifest = await this.ensureCapabilities();
+      const client = negotiationClient(manifest);
+      if (!this.facadeSession) {
+        this.facadeSession = await this.facade.openSession({ desktopId: this.desktopId, client });
+      } else {
+        try {
+          await this.facade.reconnectSession({
+            sessionId: this.facadeSession.session_id,
+            resumeToken: this.facadeSession.resume_token,
+            client,
+          });
+        } catch (error) {
+          if (error?.code !== "STALE_SESSION" || !allowExpiredRenewal ||
+              typeof this.facade.renewExpiredSession !== "function") throw error;
+          // This is pre-dispatch, read-only admission, never an execution retry.
+          // The facade checks the original token, TTL reason, desktop, digests,
+          // ownership, outstanding actions and session-bound process handles.
+          const renewed = await this.facade.renewExpiredSession({
+            sessionId: this.facadeSession.session_id,
+            resumeToken: this.facadeSession.resume_token,
+            desktopId: this.desktopId,
+            client,
+          });
+          this.facadeSession = renewed;
+        }
+      }
+      return manifest;
+    })();
+    this.facadeSessionPending = pending;
+    try { return await pending; }
+    finally {
+      if (this.facadeSessionPending === pending) this.facadeSessionPending = null;
     }
-    return manifest;
   }
 
   async callNativeTool(tool, args, ctx) {
@@ -218,7 +257,7 @@ export class NativeMcpRuntime {
         };
         throw error;
       }
-      await this.ensureFacadeSession();
+      await this.ensureFacadeSession({ allowExpiredRenewal: tool.effect === "read_only" });
       const request = {
         contract_version: NATIVE_CONTROL_PROTOCOL_V1,
         session_id: this.facadeSession.session_id,
@@ -247,7 +286,7 @@ export class NativeMcpRuntime {
     const { request_id: _requestId, ...compatibilityArguments } = args;
     let response;
     try {
-      await this.ensureFacadeSession();
+      await this.ensureFacadeSession({ allowExpiredRenewal: tool.effect === "read_only" });
       response = await this.compatibilitySurface.invoke({
         session_id: this.facadeSession.session_id,
         request_id: requestId,
@@ -351,6 +390,11 @@ export class NativeMcpRuntime {
   }
 
   async close() {
+    // Do not allow an in-progress session negotiation to open a new owner
+    // after shutdown has already checked a null facadeSession.
+    if (this.facadeSessionPending) {
+      try { await this.facadeSessionPending; } catch {}
+    }
     if (!this.facadeSession) return;
     try {
       this.facade.closeSession(this.facadeSession.session_id);
