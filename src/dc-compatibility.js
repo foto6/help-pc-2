@@ -1520,7 +1520,9 @@ export class DesktopCommanderCompatibilitySurface {
       signal,
     });
     const processes = asArray(listed.data, ["processes", "items"]);
-    const target = processes.find((item) => item?.pid === pid) ?? processes[0] ?? null;
+    // An OS-wide kill may target ONLY the exact PID from its read-only
+    // identity lookup. Do not fall back to an arbitrary first result.
+    const target = processes.find((item) => item?.pid === pid) ?? null;
     const expectedName = target?.name ?? target?.executable ?? target?.command ?? null;
     if (!target || typeof expectedName !== "string" || !expectedName) {
       throw new DcCompatibilityError("Process identity could not be resolved before kill.", {

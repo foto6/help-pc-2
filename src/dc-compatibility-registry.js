@@ -380,8 +380,11 @@ const definitions = [
     capability_variants: [
       {
         id: "pc_core_safe_identity",
+        // Python PC Core's native "process.list" is MANAGED process handles,
+        // not OS-wide pid-filtered listing. The actual OS parity action
+        // "process.list" is reached through native "system.process.list".
         executor_actions: ["process.list", "system.process.kill"],
-        native_tools: ["process.list", "system.process.kill"],
+        native_tools: ["system.process.list", "system.process.kill"],
       },
       {
         id: "legacy_safe_identity",
