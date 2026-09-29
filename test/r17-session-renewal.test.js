@@ -173,3 +173,24 @@ test("R17 official HTTP MCP client survives genuine second read-only request aft
  assert.equal(h.plane.listSessions()[0].status,"closed");
  assert.equal(h.state.calls,2,"two independent read-only operations, no mutation replay");
 });
+
+test("R17 frozen legacy stale owner fails before allocating ghost Control sessions",async t=>{
+ const h=await make();t.after(h.close);await h.runtime.ensureFacadeSession();
+ const old=h.runtime.facadeSession.session_id;
+ h.advance(TTL+1);
+ await assert.rejects(h.runtime.ensureFacadeSession(),e=>e.code==="STALE_SESSION");
+ // R15c persisted state may have already been marked stale by the old oracle,
+ // but its old Control session still owns the desktop.
+ await assert.rejects(
+  NativeMcpRuntime.create({facade:h.facade,desktopId:"r17-isolated-desktop"}),
+  e=>e.code==="SESSION_MIGRATION_REQUIRED",
+ );
+ assert.equal(h.plane.listSessions().length,1);
+ assert.equal(h.plane.listSessions()[0].status,"active");
+ // An explicit safe close can retire a quiet expired owner before fresh start.
+ assert.equal(h.facade.closeSession(old).status,"closed");
+ const fresh=await NativeMcpRuntime.create({facade:h.facade,desktopId:"r17-isolated-desktop"});
+ t.after(()=>fresh.close());
+ await fresh.ensureFacadeSession();
+ assert.equal(h.plane.listSessions().filter(s=>s.status==="active").length,1);
+});

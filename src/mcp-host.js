@@ -137,6 +137,21 @@ export class NativeMcpRuntime {
       ?.filter((session) => session.status === "active" && session.desktopId === desktopId)
       ?.sort((a, b) => (a.createdAtMs ?? 0) - (b.createdAtMs ?? 0))
       ?.at(-1) ?? null;
+    // A previous frozen runtime can persist an expired facade session while
+    // its Control desktop owner is still active. Never create an extra ghost
+    // Control session when that legacy ownership needs explicit reconciliation.
+    if (typeof facade.controlPlane?.listSessions === "function") {
+      const owners = facade.controlPlane.listSessions()
+        .filter((session) => session.desktopId === desktopId && session.status === "active");
+      if ((owners.length && (!reusable || owners.length !== 1 || owners[0].id !== reusable.controlSessionId)) ||
+          (reusable && owners.length !== 1)) {
+        const error = new Error("Persisted facade/Control desktop ownership requires explicit migration or reconciliation.");
+        error.code = "SESSION_MIGRATION_REQUIRED";
+        error.category = "session";
+        error.retryable = false;
+        throw error;
+      }
+    }
     const facadeSession = reusable ? {
       session_id: reusable.id,
       resume_token: reusable.resumeToken,
