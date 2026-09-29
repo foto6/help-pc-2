@@ -1,4 +1,5 @@
 import test from "node:test";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import assert from "node:assert/strict";
 import {ControlPlane, HelpPc1Adapter, NativeControlFacade, NativeMcpRuntime, NATIVE_CONTROL_PROTOCOL_V1, TOOL_REGISTRY, startNativeMcpHttpServer} from "../src/index.js";
 const TTL = 30 * 60 * 1000;
@@ -150,4 +151,25 @@ test("R17 deterministic stress: 128 simultaneous opens across 24 TTL epochs neve
   assert.equal(h.plane.listSessions().filter(s=>s.status==="active").length,1);
  }
  assert.equal(h.state.calls,0,"admission stress must never dispatch an Executor action");
+});
+test("R17 official HTTP MCP client survives genuine second read-only request after 31m idle",async t=>{
+ const h=await make();t.after(h.close);
+ const http=await startNativeMcpHttpServer({runtime:h.runtime,token:TOKEN,port:0});
+ t.after(()=>http.close());
+ const transport=new StreamableHTTPClientTransport(new URL(http.url),{
+  authProvider:{token:async()=>TOKEN},
+ });
+ const clientInstance=new Client({name:"r17-idle-official-client",version:"1.0.0"},
+  {versionNegotiation:{mode:"auto"}});
+ t.after(()=>clientInstance.close());
+ await clientInstance.connect(transport);
+ const first=await clientInstance.callTool({name:"device.health",arguments:{request_id:"r17-before-idle"}});
+ assert.equal(first.structuredContent.status,"completed");
+ h.advance(TTL+60_000);
+ const after=await clientInstance.callTool({name:"device.health",arguments:{request_id:"r17-after-idle"}});
+ assert.equal(after.isError,false);
+ assert.equal(after.structuredContent.status,"completed");
+ assert.equal(h.facade.debugSnapshot().sessions.length,2);
+ assert.equal(h.plane.listSessions()[0].status,"closed");
+ assert.equal(h.state.calls,2,"two independent read-only operations, no mutation replay");
 });
