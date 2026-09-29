@@ -33,7 +33,7 @@ test("R19: genuine Python parity manifest proves frozen Control compatibility al
   assert.ok(actual.actions.includes("system.config.get"), "Control device.get_config -> real Python config.get");
   assert.ok(actual.actions.includes("fs.read_text"));
   assert.ok(actual.actions.includes("fs.write_text"));
-  assert.ok(actual.actions.includes("windows.list"), "legacy route is explicitly supported by legacy manifest");
+  assert.ok(actual.actions.includes("window.list"), "Control alias is supported by the real legacy windows.list action");
   assert.equal(actual.actions.includes("fs.find"), false, "missing underlying action is not invented");
   assert.equal(actual.actions.includes("uia.find"), false, "explicitly unavailable route is not invented");
   assert.equal(JSON.stringify(manifest), before, "do not mutate the authenticated remote manifest");
