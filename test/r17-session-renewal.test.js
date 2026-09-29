@@ -139,3 +139,15 @@ test("R17 shutdown waits for single-flight session admission before closing",asy
  assert.equal(h.plane.listSessions()[0].status,"closed");
  assert.equal(h.state.calls,0);
 });
+test("R17 deterministic stress: 128 simultaneous opens across 24 TTL epochs never fork ownership", async t=>{
+ const h=await make();t.after(h.close);
+ await Promise.all(Array.from({length:128},()=>h.runtime.ensureFacadeSession()));
+ for(let cycle=0;cycle<24;cycle++){
+  h.advance(TTL+1);
+  await Promise.all(Array.from({length:128},()=>
+    h.runtime.ensureFacadeSession({allowExpiredRenewal:true})));
+  assert.equal(h.facade.debugSnapshot().sessions.length,cycle+2);
+  assert.equal(h.plane.listSessions().filter(s=>s.status==="active").length,1);
+ }
+ assert.equal(h.state.calls,0,"admission stress must never dispatch an Executor action");
+});
