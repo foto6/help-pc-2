@@ -485,8 +485,13 @@ async function pairedConnector({
 }
 
 test("outbound WSS connector uses short-lived bearer only in TLS handshake and validates welcome binding", async () => {
-  const socket = new FakeSocket();
-  const state = await pairedConnector({ socketFactory: () => socket });
+  let socket = null;
+  const state = await pairedConnector({
+    socketFactory: () => {
+      socket = new FakeSocket();
+      return socket;
+    },
+  });
   const handle = await state.subject.connect({
     deviceId: "device-r17",
     desktopId: "desktop-r17",
@@ -530,13 +535,16 @@ test("outbound connector rejects stale pairing epoch and broker welcome digest m
     (caught) => caught.code === "PAIRING_BINDING_MISMATCH",
   );
 
-  const badWelcomeSocket = new FakeSocket({
-    welcomeMutator: (welcome) => {
-      welcome.broker_identity_digest = "d".repeat(64);
-    },
-  });
+  let badWelcomeSocket = null;
   const mismatch = await pairedConnector({
-    socketFactory: () => badWelcomeSocket,
+    socketFactory: () => {
+      badWelcomeSocket = new FakeSocket({
+        welcomeMutator: (welcome) => {
+          welcome.broker_identity_digest = "d".repeat(64);
+        },
+      });
+      return badWelcomeSocket;
+    },
   });
   await assert.rejects(
     mismatch.subject.connect({
