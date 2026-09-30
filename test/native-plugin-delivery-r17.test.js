@@ -135,11 +135,13 @@ function requestFrame({
     },
   },
   sessionEpoch = SESSION_EPOCH,
+  callerDigest = CALLER_DIGEST,
 } = {}) {
   return {
     contract_version: NATIVE_PLUGIN_BROKER_FRAME_V1,
     type: "request",
     session_epoch: sessionEpoch,
+    authorized_caller_digest: callerDigest,
     request_id: requestId,
     delivery_id: deliveryId,
     semantics,
@@ -373,6 +375,49 @@ test("duplicate request is served from durable result and conflicting reuse is r
   assert.equal(conflict.status, "failed");
   assert.equal(conflict.error.code, "DELIVERY_ID_CONFLICT");
   assert.equal(dispatches, 1);
+});
+
+test("authenticated caller digest namespaces identical delivery ids and mismatches fail closed", async () => {
+  const subject = connector();
+  const otherCaller = "f".repeat(64);
+  let dispatches = 0;
+  const dispatch = async () => ({ sequence: ++dispatches });
+
+  const first = await subject.dispatchBrokerRequest(requestFrame(), {
+    dispatch,
+    sessionEpoch: SESSION_EPOCH,
+    liveStack: live(),
+    authorizedCallerDigest: CALLER_DIGEST,
+  });
+  const second = await subject.dispatchBrokerRequest(
+    requestFrame({ callerDigest: otherCaller }),
+    {
+      dispatch,
+      sessionEpoch: SESSION_EPOCH,
+      liveStack: live(),
+      authorizedCallerDigest: otherCaller,
+    },
+  );
+  assert.equal(first.status, "completed");
+  assert.equal(second.status, "completed");
+  assert.equal(dispatches, 2);
+
+  await assert.rejects(
+    subject.dispatchBrokerRequest(
+      requestFrame({
+        deliveryId: "delivery-caller-mismatch",
+        callerDigest: otherCaller,
+      }),
+      {
+        dispatch,
+        sessionEpoch: SESSION_EPOCH,
+        liveStack: live(),
+        authorizedCallerDigest: CALLER_DIGEST,
+      },
+    ),
+    (caught) => caught.code === "AUTHORIZED_CALLER_MISMATCH",
+  );
+  assert.equal(dispatches, 2);
 });
 
 test("unknown side-effect outcome is reconciliation-only and never blindly redispatched", async () => {
