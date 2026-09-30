@@ -1,7 +1,7 @@
 # R17 secure Native PC ChatGPT plugin delivery
 
-Issue: `foto6/help-pc-2#5`  
-Writable branch: `agent/native-pc-plugin-delivery-r17-20260929`  
+Issue: `foto6/help-pc-2#5`
+Writable branch: `agent/native-pc-plugin-delivery-r17-20260929`
 Exact base: `2e5e06ba6966435c0e49e49a9de6e9c550eae8f6`
 
 Status: **BLOCKED_APPROVED_REMOTE_ENDPOINT_REQUIRED**.
