@@ -10,6 +10,7 @@ on:
       - agent/pc-native-control-full-dc
       - agent/pc-native-control-final-candidate
       - agent/pc-control-wire-registry-r15-20260928
+      - agent/native-pc-plugin-delivery-r17-20260929
   pull_request:
 
 permissions:
@@ -39,6 +40,10 @@ jobs:
         run: npm run test:security
       - name: Exact PC Core frozen/parity wire routes
         run: node --test test/native-relay-registry-route.test.js
+      - name: R17 Native PC plugin delivery
+        run: node --test test/native-plugin-delivery-r17.test.js
+      - name: R17 exact-base plugin delivery audit
+        run: node tools/audit-native-plugin-delivery-r17.mjs
       - name: Native relay provider bridge
         run: npm run test:provider
       - name: Native remote relay
