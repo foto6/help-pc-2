@@ -107,8 +107,11 @@ including relay backoff or missing Control, remains blocked.
 ## Delivery semantics
 
 Remote broker request IDs and delivery IDs are bound to a durable delivery
-ledger. A same-content duplicate returns the stored response without another
-dispatch. Reusing a delivery ID with different content fails closed.
+ledger. The ledger namespace includes the authenticated caller digest, so two
+paired clients may use identical request/delivery IDs without sharing one
+idempotency record. A same-caller, same-content duplicate returns the stored
+response without another dispatch. Reusing a same-caller delivery ID with
+different content fails closed.
 
 For a side-effect whose dispatch outcome is uncertain, the connector stores and
 returns `reconciliation_required / UNKNOWN_RECONCILE` and does not blindly
