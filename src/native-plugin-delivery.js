@@ -417,12 +417,17 @@ function frameBytes(value) {
 
 function requestFingerprint(frame) {
   return sha256({
+    authorized_caller_digest: frame.authorized_caller_digest,
     request_id: frame.request_id,
     delivery_id: frame.delivery_id,
     session_epoch: frame.session_epoch,
     semantics: frame.semantics,
     body: frame.body,
   });
+}
+
+function deliveryLedgerKey(frame) {
+  return `${frame.authorized_caller_digest}:${frame.delivery_id}`;
 }
 
 function responseFrame({
@@ -457,6 +462,8 @@ function validateRequestFrame(frame, sessionEpoch, maxFrameBytes) {
     || frame.contract_version !== NATIVE_PLUGIN_BROKER_FRAME_V1
     || frame.type !== "request"
     || frame.session_epoch !== sessionEpoch
+    || typeof frame.authorized_caller_digest !== "string"
+    || !HEX_64_RE.test(frame.authorized_caller_digest)
     || typeof frame.request_id !== "string"
     || !IDENT_RE.test(frame.request_id)
     || typeof frame.delivery_id !== "string"
@@ -681,6 +688,7 @@ export class NativePluginBrokerConnector {
     dispatch,
     sessionEpoch,
     liveStack,
+    authorizedCallerDigest = null,
   } = {}) {
     if (typeof dispatch !== "function") {
       throw error("INVALID_CONFIGURATION", "dispatch callback is required");
@@ -688,10 +696,20 @@ export class NativePluginBrokerConnector {
     ensureDurableDeliveryStore(this.deliveryStore);
     assertCurrentLiveStack(liveStack, { now: this.now() });
     validateRequestFrame(frame, sessionEpoch, this.maxFrameBytes);
+    if (
+      authorizedCallerDigest !== null
+      && frame.authorized_caller_digest !== authorizedCallerDigest
+    ) {
+      throw error(
+        "AUTHORIZED_CALLER_MISMATCH",
+        "broker request caller does not match the paired caller identity",
+      );
+    }
     assertNoProtectedPathArguments(frame.body, this.protectedRoots);
 
     const fingerprint = requestFingerprint(frame);
-    const existing = await this.deliveryStore.get(frame.delivery_id);
+    const ledgerKey = deliveryLedgerKey(frame);
+    const existing = await this.deliveryStore.get(ledgerKey);
     if (existing) {
       if (existing.fingerprint !== fingerprint) {
         return responseFrame({
@@ -718,7 +736,7 @@ export class NativePluginBrokerConnector {
       });
     }
 
-    await this.deliveryStore.put(frame.delivery_id, {
+    await this.deliveryStore.put(ledgerKey, {
       fingerprint,
       request_id: frame.request_id,
       semantics: frame.semantics,
@@ -769,7 +787,7 @@ export class NativePluginBrokerConnector {
       }
     }
 
-    await this.deliveryStore.put(frame.delivery_id, {
+    await this.deliveryStore.put(ledgerKey, {
       fingerprint,
       request_id: frame.request_id,
       semantics: frame.semantics,
@@ -883,6 +901,7 @@ export class NativePluginBrokerConnector {
           dispatch,
           sessionEpoch,
           liveStack,
+          authorizedCallerDigest: credential.authorized_caller_digest,
         });
         socket.send(JSON.stringify(response));
       } catch (caught) {
@@ -957,6 +976,7 @@ export function assessPluginDeliveryGate({
 export const __test = Object.freeze({
   exactBindingMatches,
   requestFingerprint,
+  deliveryLedgerKey,
   websocketUrlForOrigin,
   collectPathLikeStrings,
   normalizeWindowsPathLexical,
