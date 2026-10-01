@@ -363,13 +363,13 @@ test("relay provider exposes process/transport/queue health without dispatching 
 test("stalled transport probe is bounded and reports disconnected instead of hanging", async () => {
   const supervisor = new R23HealthSupervisor({
     processAlive: () => true,
-    canaryTimeoutMs: 50,
+    canaryTimeoutMs: 100,
     transportProbe: async () => new Promise(() => {}),
   });
   const started = Date.now();
   const transport = await supervisor.probeTransport();
   const elapsed = Date.now() - started;
-  assert.ok(elapsed >= 40 && elapsed < 500, `bounded transport probe took ${elapsed}ms`);
+  assert.ok(elapsed >= 80 && elapsed < 1_000, `bounded transport probe took ${elapsed}ms`);
   assert.equal(transport.connected, false);
   assert.equal(transport.executor_responsive, false);
   assert.equal(transport.error_code, "TRANSPORT_HEALTH_TIMEOUT");
@@ -378,7 +378,7 @@ test("stalled transport probe is bounded and reports disconnected instead of han
 
 test("timed-out canary keeps the same deterministic request id for reconciliation/progress retry", async () => {
   const supervisor = new R23HealthSupervisor({
-    canaryTimeoutMs: 50,
+    canaryTimeoutMs: 100,
   });
   const seen = [];
   const first = await supervisor.runCanary({
