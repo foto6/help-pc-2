@@ -11,6 +11,7 @@ import {
   NATIVE_RELAY_PROVIDER_IDENTITY,
 } from "./native-relay-provider.js";
 import { importPinnedExecutorModule } from "./executor-module-identity.js";
+import { R23AdapterCircuitRegistry, R23HealthSupervisor } from "./r23-health.js";
 
 export const PRODUCTION_BRIDGE_CONTRACT = "pc.native.builtin_relay_provider.v1";
 
@@ -98,6 +99,7 @@ export async function createConfiguredNativeMcpRuntime({
   mode = "mcp",
   testConfig = undefined,
   legacyMigrationSessionId = null,
+  healthConfig = {},
 } = {}) {
   const { createBridge, moduleIdentity } = await resolveBridgeFactory({ mode, testConfig });
   const bridge = await createBridge({ mode });
@@ -109,8 +111,12 @@ export async function createConfiguredNativeMcpRuntime({
   if (bridge.preflight !== undefined) requireFunction(bridge.preflight, "preflight");
   if (bridge.readEvidence !== undefined) requireFunction(bridge.readEvidence, "readEvidence");
   if (bridge.bindExecutionContext !== undefined) requireFunction(bridge.bindExecutionContext, "bindExecutionContext");
+  if (bridge.readTransportHealth !== undefined) requireFunction(bridge.readTransportHealth, "readTransportHealth");
 
   mkdirSync(stateDir, { recursive: true });
+  const circuitRegistry = new R23AdapterCircuitRegistry({
+    ...(healthConfig.circuit ?? {}),
+  });
   const adapter = new HelpPc1Adapter({
     invoke: bridge.invoke,
     dryRun: bridge.dryRun ?? false,
@@ -118,6 +124,7 @@ export async function createConfiguredNativeMcpRuntime({
     readCapabilities: bridge.preflight ? bridge.readCapabilities : null,
     preflight: bridge.preflight ?? null,
     bindExecutionContext: bridge.bindExecutionContext ?? null,
+    healthGovernor: circuitRegistry,
   });
 
   const controlPlane = new ControlPlane({
@@ -128,16 +135,29 @@ export async function createConfiguredNativeMcpRuntime({
   const facade = new NativeControlFacade({
     controlPlane,
     store: new JsonFacadeStateStore(join(stateDir, "native-facade.json")),
-    capabilityProvider: async () => capabilityPayload(await bridge.readCapabilities(
+    capabilityProvider: async ({ signal = null } = {}) => capabilityPayload(await bridge.readCapabilities(
       { request_id: null, action: null },
-      { source: "pc-native-mcp-host" },
+      { source: "pc-native-mcp-host", signal },
     )),
     deviceIdentityProvider: bridge.readDeviceIdentity
-      ? async () => bridge.readDeviceIdentity(
+      ? async ({ signal = null } = {}) => bridge.readDeviceIdentity(
         { request_id: null, action: null },
-        { source: "pc-native-mcp-host" },
+        { source: "pc-native-mcp-host", signal },
       )
       : null,
+  });
+
+  const healthSupervisor = new R23HealthSupervisor({
+    controlPlane,
+    circuitRegistry,
+    processAlive: () => true,
+    transportProbe: bridge.readTransportHealth
+      ? ({ signal }) => bridge.readTransportHealth(
+          { request_id: null, action: "health.get" },
+          { source: "pc-native-mcp-health", signal },
+        )
+      : null,
+    ...(healthConfig.supervisor ?? {}),
   });
 
   const compatibilitySurface = new DesktopCommanderCompatibilitySurface({
@@ -167,6 +187,7 @@ export async function createConfiguredNativeMcpRuntime({
     facade,
     desktopId: bridge.desktopId ?? desktopId,
     compatibilitySurface,
+    healthSupervisor,
   });
 
   return {
@@ -174,6 +195,8 @@ export async function createConfiguredNativeMcpRuntime({
     facade,
     controlPlane,
     bridge,
+    circuitRegistry,
+    healthSupervisor,
     stateDir,
     moduleIdentity,
   };
