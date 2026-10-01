@@ -21,7 +21,8 @@
     "test:security": "node --test test/mcp-runtime-config-security.test.js",
     "test:final-control": "node --test test/final-control-relay-e2e.test.js",
     "test:r23": "node --test test/r23-hardening.test.js test/r23-mcp-health.integration.test.js test/r23-surface-baseline.test.js test/r22-output-bound-integration.test.js test/uncertain-outcome.test.js test/native-relay-provider.test.js test/native-relay-server.test.js",
-    "test:r23-soak": "node --test test/r23-soak-chaos.test.js"
+    "test:r23-soak": "node --test test/r23-soak-chaos.test.js",
+    "test:r25-health": "node --test test/r25-r24-runtime-health-consumer.test.js test/r25-r24-health-mcp.integration.test.js test/r23-hardening.test.js test/r23-mcp-health.integration.test.js test/r23-surface-baseline.test.js"
   },
   "engines": {
     "node": ">=20"
