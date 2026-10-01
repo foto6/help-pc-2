@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 
 import {
   R28_FRESHNESS_GATE_V1,
@@ -10,13 +9,10 @@ import {
   validateR28HealthSnapshot,
 } from "../src/index.js";
 
-function gitBlobSha1(bytes) {
-  const raw = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
-  const body = Buffer.from(raw.toString("utf8").replace(/\r\n/g, "\n"), "utf8");
-  return createHash("sha1")
-    .update(Buffer.from(`blob ${body.length}\0`))
-    .update(body)
-    .digest("hex");
+function committedBlobSha(path) {
+  return execFileSync("git", ["rev-parse", `HEAD:${path}`], {
+    encoding: "utf8",
+  }).trim();
 }
 
 function producer() {
@@ -74,15 +70,15 @@ function input(overrides = {}) {
   };
 }
 
-test("R28 vendored producer schema and pin are byte-identical to exact producer blobs", () => {
-  const schema = readFileSync(
-    new URL("../conformance/r28_relay_freshness/pc_relay.health.v1.schema.json", import.meta.url),
+test("R28 vendored producer schema and pin are byte-identical to exact committed producer blobs", () => {
+  assert.equal(
+    committedBlobSha("conformance/r28_relay_freshness/pc_relay.health.v1.schema.json"),
+    R28_PRODUCER_PIN.source_blobs.health_schema,
   );
-  const pin = readFileSync(
-    new URL("../conformance/r28_relay_freshness/producer-pin.r2.json", import.meta.url),
+  assert.equal(
+    committedBlobSha("conformance/r28_relay_freshness/producer-pin.r2.json"),
+    R28_PRODUCER_PIN.source_blobs.producer_pin,
   );
-  assert.equal(gitBlobSha1(schema), R28_PRODUCER_PIN.source_blobs.health_schema);
-  assert.equal(gitBlobSha1(pin), R28_PRODUCER_PIN.source_blobs.producer_pin);
 });
 
 test("healthy exact evidence accepts normal py wrapper -> python runtime chain", () => {
