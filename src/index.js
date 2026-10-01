@@ -1,5 +1,17 @@
 export { ControlPlane, ControlPlaneError } from "./control-plane.js";
 export {
+  R24_RUNTIME_HEALTH_V1,
+  R25_R24_CONSUMER_V1,
+  R25_R24_PIN_V1,
+  R24_PRODUCER_PIN,
+  R24RuntimeHealthConsumerError,
+  R24RuntimeHealthConsumer,
+  validateR24ProducerPin,
+  validateVendoredR24Artifacts,
+  validateR24RuntimeHealthEnvelope,
+} from "./r24-runtime-health-consumer.js";
+
+export {
   R23_HEALTH_V1,
   R23_LIFECYCLE_V1,
   R23_LAUNCHER_LIVENESS_V1,
