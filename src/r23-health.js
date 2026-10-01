@@ -297,6 +297,8 @@ export class R23HealthSupervisor {
     processAlive = () => true,
     transportProbe = null,
     producerHealthConsumer = null,
+    relayProgressConsumer = null,
+    relayProgressProbe = null,
     staleProgressMs = 20_000,
     staleResultMs = 60_000,
     canaryTimeoutMs = 5_000,
@@ -307,6 +309,8 @@ export class R23HealthSupervisor {
     this.processAlive = processAlive;
     this.transportProbe = transportProbe;
     this.producerHealthConsumer = producerHealthConsumer;
+    this.relayProgressConsumer = relayProgressConsumer;
+    this.relayProgressProbe = relayProgressProbe;
     this.staleProgressMs = boundedNumber(staleProgressMs, 20_000, 100, 600_000);
     this.staleResultMs = boundedNumber(staleResultMs, 60_000, 100, 3_600_000);
     this.canaryTimeoutMs = boundedNumber(canaryTimeoutMs, 5_000, 100, 120_000);
@@ -367,11 +371,74 @@ export class R23HealthSupervisor {
     return Boolean(this.producerHealthConsumer?.last || this.producerHealthConsumer?.lastError);
   }
 
+  relayProgressHealth() {
+    return this.relayProgressConsumer?.snapshot?.() ?? null;
+  }
+
+  shouldEnforceRelayProgress() {
+    return Boolean(this.relayProgressConsumer);
+  }
+
+  relayMutationReadiness() {
+    return this.relayProgressConsumer?.readiness?.({ effect: "side_effect" }) ?? {
+      state: "UNKNOWN",
+      reason: "R26_RELAY_PROGRESS_CONSUMER_UNAVAILABLE",
+      automatic_replay: false,
+    };
+  }
+
+  async probeRelayProgress({ signal = null } = {}) {
+    if (!this.relayProgressConsumer) return null;
+    if (typeof this.relayProgressProbe !== "function") {
+      this.relayProgressConsumer.noteError("R26_RELAY_PROGRESS_PROBE_UNAVAILABLE");
+      return this.relayProgressConsumer.snapshot();
+    }
+    const controller = new AbortController();
+    const unlink = linkAbort(signal, controller);
+    let timer = null;
+    try {
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort(new Error("r26_relay_progress_timeout"));
+          const error = new Error("R26 relay progress probe timed out.");
+          error.code = "R26_RELAY_PROGRESS_PROBE_TIMEOUT";
+          reject(error);
+        }, this.canaryTimeoutMs);
+      });
+      const value = await Promise.race([
+        this.relayProgressProbe({ signal: controller.signal }),
+        timeout,
+      ]);
+      this.relayProgressConsumer.ingest(value);
+    } catch (error) {
+      this.relayProgressConsumer.noteError(error?.code ?? "R26_RELAY_PROGRESS_PROBE_FAILED");
+    } finally {
+      if (timer) clearTimeout(timer);
+      unlink();
+    }
+    return this.relayProgressConsumer.snapshot();
+  }
+
   cutoverReadiness() {
-    return this.producerHealthConsumer?.cutoverReadiness?.() ?? {
+    const r25 = this.producerHealthConsumer?.cutoverReadiness?.() ?? {
       decision: "NO_LIVE_CUTOVER",
       prerequisites: { exact_r24_consumer_available: false },
       health_prerequisites_satisfied: false,
+      release_ready: false,
+    };
+    const r26 = this.relayProgressConsumer?.cutoverReadiness?.() ?? {
+      decision: "NO_LIVE_CUTOVER",
+      prerequisites: { exact_r26_consumer_available: false },
+      health_prerequisites_satisfied: false,
+      release_ready: false,
+    };
+    return {
+      decision: "NO_LIVE_CUTOVER",
+      r25_runtime_health: r25,
+      r26_relay_progress: r26,
+      health_prerequisites_satisfied:
+        r25.health_prerequisites_satisfied === true
+        && r26.health_prerequisites_satisfied === true,
       release_ready: false,
     };
   }
@@ -523,6 +590,8 @@ export class R23HealthSupervisor {
     const journal = circuits.outcome_journal_integrity;
     const producerRuntimeHealth = this.producerRuntimeHealth();
     const producerSystemState = producerRuntimeHealth?.system_state ?? "UNKNOWN";
+    const relayProgressHealth = this.relayProgressHealth();
+    const relayState = relayProgressHealth?.liveness_state ?? null;
     const hasUnknownLifecycle = queue.lifecycles.some((row) => row.lifecycle_state === "unknown");
     let status = "HEALTHY";
     if (!processAlive || !queueProgressing || journal.status === "CORRUPT"
@@ -530,7 +599,8 @@ export class R23HealthSupervisor {
     else if (!transportConnected || !executorResponsive || unhealthyAdapter
         || degradedAdapter || journal.status === "MISSING"
         || (journal.status === "UNKNOWN" && hasUnknownLifecycle)
-        || (producerRuntimeHealth && producerSystemState === "UNKNOWN")) status = "DEGRADED";
+        || (producerRuntimeHealth && producerSystemState === "UNKNOWN")
+        || (relayProgressHealth && relayState !== "healthy_progressing")) status = "DEGRADED";
     return {
       contract_version: R23_HEALTH_V1,
       status,
@@ -543,6 +613,7 @@ export class R23HealthSupervisor {
       producer_adapter_health: producerRuntimeHealth?.adapters ?? null,
       producer_adapter_specific_degraded: producerRuntimeHealth?.adapter_specific_degraded ?? [],
       producer_adapter_specific_unhealthy: producerRuntimeHealth?.adapter_specific_unhealthy ?? [],
+      relay_progress_health: relayProgressHealth,
       outcome_journal_integrity: producerRuntimeHealth?.outcome_journal ?? journal,
       cutover_readiness: this.cutoverReadiness(),
       last_successful_request_age_ms: healthAge(now, this.lastRequestAtMs),
