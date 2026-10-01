@@ -183,6 +183,12 @@ export class NativeMcpRuntime {
     if (!this.healthSupervisor) return null;
     if (refresh) await this.healthSupervisor.probeTransport();
     if (canary && this.facadeSession) {
+      const canaryAvailable = Array.isArray(this.initialManifest?.executor?.actions)
+        && this.initialManifest.executor.actions.includes("health.get");
+      if (!canaryAvailable) {
+        this.healthSupervisor.noteCanaryUnavailable("R23_CANARY_CAPABILITY_UNAVAILABLE");
+        return this.healthSupervisor.snapshot();
+      }
       await this.healthSupervisor.runCanary({
         sessionId: this.facadeSession.session_id,
         invoke: async ({ requestId, signal }) => {
