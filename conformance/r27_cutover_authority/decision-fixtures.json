@@ -1,0 +1,455 @@
+{
+  "contract_version": "pc.native.r27.cutover_decision_fixtures.v1",
+  "clock_ms": 1800000000000,
+  "base_ready_input": {
+    "bridge_live_preflight": {
+      "observed_at_ms": 1799999999500,
+      "max_age_ms": 5000,
+      "candidate_provenance": {
+        "source_sha": "7e0d5e07f93990f103358850f8f3c10c1563f83a",
+        "source_branch": "agent/bridge-r23-cutover-rehearsal-20261001",
+        "state_schema_version": 13,
+        "config_digest": "1d7d89ba22792fe4fceaf4113b6c825514d71774513423350a5e5abf1d64d17f"
+      },
+      "process_ownership": {
+        "exact_pid_and_command": true,
+        "ambiguous": false
+      },
+      "backup": {
+        "state_valid": true,
+        "config_valid": true,
+        "state_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "backup_state_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "config_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "backup_config_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "migration": {
+        "compatible": true,
+        "target_state_version": 13
+      },
+      "queue": {
+        "quiescent": true,
+        "active_assignments": 0,
+        "active_tasks": 0,
+        "active_outbox": 0
+      },
+      "status": {
+        "responded": true,
+        "control_plane_responsive": true,
+        "operational_state": "OK",
+        "code_reload_required": false,
+        "age_ms": 200,
+        "max_age_ms": 5000,
+        "latency_ms": 20,
+        "max_latency_ms": 500
+      },
+      "cdp": {
+        "required": true,
+        "responded": true,
+        "state": "healthy",
+        "age_ms": 300,
+        "max_age_ms": 15000,
+        "latency_ms": 30,
+        "max_latency_ms": 1000
+      }
+    },
+    "r25_runtime_health": {
+      "contract_version": "pc.native.r25.r24_runtime_health_consumer.v1",
+      "producer_contract": "pc_executor.runtime_health.v1",
+      "producer_repository": "foto6/help-pc-1",
+      "producer_sha": "60ba0ce92bf2f3cdd89e3213dba40793c6a90d8b",
+      "producer_workflow_run": 36806258696,
+      "vendored_artifacts_verified": true,
+      "source_state": "SOURCE_BOUND",
+      "freshness": "fresh",
+      "complete": true,
+      "system_state": "HEALTHY",
+      "generation": {
+        "executor_process_id": 4242,
+        "operations_generation_id": "r27-fixture-generation"
+      },
+      "adapters": {
+        "shell": {
+          "available": true,
+          "state": "responsive",
+          "circuit": {
+            "state": "closed"
+          }
+        },
+        "windows": {
+          "available": true,
+          "state": "responsive",
+          "circuit": {
+            "state": "closed"
+          }
+        },
+        "screenshot": {
+          "available": true,
+          "state": "responsive",
+          "circuit": {
+            "state": "closed"
+          }
+        },
+        "outcome_journal": {
+          "available": true,
+          "state": "responsive",
+          "circuit": {
+            "state": "closed"
+          }
+        }
+      },
+      "outcome_journal": {
+        "configured": true,
+        "integrity": "healthy"
+      },
+      "cutover": {
+        "producer_health_fresh": true,
+        "generation_known": true,
+        "journal_healthy": true
+      }
+    },
+    "r25_runtime_producer_attestation": {
+      "verified": true,
+      "sha": "60ba0ce92bf2f3cdd89e3213dba40793c6a90d8b",
+      "observed_at_ms": 1799999999500,
+      "max_age_ms": 5000
+    },
+    "r26_relay_progress": {
+      "contract_version": "pc.native.r26.relay_progress_consumer.v1",
+      "producer_repository": "foto6/help-pc-1",
+      "producer_branch": "agent/pc-relay-r26-progress-health-20261001",
+      "producer_sha": "96d453bcdc866bfd26c06ad88e2ec0c033fbccdd",
+      "producer_workflow_run": 36833819136,
+      "producer_sha_wire_attested": true,
+      "vendored_artifacts_verified": true,
+      "source_state": "SOURCE_BOUND",
+      "classification": "healthy_progressing",
+      "liveness_state": "healthy_progressing",
+      "pending_unknown_effects": 0,
+      "reconciliation_required": false,
+      "process": {
+        "pid": 5151,
+        "observed_pids": [
+          5151
+        ]
+      },
+      "recovery": {
+        "auto_restart": false,
+        "auto_kill": false,
+        "automatic_replay": false,
+        "replay_authorized_after_liveness_recovery": false
+      },
+      "cutover": {
+        "fresh_evidence": true,
+        "healthy_progressing": true,
+        "ambiguous_ownership": false
+      }
+    },
+    "unknown_side_effects": {
+      "count": 0,
+      "ids": []
+    },
+    "required_native_adapters": [
+      "shell",
+      "windows"
+    ]
+  },
+  "cases": [
+    {
+      "name": "ready",
+      "expected": "READY_FOR_EXPLICIT_CUTOVER",
+      "patches": []
+    },
+    {
+      "name": "unknown_side_effect",
+      "expected": "RECONCILIATION_REQUIRED",
+      "patches": [
+        {
+          "path": "unknown_side_effects.count",
+          "value": 1
+        },
+        {
+          "path": "unknown_side_effects.ids",
+          "value": [
+            "unknown-1"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "relay_pending_unknown",
+      "expected": "RECONCILIATION_REQUIRED",
+      "patches": [
+        {
+          "path": "r26_relay_progress.pending_unknown_effects",
+          "value": 1
+        },
+        {
+          "path": "r26_relay_progress.reconciliation_required",
+          "value": true
+        },
+        {
+          "path": "r26_relay_progress.classification",
+          "value": "reconciliation_required"
+        }
+      ]
+    },
+    {
+      "name": "bridge_provenance_mismatch",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "bridge_live_preflight.candidate_provenance.source_sha",
+          "value": "0000000000000000000000000000000000000000"
+        }
+      ]
+    },
+    {
+      "name": "bridge_ownership_ambiguous",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "bridge_live_preflight.process_ownership.ambiguous",
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "bridge_backup_invalid",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "bridge_live_preflight.backup.backup_state_digest",
+          "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ]
+    },
+    {
+      "name": "bridge_migration_incompatible",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "bridge_live_preflight.migration.compatible",
+          "value": false
+        }
+      ]
+    },
+    {
+      "name": "bridge_queue_not_quiescent",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "bridge_live_preflight.queue.quiescent",
+          "value": false
+        },
+        {
+          "path": "bridge_live_preflight.queue.active_assignments",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "name": "bridge_status_nonresponsive",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "bridge_live_preflight.status.responded",
+          "value": false
+        }
+      ]
+    },
+    {
+      "name": "bridge_code_reload_required",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "bridge_live_preflight.status.code_reload_required",
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "bridge_status_stale",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "bridge_live_preflight.status.age_ms",
+          "value": 5001
+        }
+      ]
+    },
+    {
+      "name": "bridge_cdp_stale",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "bridge_live_preflight.cdp.age_ms",
+          "value": 15001
+        }
+      ]
+    },
+    {
+      "name": "r25_stale",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "r25_runtime_health.source_state",
+          "value": "STALE"
+        },
+        {
+          "path": "r25_runtime_health.freshness",
+          "value": "stale"
+        },
+        {
+          "path": "r25_runtime_health.cutover.producer_health_fresh",
+          "value": false
+        }
+      ]
+    },
+    {
+      "name": "r25_unknown_generation",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "r25_runtime_health.generation.operations_generation_id",
+          "value": null
+        },
+        {
+          "path": "r25_runtime_health.cutover.generation_known",
+          "value": false
+        }
+      ]
+    },
+    {
+      "name": "r25_journal_corrupt",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "r25_runtime_health.outcome_journal.integrity",
+          "value": "corrupt"
+        },
+        {
+          "path": "r25_runtime_health.cutover.journal_healthy",
+          "value": false
+        },
+        {
+          "path": "r25_runtime_health.system_state",
+          "value": "UNHEALTHY"
+        }
+      ]
+    },
+    {
+      "name": "r25_required_adapter_unhealthy",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "r25_runtime_health.adapters.shell.state",
+          "value": "unhealthy"
+        },
+        {
+          "path": "r25_runtime_health.adapters.shell.circuit.state",
+          "value": "open"
+        }
+      ]
+    },
+    {
+      "name": "r25_producer_attestation_stale",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "r25_runtime_producer_attestation.observed_at_ms",
+          "value": 1799999990000
+        }
+      ]
+    },
+    {
+      "name": "r26_stale",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "r26_relay_progress.source_state",
+          "value": "STALE"
+        },
+        {
+          "path": "r26_relay_progress.cutover.fresh_evidence",
+          "value": false
+        }
+      ]
+    },
+    {
+      "name": "r26_alive_stalled",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "r26_relay_progress.classification",
+          "value": "alive_stalled"
+        },
+        {
+          "path": "r26_relay_progress.liveness_state",
+          "value": "alive_stalled"
+        },
+        {
+          "path": "r26_relay_progress.cutover.healthy_progressing",
+          "value": false
+        }
+      ]
+    },
+    {
+      "name": "r26_duplicate_ownership",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "r26_relay_progress.classification",
+          "value": "duplicate_processes_ambiguous"
+        },
+        {
+          "path": "r26_relay_progress.liveness_state",
+          "value": "duplicate_processes_ambiguous"
+        },
+        {
+          "path": "r26_relay_progress.process.observed_pids",
+          "value": [
+            5151,
+            5152
+          ]
+        },
+        {
+          "path": "r26_relay_progress.cutover.healthy_progressing",
+          "value": false
+        },
+        {
+          "path": "r26_relay_progress.cutover.ambiguous_ownership",
+          "value": true
+        }
+      ]
+    },
+    {
+      "name": "r26_alive_ambiguous_identity",
+      "expected": "BLOCKED",
+      "patches": [
+        {
+          "path": "r26_relay_progress.classification",
+          "value": "alive_ambiguous_identity"
+        },
+        {
+          "path": "r26_relay_progress.liveness_state",
+          "value": "alive_ambiguous_identity"
+        },
+        {
+          "path": "r26_relay_progress.process.observed_pids",
+          "value": [
+            9999
+          ]
+        },
+        {
+          "path": "r26_relay_progress.cutover.healthy_progressing",
+          "value": false
+        },
+        {
+          "path": "r26_relay_progress.cutover.ambiguous_ownership",
+          "value": true
+        }
+      ]
+    }
+  ]
+}
