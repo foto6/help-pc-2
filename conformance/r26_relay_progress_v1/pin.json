@@ -1,0 +1,32 @@
+{
+  "contract_version": "pc.native.r26.relay_progress_pin.v1",
+  "producer_repository": "foto6/help-pc-1",
+  "producer_branch": "agent/pc-relay-r26-progress-health-20261001",
+  "producer_sha": "96d453bcdc866bfd26c06ad88e2ec0c033fbccdd",
+  "producer_workflow_run": 36833819136,
+  "manifest_source_base_sha": "4ce8901221ad994ae5b44299d6601e1c9cc6a047",
+  "progress_contract": "pc_relay.progress.v1",
+  "liveness_contract": "pc_relay.liveness_probe.v1",
+  "source_blobs": {
+    "src/pc_relay/progress.py": "c00ccc58f75de463898cd26bb6c4cfeab25a2ca6",
+    "tools/github_relay.py": "022cef2a800772c755f34a75faa76b7f54589c94",
+    "tools/start_pc_control_relay.ps1": "7f0add5fb528526336a6caa1f534c2551983f653",
+    "schemas/pc_relay.progress.v1.schema.json": "04b8da53f638a244a668c8f0a9be4c9b165e1c5e",
+    "schemas/pc_relay.liveness_probe.v1.schema.json": "7990e850ef2c143a3d718bd15101c142feb80e1e",
+    "tests/fixtures/relay_progress_v1/manifest.json": "b96441e6d164af3554acdcdf77b9ea9eabc3abaf",
+    "tests/fixtures/relay_progress_v1/progress.example.json": "4025cb31ae48e0032215bd38edf1c2acaf5d90e1"
+  },
+  "vendored_paths": {
+    "progress_schema": "conformance/r26_relay_progress_v1/pc_relay.progress.v1.schema.json",
+    "liveness_schema": "conformance/r26_relay_progress_v1/pc_relay.liveness_probe.v1.schema.json",
+    "producer_consumer_manifest": "conformance/r26_relay_progress_v1/producer-consumer-manifest.json",
+    "progress_fixture": "conformance/r26_relay_progress_v1/progress.example.json"
+  },
+  "runtime_delivery": {
+    "progress_path": ".pc-relay/progress.v1.json",
+    "committed_to_git": false,
+    "read_only_probe": "python tools/github_relay.py --repo <dedicated-checkout> --health"
+  },
+  "release_gate": "NO_LIVE_CUTOVER",
+  "runtime_producer_sha_wire_attested": false
+}
