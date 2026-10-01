@@ -28,5 +28,6 @@
     "read_only_probe": "python tools/github_relay.py --repo <dedicated-checkout> --health"
   },
   "release_gate": "NO_LIVE_CUTOVER",
-  "runtime_producer_sha_wire_attested": false
+  "runtime_producer_sha_wire_attested": false,
+  "runtime_script_sha256": "9a50c40a591e92fc4c8c05202baf5af7f24937d018c57ca2b13b8097b5eca383"
 }
