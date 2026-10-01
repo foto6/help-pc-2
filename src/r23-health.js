@@ -57,7 +57,7 @@ export function adapterNameForAction(action) {
   if (/^(fs\.|file\.|log\.|pdf\.)/.test(name)) return "filesystem";
   if (/^(search\.)/.test(name)) return "search";
   if (/^(process\.|system\.process\.)/.test(name)) return "process";
-  if (/^(capabilities\.|action\.preflight|health\.|device\.|config\.|identity\.|diagnostics\.|agent\.)/.test(name)) {
+  if (/^(capabilities\.|action\.preflight|health\.|device\.|config\.|identity\.|diagnostics\.|agent\.|system\.health$|system\.config\.)/.test(name)) {
     return "executor";
   }
   return "other";
