@@ -179,9 +179,9 @@ export class NativeControlFacade {
 
   #persist() { this.store?.save(this.state); }
 
-  async #captureDeviceIdentity(executorDigest) {
+  async #captureDeviceIdentity(executorDigest, signal = null) {
     if (!this.deviceIdentityProvider) return null;
-    const identity = await this.deviceIdentityProvider();
+    const identity = await this.deviceIdentityProvider({ signal });
     if (!identity || typeof identity.deviceId !== "string" || !identity.deviceId ||
         typeof identity.sessionEpoch !== "string" || !identity.sessionEpoch ||
         identity.executorDigest !== executorDigest) {
@@ -276,8 +276,8 @@ export class NativeControlFacade {
     this.#persist();
   }
 
-  async capabilities() {
-    const executorCapabilities = await this.capabilityProvider();
+  async capabilities({ signal = null } = {}) {
+    const executorCapabilities = await this.capabilityProvider({ signal });
     return nativeCapabilityManifestV1({
       executorCapabilities,
       limits: { ...DEFAULT_NATIVE_LIMITS, maxPageSize: this.maxPageSize },
@@ -298,8 +298,8 @@ export class NativeControlFacade {
     return session;
   }
 
-  async #negotiate(client) {
-    const manifest = await this.capabilities();
+  async #negotiate(client, { signal = null } = {}) {
+    const manifest = await this.capabilities({ signal });
     try { assertCapabilityNegotiation(client, manifest); }
     catch (error) {
       throw new NativeFacadeError(error.message, {
@@ -529,8 +529,8 @@ export class NativeControlFacade {
     return { session_id: session.id, status: session.status };
   }
 
-  async #assertLiveCapabilities(session) {
-    const current = await this.capabilityProvider();
+  async #assertLiveCapabilities(session, signal = null) {
+    const current = await this.capabilityProvider({ signal });
     const digest = current?.digest ?? current?.capabilities_digest ?? null;
     if (digest !== session.executorDigest) {
       session.status = "stale";
@@ -542,7 +542,7 @@ export class NativeControlFacade {
       await this.#bindLegacyQuiescentIdentity(session, digest);
     }
     if (session.deviceIdentity) {
-      const currentIdentity = await this.#captureDeviceIdentity(digest);
+      const currentIdentity = await this.#captureDeviceIdentity(digest, signal);
       this.#assertDeviceIdentity(session.deviceIdentity, currentIdentity);
     }
   }
@@ -850,7 +850,7 @@ export class NativeControlFacade {
       throw new NativeFacadeError("session_id, request_id and tool are required.", { code: "INVALID_ARGUMENT" });
     }
     const session = this.#session(envelope.session_id);
-    await this.#assertLiveCapabilities(session);
+    await this.#assertLiveCapabilities(session, signal);
     session.lastSeenAtMs = this.clock();
     const tool = toolDefinition(envelope.tool);
     if (!tool) throw new NativeFacadeError(`Unknown native tool '${envelope.tool}'.`, { code: "TOOL_NOT_FOUND", category: "tool", httpStatus: 404 });
