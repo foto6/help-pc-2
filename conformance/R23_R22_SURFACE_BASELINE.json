@@ -1,0 +1,585 @@
+{
+  "contract_version": "pc.native.r22_surface_baseline.v1",
+  "baseline_repository": "foto6/help-pc-2",
+  "baseline_sha": "47f54210128488171e34186182d6d2e382ba7552",
+  "native_protocol": "pc.native.control.v1",
+  "frozen_registry_digest": "58b2bde8c6a49825747dcd7010f105dad0b6d548c7e8341cdafb32d2319f6dcd",
+  "control_registry_digest": "771f6d31d48fc2c89ff936f43346da11ca897d37fc84c7a9cccb08367aba837b",
+  "route_counts": {
+    "total": 62,
+    "frozen": 37,
+    "parity": 25
+  },
+  "native_routes": [
+    {
+      "name": "agent.shutdown",
+      "executor_action": "agent.shutdown",
+      "effect": "side_effect",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "agent.shutdown"
+    },
+    {
+      "name": "audit.recent",
+      "executor_action": "diagnostics.recent_tool_calls",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "diagnostics.recent_tool_calls"
+    },
+    {
+      "name": "clipboard.read",
+      "executor_action": "clipboard.read",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "clipboard.read"
+    },
+    {
+      "name": "clipboard.write",
+      "executor_action": "clipboard.write",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "clipboard.write"
+    },
+    {
+      "name": "config.get",
+      "executor_action": "config.get",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "device.get_config"
+    },
+    {
+      "name": "config.set",
+      "executor_action": "config.set",
+      "effect": "side_effect",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "device.set_config"
+    },
+    {
+      "name": "content.search",
+      "executor_action": "fs.search_text",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "content.search"
+    },
+    {
+      "name": "device.get_config",
+      "executor_action": "system.config.get",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "device.get_config"
+    },
+    {
+      "name": "device.health",
+      "executor_action": "system.health",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "device.health"
+    },
+    {
+      "name": "device.identity",
+      "executor_action": "identity.who_am_i",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "identity.who_am_i"
+    },
+    {
+      "name": "device.info",
+      "executor_action": "device.info",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "device.info"
+    },
+    {
+      "name": "device.ping",
+      "executor_action": "health.get",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "device.health"
+    },
+    {
+      "name": "device.set_config",
+      "executor_action": "system.config.set",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "device.set_config"
+    },
+    {
+      "name": "diagnostics.recent_tool_calls",
+      "executor_action": "diagnostics.recent_tool_calls",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "diagnostics.recent_tool_calls"
+    },
+    {
+      "name": "diagnostics.usage_stats",
+      "executor_action": "diagnostics.usage_stats",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "diagnostics.usage_stats"
+    },
+    {
+      "name": "file.append",
+      "executor_action": "fs.append_text",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "file.append"
+    },
+    {
+      "name": "file.copy",
+      "executor_action": "fs.copy",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "file.copy"
+    },
+    {
+      "name": "file.create_dir",
+      "executor_action": "fs.mkdir",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "file.create_dir"
+    },
+    {
+      "name": "file.delete",
+      "executor_action": "fs.delete",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "file.delete"
+    },
+    {
+      "name": "file.edit",
+      "executor_action": "fs.edit_text",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "file.edit"
+    },
+    {
+      "name": "file.hash",
+      "executor_action": "fs.hash",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "file.hash"
+    },
+    {
+      "name": "file.info",
+      "executor_action": "fs.stat",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "file.info"
+    },
+    {
+      "name": "file.list",
+      "executor_action": "fs.list",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "file.list"
+    },
+    {
+      "name": "file.move",
+      "executor_action": "fs.move",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "file.move"
+    },
+    {
+      "name": "file.read",
+      "executor_action": "fs.read_text",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "file.read"
+    },
+    {
+      "name": "file.read_bytes",
+      "executor_action": "fs.read_bytes",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "file.read_bytes"
+    },
+    {
+      "name": "file.read_multiple",
+      "executor_action": "fs.read_multiple",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "file.read_multiple"
+    },
+    {
+      "name": "file.search",
+      "executor_action": "fs.find",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "file.search"
+    },
+    {
+      "name": "file.write",
+      "executor_action": "fs.write_text",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "file.write"
+    },
+    {
+      "name": "identity.who_am_i",
+      "executor_action": "identity.who_am_i",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "identity.who_am_i"
+    },
+    {
+      "name": "input.click",
+      "executor_action": "input.click",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "input.click"
+    },
+    {
+      "name": "input.type",
+      "executor_action": "input.type",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "input.type"
+    },
+    {
+      "name": "log.tail",
+      "executor_action": "log.tail",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "log.tail"
+    },
+    {
+      "name": "pdf.write",
+      "executor_action": "pdf.write",
+      "effect": "side_effect",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "pdf.write"
+    },
+    {
+      "name": "process.interact",
+      "executor_action": "process.interact",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "process.interact"
+    },
+    {
+      "name": "process.list",
+      "executor_action": "process.list",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "process.list"
+    },
+    {
+      "name": "process.managed.list",
+      "executor_action": "process.managed.list",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "process.list"
+    },
+    {
+      "name": "process.read",
+      "executor_action": "process.read",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "process.read"
+    },
+    {
+      "name": "process.read_output",
+      "executor_action": "process.read_output",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "process.read"
+    },
+    {
+      "name": "process.start",
+      "executor_action": "process.start",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "process.start"
+    },
+    {
+      "name": "process.status",
+      "executor_action": "process.status",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "process.status"
+    },
+    {
+      "name": "process.terminate",
+      "executor_action": "process.terminate",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "process.terminate"
+    },
+    {
+      "name": "screenshot.capture",
+      "executor_action": "screenshot.capture",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "screenshot.capture"
+    },
+    {
+      "name": "search.list",
+      "executor_action": "search.list",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "search.list"
+    },
+    {
+      "name": "search.read",
+      "executor_action": "search.read",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "search.read"
+    },
+    {
+      "name": "search.start",
+      "executor_action": "search.start",
+      "effect": "side_effect",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "search.start"
+    },
+    {
+      "name": "search.stop",
+      "executor_action": "search.stop",
+      "effect": "side_effect",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "search.stop"
+    },
+    {
+      "name": "shell.run",
+      "executor_action": "shell.run",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "shell.run"
+    },
+    {
+      "name": "shell.session.close",
+      "executor_action": "shell.session.close",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "shell.session.close"
+    },
+    {
+      "name": "shell.session.open",
+      "executor_action": "shell.session.open",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "shell.session.open"
+    },
+    {
+      "name": "shell.session.read",
+      "executor_action": "shell.session.read",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "shell.session.read"
+    },
+    {
+      "name": "shell.session.start",
+      "executor_action": "shell.session.start",
+      "effect": "side_effect",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "shell.session.open"
+    },
+    {
+      "name": "shell.session.terminate",
+      "executor_action": "shell.session.terminate",
+      "effect": "side_effect",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "shell.session.close"
+    },
+    {
+      "name": "shell.session.write",
+      "executor_action": "shell.session.write",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "shell.session.write"
+    },
+    {
+      "name": "shell.session.write_stdin",
+      "executor_action": "shell.session.write_stdin",
+      "effect": "side_effect",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "shell.session.write"
+    },
+    {
+      "name": "system.process.inspect",
+      "executor_action": "process.inspect",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "system.process.inspect"
+    },
+    {
+      "name": "system.process.kill",
+      "executor_action": "system.process.kill",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "system.process.kill"
+    },
+    {
+      "name": "system.process.list",
+      "executor_action": "system.process.list",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "system.process.list"
+    },
+    {
+      "name": "uia.find",
+      "executor_action": "uia.find",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "uia.find"
+    },
+    {
+      "name": "uia.invoke",
+      "executor_action": "uia.invoke",
+      "effect": "side_effect",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "uia.invoke"
+    },
+    {
+      "name": "usage.stats",
+      "executor_action": "diagnostics.usage_stats",
+      "effect": "read_only",
+      "registry": "pc.native.parity_tool_registry.v1",
+      "wire_tool": "diagnostics.usage_stats"
+    },
+    {
+      "name": "window.list",
+      "executor_action": "window.list",
+      "effect": "read_only",
+      "registry": "pc.native.tool_registry.v1",
+      "wire_tool": "window.list"
+    }
+  ],
+  "public_compatibility": {
+    "contract_version": "pc.desktop_commander.compat_registry.v1",
+    "reference_version": "0.2.51",
+    "mandatory_count": 28,
+    "catalog_count": 30,
+    "tools": [
+      {
+        "name": "create_directory",
+        "effect": "side_effect"
+      },
+      {
+        "name": "edit_block",
+        "effect": "side_effect"
+      },
+      {
+        "name": "force_terminate",
+        "effect": "side_effect"
+      },
+      {
+        "name": "get_config",
+        "effect": "read_only"
+      },
+      {
+        "name": "get_file_info",
+        "effect": "read_only"
+      },
+      {
+        "name": "get_more_search_results",
+        "effect": "read_only"
+      },
+      {
+        "name": "get_recent_tool_calls",
+        "effect": "read_only"
+      },
+      {
+        "name": "get_usage_stats",
+        "effect": "read_only"
+      },
+      {
+        "name": "interact_with_process",
+        "effect": "side_effect"
+      },
+      {
+        "name": "kill_process",
+        "effect": "side_effect"
+      },
+      {
+        "name": "list_devices",
+        "effect": "read_only"
+      },
+      {
+        "name": "list_directory",
+        "effect": "read_only"
+      },
+      {
+        "name": "list_processes",
+        "effect": "read_only"
+      },
+      {
+        "name": "list_searches",
+        "effect": "read_only"
+      },
+      {
+        "name": "list_sessions",
+        "effect": "read_only"
+      },
+      {
+        "name": "move_file",
+        "effect": "side_effect"
+      },
+      {
+        "name": "ping",
+        "effect": "read_only"
+      },
+      {
+        "name": "read_file",
+        "effect": "read_only"
+      },
+      {
+        "name": "read_multiple_files",
+        "effect": "read_only"
+      },
+      {
+        "name": "read_process_output",
+        "effect": "read_only"
+      },
+      {
+        "name": "set_config_value",
+        "effect": "side_effect"
+      },
+      {
+        "name": "shutdown",
+        "effect": "side_effect"
+      },
+      {
+        "name": "start_process",
+        "effect": "side_effect"
+      },
+      {
+        "name": "start_search",
+        "effect": "side_effect"
+      },
+      {
+        "name": "stop_search",
+        "effect": "side_effect"
+      },
+      {
+        "name": "who_am_i",
+        "effect": "read_only"
+      },
+      {
+        "name": "write_file",
+        "effect": "side_effect"
+      },
+      {
+        "name": "write_pdf",
+        "effect": "side_effect"
+      }
+    ],
+    "vendor_non_equivalents": [
+      "get_prompts",
+      "give_feedback_to_desktop_commander"
+    ]
+  },
+  "bounds": {
+    "native_page_max": 200,
+    "mcp_result_max_bytes": 262144,
+    "executor_process_output_request_max_bytes": 65536,
+    "compat_text_read_max_bytes": 262144
+  },
+  "safety": {
+    "automatic_side_effect_replay": false,
+    "protected_path_rejection_required": true,
+    "credential_entry_allowed": false,
+    "captcha_entry_allowed": false
+  }
+}
