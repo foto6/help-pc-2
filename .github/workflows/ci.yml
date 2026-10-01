@@ -75,6 +75,15 @@ jobs:
         run: npm run test:r28-evidence
       - name: Full test suite
         run: npm test
+      - name: Generate exact-head R28 readiness handoff
+        run: node tools/r28-readiness-report.js --out r28-readiness-${{ matrix.os }}.json
+      - name: Upload exact-head R28 readiness handoff
+        uses: actions/upload-artifact@v4
+        with:
+          name: r28-readiness-${{ matrix.os }}
+          path: r28-readiness-${{ matrix.os }}.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Generate exact-head R27 coordinator handoff
         run: node tools/r27-cutover-handoff-report.js --out r27-coordinator-handoff-${{ matrix.os }}.json
       - name: Upload exact-head R27 coordinator handoff
