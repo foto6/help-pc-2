@@ -24,7 +24,8 @@
     "test:r23-soak": "node --test test/r23-soak-chaos.test.js",
     "test:r25-health": "node --test test/r25-r24-runtime-health-consumer.test.js test/r25-r24-health-mcp.integration.test.js test/r23-hardening.test.js test/r23-mcp-health.integration.test.js test/r23-surface-baseline.test.js",
     "test:r26-relay-progress": "node --test test/r26-relay-progress-consumer.test.js test/r26-relay-progress-mcp.integration.test.js test/r25-r24-runtime-health-consumer.test.js test/r25-r24-health-mcp.integration.test.js test/r23-hardening.test.js",
-    "test:r27-cutover": "node --test test/r27-cutover-authority.test.js test/r26-relay-progress-consumer.test.js test/r25-r24-runtime-health-consumer.test.js test/r23-hardening.test.js"
+    "test:r27-cutover": "node --test test/r27-cutover-authority.test.js test/r26-relay-progress-consumer.test.js test/r25-r24-runtime-health-consumer.test.js test/r23-hardening.test.js",
+    "report:r27-cutover": "node tools/r27-cutover-handoff-report.js"
   },
   "engines": {
     "node": ">=20"
