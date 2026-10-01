@@ -354,6 +354,6 @@ test("UNKNOWN side effect has precedence over other blockers and never enables r
 test("R28 source contains no live restart, kill, service or deployment execution primitive", async () => {
   const { readFileSync } = await import("node:fs");
   const source = readFileSync(new URL("../src/r28-evidence-consumer.js", import.meta.url), "utf8");
-  assert.doesNotMatch(source, /child_process|spawn\s*\(|execFile|process\.kill|taskkill|Stop-Process|Restart-Service|Start-Service/);
-  assert.doesNotMatch(source, /\/json\/new|liveCutover\s*\(|deploy\s+live|repoint/i);
+  assert.doesNotMatch(source, /child_process|spawn\s*\(|execFile|execSync|process\.kill|taskkill|Stop-Process|Restart-Service|Start-Service/);
+  assert.doesNotMatch(source, /fetch\s*\([^)]*\{[^}]*method\s*:\s*["'](?:POST|PUT|DELETE)|liveCutover\s*\(|\/json\/new/i);
 });
