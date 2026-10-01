@@ -1,5 +1,3 @@
-import { setTimeout as delay } from "node:timers/promises";
-
 export const R23_HEALTH_V1 = "pc.native.health.v1";
 export const R23_LIFECYCLE_V1 = "pc.native.request_lifecycle.v1";
 export const R23_LAUNCHER_LIVENESS_V1 = "pc.native.launcher_liveness.v1";
@@ -370,8 +368,23 @@ export class R23HealthSupervisor {
 
   async probeTransport({ signal = null } = {}) {
     if (typeof this.transportProbe !== "function") return clone(this.transport);
+    const controller = new AbortController();
+    const unlink = linkAbort(signal, controller);
+    let timer = null;
     try {
-      const value = await this.transportProbe({ signal });
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort(new Error("transport_health_timeout"));
+          const error = new Error("R23 transport health probe timed out.");
+          error.code = "TRANSPORT_HEALTH_TIMEOUT";
+          reject(error);
+        }, this.canaryTimeoutMs);
+        timer.unref?.();
+      });
+      const value = await Promise.race([
+        this.transportProbe({ signal: controller.signal }),
+        timeout,
+      ]);
       this.transport = {
         connected: value?.transport_connected === true,
         process_alive: value?.process_alive === true,
@@ -388,6 +401,9 @@ export class R23HealthSupervisor {
         executor_responsive: false,
         error_code: error?.code ?? "TRANSPORT_HEALTH_UNAVAILABLE",
       };
+    } finally {
+      if (timer) clearTimeout(timer);
+      unlink();
     }
     return clone(this.transport);
   }
@@ -457,10 +473,12 @@ export class R23HealthSupervisor {
     const degradedAdapter = Object.values(circuits.adapters)
       .some((entry) => entry.status === "DEGRADED");
     const journal = circuits.outcome_journal_integrity;
+    const hasUnknownLifecycle = queue.lifecycles.some((row) => row.lifecycle_state === "unknown");
     let status = "HEALTHY";
     if (!processAlive || !queueProgressing || journal.status === "CORRUPT") status = "UNHEALTHY";
     else if (!transportConnected || !executorResponsive || unhealthyAdapter
-        || degradedAdapter || ["UNKNOWN", "MISSING"].includes(journal.status)) status = "DEGRADED";
+        || degradedAdapter || journal.status === "MISSING"
+        || (journal.status === "UNKNOWN" && hasUnknownLifecycle)) status = "DEGRADED";
     return {
       contract_version: R23_HEALTH_V1,
       status,
