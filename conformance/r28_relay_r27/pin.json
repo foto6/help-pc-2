@@ -1,0 +1,36 @@
+{
+  "contract_version": "pc.native.r28.relay_r27_authority_pin.v1",
+  "producer_repository": "foto6/help-pc-1",
+  "producer_branch": "agent/pc-relay-r27-evidence-delivery-20261001",
+  "producer_sha": "91600c19763ca8a0871d078a3f15ac97fb4f039a",
+  "producer_ci_run": 36866129515,
+  "evidence_contract": "pc_relay.progress_evidence.v1",
+  "manifest_contract": "pc_relay.progress_evidence.consumer_manifest.v1",
+  "upstream_r26_start_sha": "96d453bcdc866bfd26c06ad88e2ec0c033fbccdd",
+  "upstream_r26_ci": 36833819136,
+  "source_blobs": {
+    "src/pc_relay/evidence.py": "665684b937b7e1d2e06ef3541bc535082b6a47a2",
+    "tools/read_relay_progress_evidence.py": "bba58cf4e6baa9d5ecc4e5435e6b684cd5272314",
+    "schemas/pc_relay.progress_evidence.v1.schema.json": "73962a7a51e01f72c8e58f240339f4bb4d30714d",
+    "src/pc_relay/progress.py": "c00ccc58f75de463898cd26bb6c4cfeab25a2ca6",
+    "schemas/pc_relay.progress.v1.schema.json": "04b8da53f638a244a668c8f0a9be4c9b165e1c5e",
+    "schemas/pc_relay.liveness_probe.v1.schema.json": "7990e850ef2c143a3d718bd15101c142feb80e1e",
+    "tests/fixtures/relay_progress_evidence_v1/evidence.example.json": "1c75abe63a5cf5af1531d6a21371d437cfa8a178",
+    "conformance/pc_relay.progress_evidence.v1/manifest.json": "20904979c5d3f392ab649f2380d6cd0a30908a27",
+    "conformance/pc_relay.progress_evidence.v1/binding-report.md": "43f47a0a5c5881b75d7d90f3656bcbd116ef1676",
+    ".github/workflows/r27-relay-evidence-delivery.yml": "771cf42df7669599f224ab31e04de2ab0ae3a63c"
+  },
+  "delivery": {
+    "mechanism": "bounded_local_file_stdio",
+    "source_path": ".pc-relay/progress.v1.json",
+    "read_only": true,
+    "queue_side_effects": false,
+    "acknowledges_requests": false,
+    "creates_leases": false,
+    "triggers_retry": false,
+    "triggers_replay": false,
+    "process_enumeration": false,
+    "git_operations": false
+  },
+  "release_gate": "NO_LIVE_CUTOVER"
+}
