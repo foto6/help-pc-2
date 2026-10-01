@@ -279,7 +279,6 @@ export class NativeMcpRuntime {
 
   async callNativeTool(tool, args, ctx) {
     const requestId = requestIdentity(tool.name, args, ctx);
-    this.healthSupervisor?.noteRequest();
     const { nativeArgs, page } = splitHostArguments(args);
     let response;
     try {
@@ -307,6 +306,7 @@ export class NativeMcpRuntime {
         ...(page === undefined ? {} : { page }),
       };
       response = await this.facade.invoke(request, { signal: ctx.mcpReq.signal });
+      this.healthSupervisor?.noteRequest();
       if (response?.status === "completed") this.healthSupervisor?.noteResult();
       if (tool.name === "device.health" && response?.status === "completed" && this.healthSupervisor) {
         const health = await this.healthSnapshot({ refresh: true, canary: true });
@@ -335,7 +335,6 @@ export class NativeMcpRuntime {
 
   async callCompatibilityTool(tool, args, ctx) {
     const requestId = requestIdentity(tool.name, args, ctx);
-    this.healthSupervisor?.noteRequest();
     const { request_id: _requestId, ...compatibilityArguments } = args;
     let response;
     try {
@@ -346,6 +345,7 @@ export class NativeMcpRuntime {
         tool: tool.name,
         arguments: compatibilityArguments,
       }, { signal: ctx.mcpReq.signal });
+      this.healthSupervisor?.noteRequest();
       if (response?.status === "completed") this.healthSupervisor?.noteResult();
     } catch (error) {
       response = compatibilityErrorResult(error, {
