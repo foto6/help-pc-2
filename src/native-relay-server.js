@@ -318,13 +318,34 @@ export class NativeRelayServer {
 
   health() {
     const deliveries = this.state.listDeliveries();
-    const active = deliveries.filter(
+    const activeDeliveries = deliveries.filter(
       (item) => !TERMINAL_DELIVERY.has(item.status),
-    ).length;
+    );
+    const active = activeDeliveries.length;
+    const now = this.clock();
+    const lastProgressAtMs = deliveries.reduce(
+      (value, item) => Math.max(value, Number(item.updated_at_ms) || 0), 0) || null;
+    const lastSuccessfulResultAtMs = deliveries
+      .filter((item) => item.status === "completed")
+      .reduce((value, item) => Math.max(value, Number(item.updated_at_ms) || 0), 0) || null;
+    const oldestPendingAgeMs = activeDeliveries.length
+      ? Math.max(0, now - Math.min(...activeDeliveries.map((item) => Number(item.created_at_ms) || now)))
+      : 0;
+    const queueProgressing = active === 0 || (
+      lastProgressAtMs !== null && now - lastProgressAtMs <= this.heartbeatTimeoutMs
+    );
+    const running = Boolean(this.httpServer);
     return {
-      status: "ok",
+      status: !running ? "unhealthy" : queueProgressing ? "ok" : "degraded",
       protocol_version: REMOTE_FRAME_VERSION,
-      running: Boolean(this.httpServer),
+      running,
+      process_alive: running,
+      transport_connected: this.sessions.size > 0,
+      queue_progressing: queueProgressing,
+      executor_responsive: this.sessions.size > 0,
+      last_progress_at_ms: lastProgressAtMs,
+      last_successful_result_at_ms: lastSuccessfulResultAtMs,
+      oldest_pending_age_ms: oldestPendingAgeMs,
       online_devices: this.sessions.size,
       connections: this.connections.size,
       pending_deliveries: active,
