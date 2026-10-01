@@ -198,7 +198,15 @@ function malformedExecutorResult() {
 }
 
 export class HelpPc1Adapter {
-  constructor({ invoke, dryRun = true, readEvidence = null, readCapabilities = null, preflight = null, bindExecutionContext = null } = {}) {
+  constructor({
+    invoke,
+    dryRun = true,
+    readEvidence = null,
+    readCapabilities = null,
+    preflight = null,
+    bindExecutionContext = null,
+    healthGovernor = null,
+  } = {}) {
     if (typeof invoke !== "function") throw new TypeError("invoke must be a function.");
     if (typeof dryRun !== "boolean") throw new TypeError("dryRun must be a boolean.");
     if (readEvidence !== null && typeof readEvidence !== "function") throw new TypeError("readEvidence must be a function when supplied.");
@@ -206,6 +214,7 @@ export class HelpPc1Adapter {
     if (preflight !== null && typeof preflight !== "function") throw new TypeError("preflight must be a function when supplied.");
     if ((readCapabilities === null) !== (preflight === null)) throw new TypeError("readCapabilities and preflight must be supplied together.");
     if (bindExecutionContext !== null && typeof bindExecutionContext !== "function") throw new TypeError("bindExecutionContext must be a function when supplied.");
+    if (healthGovernor !== null && typeof healthGovernor.run !== "function") throw new TypeError("healthGovernor must expose run().");
     this.name = "help-pc-1";
     this.invoke = invoke;
     this.dryRun = dryRun;
@@ -213,6 +222,7 @@ export class HelpPc1Adapter {
     this._readCapabilities = readCapabilities;
     this._preflight = preflight;
     this._bindExecutionContext = bindExecutionContext;
+    this.healthGovernor = healthGovernor;
     this.supportsPreflight = Boolean(readCapabilities && preflight);
     this.supportsExecutionContext = Boolean(bindExecutionContext);
   }
@@ -226,14 +236,33 @@ export class HelpPc1Adapter {
     });
   }
 
+  async _govern({ action, adapter = undefined, effect = "read_only", signal = null }, operation) {
+    if (!this.healthGovernor) return operation(signal);
+    return this.healthGovernor.run({ action, adapter, effect, signal, operation });
+  }
+
+  _nativeEffect(action) {
+    if (action?.metadata?.effect === "read_only") return "read_only";
+    if (action?.metadata?.effect === "side_effect") return "side_effect";
+    // Native facade requests always carry metadata.effect. For any legacy
+    // caller that omits it, default to mutation semantics rather than
+    // accidentally authorizing retry after an ambiguous timeout.
+    return "side_effect";
+  }
+
   async readCapabilities(action, context = {}) {
     if (!this.supportsPreflight) return null;
     let raw;
     try {
-      raw = await this._readCapabilities({
+      raw = await this._govern({
+        action: "capabilities.get",
+        adapter: "executor",
+        effect: "read_only",
+        signal: context.signal,
+      }, (signal) => this._readCapabilities({
         request_id: action?.id ?? null,
         action: action?.type ?? null,
-      }, context);
+      }, { ...context, signal }));
     } catch (error) {
       throw readOnlyProviderUnavailable(error, "capabilities_unavailable");
     }
@@ -253,12 +282,17 @@ export class HelpPc1Adapter {
     });
     let raw;
     try {
-      raw = await this._preflight(structuredClone(request), {
+      raw = await this._govern({
+        action: "action.preflight",
+        adapter: "executor",
+        effect: "read_only",
         signal: context.signal,
+      }, (signal) => this._preflight(structuredClone(request), {
+        signal,
         preflightAttempt: context.preflightAttempt,
         session: context.session,
         capabilitiesDigest: context.capabilitiesDigest ?? null,
-      });
+      }));
     } catch (error) {
       throw readOnlyProviderUnavailable(error, "preflight_unavailable");
     }
@@ -278,18 +312,22 @@ export class HelpPc1Adapter {
     if (!this.supportsExecutionContext) return null;
     let raw;
     try {
-      raw = await this._bindExecutionContext({
+      raw = await this._govern({
+        action: action.type,
+        effect: "read_only",
+        signal: context.signal,
+      }, (signal) => this._bindExecutionContext({
         request_id: action.id,
         action: action.type,
         params: structuredClone(action.input ?? {}),
         dry_run: this.dryRun,
       }, {
-        signal: context.signal,
+        signal,
         preflightAttempt: context.preflightAttempt,
         session: context.session,
         preflightAttestationDigest: action.preflightAttestationDigest ?? null,
         capabilitiesDigest: action.preflightCapabilitiesDigest ?? null,
-      });
+      }));
     } catch (error) {
       if (error?.name === "AbortError" || error?.code === "CANCELLED") throw error;
       const wrapped = readOnlyProviderUnavailable(error, error?.category ?? "context_binding_unavailable");
@@ -309,17 +347,21 @@ export class HelpPc1Adapter {
     try {
       const request = { request_id: action.id, action: action.type, params: structuredClone(action.input ?? {}), dry_run: this.dryRun };
       if (action.executionContextBinding?.raw) request.execution_context_binding = structuredClone(action.executionContextBinding.raw);
-      result = await this.invoke(
+      result = await this._govern({
+        action: action.type,
+        effect: this._nativeEffect(action),
+        signal: context.signal,
+      }, (signal) => this.invoke(
         request,
         {
-          signal: context.signal,
+          signal,
           executionAttempt: context.executionAttempt,
           session: context.session,
           controlActionId: action.id,
           logicalRequestId: action.correlationId ?? action.id,
           actionMetadata: structuredClone(action.metadata ?? {}),
         },
-      );
+      ));
     } catch (error) {
       if (error && typeof error === "object") {
         if (!error.dispatchState) error.dispatchState = "unknown";
@@ -365,17 +407,24 @@ export class HelpPc1Adapter {
 
   async readOutcomeEvidence(action, context) {
     if (!this._readEvidence) return { outcome: "unknown", source: this.name, requestId: action.id, reason: "no_executor_evidence_reader" };
-    const raw = await this._readEvidence({
+    const raw = await this._govern({
+      action: "outcome.lookup",
+      adapter: "outcome_journal",
+      effect: "read_only",
+      signal: context.signal,
+    }, (signal) => this._readEvidence({
       request_id: action.id,
       action: action.type,
       execution_attempt: action.executionAttempts,
     }, {
       ...context,
+      signal,
       controlActionId: action.id,
       logicalRequestId: action.correlationId ?? action.id,
       actionMetadata: structuredClone(action.metadata ?? {}),
-    });
+    }));
     if (raw === null || raw === undefined) {
+      this.healthGovernor?.markJournalIntegrity?.("MISSING", "OUTCOME_JOURNAL_MISSING");
       return { outcome: "unknown", source: this.name, requestId: action.id, reason: "journal_missing", journalMissing: true };
     }
 
@@ -387,13 +436,16 @@ export class HelpPc1Adapter {
           : null;
     if (journalPayload) {
       try {
-        return adaptExecutorOutcomeJournalLookupV1(journalPayload, {
+        const adapted = adaptExecutorOutcomeJournalLookupV1(journalPayload, {
           requestId: action.id,
           action: action.type,
           executionAttempt: action.executionAttempts,
           executionId: action.executionCorrelation?.executionId ?? executorJournalExecutionId(action.id, action.type, action.executionAttempts),
         });
+        this.healthGovernor?.markJournalIntegrity?.("OK");
+        return adapted;
       } catch (error) {
+        this.healthGovernor?.markJournalIntegrity?.("CORRUPT", error?.code ?? "EXECUTOR_JOURNAL_INVALID");
         throw invalidExecutorJournal(error);
       }
     }
