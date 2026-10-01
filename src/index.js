@@ -1,3 +1,15 @@
+export {
+  R27_CUTOVER_AUTHORITY_V1,
+  R27_COORDINATOR_HANDOFF_V1,
+  R27_DECISIONS,
+  R27_AUTHORITIES,
+  R27CutoverAuthorityError,
+  validateBridgeR23AuthorityPin,
+  loadBridgeR23AuthorityPin,
+  evaluateR27CutoverAuthority,
+  buildR27CoordinatorHandoff,
+} from "./r27-cutover-authority-gate.js";
+
 export { ControlPlane, ControlPlaneError } from "./control-plane.js";
 export {
   R26_PROGRESS_V1,
