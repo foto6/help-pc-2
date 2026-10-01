@@ -71,6 +71,8 @@ jobs:
         run: npm run test:r26-relay-progress
       - name: R27 integrated cutover authority gate
         run: npm run test:r27-cutover
+      - name: R28 independent relay freshness gate
+        run: npm run test:r28-relay-freshness
       - name: R28 independent relay freshness QA
         run: node --test test/r28-relay-freshness-gate.test.js
       - name: Full test suite
