@@ -181,7 +181,10 @@ export class NativeMcpRuntime {
 
   async healthSnapshot({ refresh = false, canary = false } = {}) {
     if (!this.healthSupervisor) return null;
-    if (refresh) await this.healthSupervisor.probeTransport();
+    if (refresh) {
+      await this.healthSupervisor.probeTransport();
+      await this.healthSupervisor.probeRelayProgress?.();
+    }
     if (canary && this.facadeSession) {
       const canaryAvailable = Array.isArray(this.initialManifest?.executor?.actions)
         && this.initialManifest.executor.actions.includes("health.get");
@@ -310,6 +313,25 @@ export class NativeMcpRuntime {
           executor_digest: manifest.executor?.digest ?? null,
         };
         throw error;
+      }
+      if (tool.effect === "side_effect"
+          && this.healthSupervisor?.shouldEnforceRelayProgress?.()) {
+        await this.healthSupervisor.probeRelayProgress({ signal: ctx.mcpReq.signal });
+        const relayReadiness = this.healthSupervisor.relayMutationReadiness();
+        if (relayReadiness?.state !== "READY") {
+          const error = new Error("Native mutation is blocked by source-bound R26 relay progress health.");
+          error.code = relayReadiness?.reason === "R26_RECONCILIATION_REQUIRED"
+            ? "R26_RECONCILIATION_REQUIRED"
+            : "R26_RELAY_PROGRESS_BLOCKED";
+          error.category = "relay_progress_health";
+          error.retryable = false;
+          error.details = {
+            reason: relayReadiness?.reason ?? "R26_RELAY_PROGRESS_UNKNOWN",
+            liveness_state: relayReadiness?.liveness_state ?? null,
+            automatic_replay: false,
+          };
+          throw error;
+        }
       }
       if (this.healthSupervisor?.shouldEnforceProducerHealth?.()
           && !["device.health", "device.ping"].includes(tool.name)) {
