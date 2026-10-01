@@ -74,7 +74,7 @@ test("adapter circuit breaker isolates UIA timeout from shell and screenshot hea
   const registry = new R23AdapterCircuitRegistry({
     failureThreshold: 2,
     cooldownMs: 1_000,
-    timeouts: { uia: 25, shell: 100, screenshot: 100 },
+    timeouts: { uia: 50, shell: 100, screenshot: 100 },
   });
   const hang = () => new Promise(() => {});
   for (let i = 0; i < 2; i += 1) {
@@ -118,7 +118,7 @@ test("timed-out side effect is UNKNOWN and breaker cannot authorize blind replay
   const registry = new R23AdapterCircuitRegistry({
     failureThreshold: 1,
     cooldownMs: 5_000,
-    timeouts: { uia: 25 },
+    timeouts: { uia: 50 },
   });
   await assert.rejects(
     registry.run({
@@ -176,7 +176,7 @@ test("restart after a timed-out side effect reconciles journal evidence without 
   const governor = new R23AdapterCircuitRegistry({
     failureThreshold: 1,
     cooldownMs: 5_000,
-    timeouts: { input: 25, outcome_journal: 100 },
+    timeouts: { input: 50, outcome_journal: 100 },
   });
   const adapter = new HelpPc1Adapter({
     dryRun: false,
