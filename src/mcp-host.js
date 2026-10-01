@@ -189,7 +189,7 @@ export class NativeMcpRuntime {
         this.healthSupervisor.noteCanaryUnavailable("R23_CANARY_CAPABILITY_UNAVAILABLE");
         return this.healthSupervisor.snapshot();
       }
-      await this.healthSupervisor.runCanary({
+      const canary = await this.healthSupervisor.runCanary({
         sessionId: this.facadeSession.session_id,
         invoke: async ({ requestId, signal }) => {
           let response = null;
@@ -211,6 +211,15 @@ export class NativeMcpRuntime {
           return response;
         },
       });
+      if (canary?.ok && canary.data?.runtime_health) {
+        try {
+          this.healthSupervisor.ingestProducerRuntimeHealth(canary.data.runtime_health);
+        } catch (error) {
+          this.healthSupervisor.noteProducerRuntimeHealthError(
+            error?.code ?? "R24_PRODUCER_HEALTH_INVALID",
+          );
+        }
+      }
     }
     return this.healthSupervisor.snapshot();
   }
@@ -302,6 +311,25 @@ export class NativeMcpRuntime {
         };
         throw error;
       }
+      if (this.healthSupervisor?.shouldEnforceProducerHealth?.()
+          && !["device.health", "device.ping"].includes(tool.name)) {
+        const readiness = this.healthSupervisor.producerActionReadiness(
+          tool.executorAction,
+          { effect: tool.effect },
+        );
+        if (readiness?.state === "BLOCKED") {
+          const error = new Error("Native action is blocked by source-bound R24 runtime health.");
+          error.code = "R24_ACTION_HEALTH_BLOCKED";
+          error.category = "adapter_health";
+          error.retryable = false;
+          error.details = {
+            adapter: readiness.adapter,
+            reason: readiness.reason,
+            tool: tool.name,
+          };
+          throw error;
+        }
+      }
       await this.ensureFacadeSession({ allowExpiredRenewal: true });
       const request = {
         contract_version: NATIVE_CONTROL_PROTOCOL_V1,
@@ -315,6 +343,19 @@ export class NativeMcpRuntime {
       this.healthSupervisor?.noteRequest();
       if (response?.status === "completed") this.healthSupervisor?.noteResult();
       if (tool.name === "device.health" && response?.status === "completed" && this.healthSupervisor) {
+        let ingestionError = null;
+        const runtimeHealth = response.data?.runtime_health;
+        if (!runtimeHealth || typeof runtimeHealth !== "object" || Array.isArray(runtimeHealth)) {
+          ingestionError = "R24_PRODUCER_HEALTH_MISSING";
+          this.healthSupervisor.noteProducerRuntimeHealthError(ingestionError);
+        } else {
+          try {
+            this.healthSupervisor.ingestProducerRuntimeHealth(runtimeHealth);
+          } catch (error) {
+            ingestionError = error?.code ?? "R24_PRODUCER_HEALTH_INVALID";
+            this.healthSupervisor.noteProducerRuntimeHealthError(ingestionError);
+          }
+        }
         const health = await this.healthSnapshot({ refresh: true, canary: true });
         response = {
           ...response,
@@ -322,6 +363,13 @@ export class NativeMcpRuntime {
             ...(response.data && typeof response.data === "object" && !Array.isArray(response.data)
               ? response.data : { executor_health: response.data ?? null }),
             r23_health: health,
+            r25_runtime_health_ingestion: {
+              accepted: ingestionError === null,
+              error_code: ingestionError,
+              producer_sha: health?.producer_runtime_health?.producer_sha ?? null,
+              source_state: health?.producer_runtime_health?.source_state ?? "UNKNOWN",
+              cutover_decision: health?.cutover_readiness?.decision ?? "NO_LIVE_CUTOVER",
+            },
           },
         };
       }
