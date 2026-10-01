@@ -1,0 +1,58 @@
+{
+  "contract_version": "pc.native.r28.cutover_handoff.v1",
+  "decision": "BLOCKED",
+  "release_gate": "NO_LIVE_CUTOVER",
+  "reason": "LIVE_BRIDGE_R24_AND_RELAY_R27_EVIDENCE_NOT_COLLECTED_IN_THIS_MILESTONE",
+  "authorities": {
+    "native_r27": {
+      "repository": "foto6/help-pc-2",
+      "sha": "75b2794821160b240c7eef1410a81fddbe795948",
+      "ci_run": 36864305617
+    },
+    "bridge_r24": {
+      "repository": "foto6/WebAIBridge",
+      "branch": "agent/bridge-r24-live-preflight-20261001",
+      "sha": "4ff6315241df16bcfa4750b15f3a3a315296dc50",
+      "ci_run": 36865003806,
+      "contract": "bridge.r24_live_preflight.v1"
+    },
+    "relay_r27": {
+      "repository": "foto6/help-pc-1",
+      "branch": "agent/pc-relay-r27-evidence-delivery-20261001",
+      "sha": "91600c19763ca8a0871d078a3f15ac97fb4f039a",
+      "ci_run": 36866129515,
+      "contract": "pc_relay.progress_evidence.v1"
+    },
+    "executor_r24": {
+      "repository": "foto6/help-pc-1",
+      "branch": "agent/pc-executor-r24-runtime-health-20261001",
+      "sha": "60ba0ce92bf2f3cdd89e3213dba40793c6a90d8b",
+      "ci_run": 36806258696
+    }
+  },
+  "required_live_evidence": [
+    "fresh exact bridge.r24_live_preflight.v1 snapshot with all required gates and observations PASS",
+    "fresh exact Bridge R24 producer checkout binding",
+    "fresh pc_relay.progress_evidence.v1 status=ok with approved reader/module digests",
+    "fresh exact Relay R27 producer checkout binding",
+    "fresh R25 pc_executor.runtime_health.v1 snapshot with healthy journal and required adapters",
+    "fresh exact PC Executor R24 producer checkout binding",
+    "durable UNKNOWN side-effect inventory"
+  ],
+  "stopping_rules": [
+    "STOP on any moving producer SHA, stale binding, schema/manifest/blob/artifact drift or digest mismatch.",
+    "STOP on any Bridge R24 UNKNOWN/DEGRADED/BLOCK evidence, ambiguous ownership, non-quiescent queue, code reload, stale status/health or unhealthy CDP.",
+    "STOP unless Relay R27 status=ok, atomic binding validates, evidence is fresh, liveness=healthy_progressing, ownership is unambiguous and the relay queue is empty.",
+    "STOP if R25 runtime health, generation, journal or required adapter health is unacceptable.",
+    "STOP and reconcile every UNKNOWN side effect; never replay it after recovery.",
+    "No live cutover action is encoded in this handoff."
+  ],
+  "read_only_diagnostics_allowed": true,
+  "live_cutover_authorized": false,
+  "mutation_execution_authorized": false,
+  "automatic_replay_authorized": false,
+  "automatic_restart_authorized": false,
+  "automatic_kill_authorized": false,
+  "executable_live_cutover_action": null,
+  "executable_commands": []
+}
