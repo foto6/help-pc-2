@@ -1,5 +1,19 @@
 export { ControlPlane, ControlPlaneError } from "./control-plane.js";
 export {
+  R26_PROGRESS_V1,
+  R26_LIVENESS_V1,
+  R26_CONSUMER_V1,
+  R26_PIN_V1,
+  R26_PRODUCER_PIN,
+  R26RelayProgressConsumerError,
+  R26RelayProgressConsumer,
+  validateR26ProducerPin,
+  validateVendoredR26Artifacts,
+  validateR26Progress,
+  validateR26Liveness,
+} from "./r26-relay-progress-consumer.js";
+
+export {
   R24_RUNTIME_HEALTH_V1,
   R25_R24_CONSUMER_V1,
   R25_R24_PIN_V1,
