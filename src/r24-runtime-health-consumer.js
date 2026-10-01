@@ -158,6 +158,9 @@ function validateAdapter(value, name, rootGeneration) {
   if (!value.diagnostics || typeof value.diagnostics !== "object" || Array.isArray(value.diagnostics)) {
     fail("R24_HEALTH_SCHEMA_DRIFT", `${where}.diagnostics must be an object`);
   }
+  if (name === "uia" && value.last_failure_kind === "timeout" && value.timeout_count < 1) {
+    fail("R24_HEALTH_UIA_TIMEOUT_DRIFT", "UIA timeout evidence requires timeout_count >= 1");
+  }
   return structuredClone(value);
 }
 
@@ -303,6 +306,16 @@ export function validateR24RuntimeHealthEnvelope(payload, { requireKnownGenerati
     adapters[name] = validateAdapter(payload.adapters[name], name, generation);
   }
   const outcomeJournal = validateJournal(payload.outcome_journal);
+  const journalAdapter = adapters.outcome_journal;
+  for (const key of [
+    "integrity", "reason", "bytes_checked", "record_count",
+    "journal_sha256", "corruption", "bounded", "max_bytes",
+  ]) {
+    if (JSON.stringify(journalAdapter.diagnostics?.[key] ?? null)
+        !== JSON.stringify(outcomeJournal[key] ?? null)) {
+      fail("R24_HEALTH_JOURNAL_DRIFT", `outcome_journal adapter diagnostics drifted at ${key}`);
+    }
+  }
   exactKeys(payload.summary, ["responsive", "degraded", "unhealthy", "unknown"], "runtime_health.summary");
   const computed = { responsive: 0, degraded: 0, unhealthy: 0, unknown: 0 };
   for (const entry of Object.values(adapters)) computed[entry.state] += 1;
@@ -419,6 +432,7 @@ export class R24RuntimeHealthConsumer {
       this.lastError = null;
       return structuredClone(snapshot);
     } catch (error) {
+      this.last = null;
       this.lastError = {
         code: error?.code ?? "R24_HEALTH_INVALID",
         observed_at_ms: this.clock(),
@@ -427,8 +441,29 @@ export class R24RuntimeHealthConsumer {
     }
   }
 
+  #currentSnapshot() {
+    if (!this.last) return null;
+    const snapshot = structuredClone(this.last);
+    const observedAtMs = Date.parse(snapshot.observed_at);
+    const ageMs = this.clock() - observedAtMs;
+    snapshot.age_ms = Math.max(0, ageMs);
+    if (ageMs > this.maxAgeMs) {
+      snapshot.freshness = "stale";
+      snapshot.source_state = "STALE";
+      snapshot.system_state = "UNKNOWN";
+      snapshot.cutover.producer_health_fresh = false;
+    } else if (ageMs < -this.maxFutureSkewMs) {
+      snapshot.freshness = "future";
+      snapshot.source_state = "UNKNOWN";
+      snapshot.system_state = "UNKNOWN";
+      snapshot.cutover.producer_health_fresh = false;
+    }
+    return snapshot;
+  }
+
   snapshot() {
-    return this.last ? structuredClone(this.last) : {
+    const current = this.#currentSnapshot();
+    return current ?? {
       contract_version: R25_R24_CONSUMER_V1,
       producer_contract: R24_RUNTIME_HEALTH_V1,
       producer_repository: R24_PRODUCER_PIN.producer_repository,
