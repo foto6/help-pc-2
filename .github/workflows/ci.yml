@@ -15,6 +15,7 @@ on:
       - agent/native-mcp-r25-r24-health-consumer-20261001
       - agent/native-mcp-r26-relay-progress-consumer-20261001
       - agent/native-mcp-r27-cutover-authority-gate-20261001
+      - agent/native-mcp-r28-relay-freshness-qa-20261001
   pull_request:
 
 permissions:
@@ -70,6 +71,8 @@ jobs:
         run: npm run test:r26-relay-progress
       - name: R27 integrated cutover authority gate
         run: npm run test:r27-cutover
+      - name: R28 independent relay freshness QA
+        run: node --test test/r28-relay-freshness-gate.test.js
       - name: Full test suite
         run: npm test
       - name: Generate exact-head R27 coordinator handoff
