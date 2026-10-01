@@ -1,5 +1,17 @@
 export { ControlPlane, ControlPlaneError } from "./control-plane.js";
 export {
+  R23_HEALTH_V1,
+  R23_LIFECYCLE_V1,
+  R23_LAUNCHER_LIVENESS_V1,
+  R23_LIFECYCLE_STATES,
+  R23_DEFAULT_ADAPTER_TIMEOUTS,
+  R23AdapterCircuitRegistry,
+  R23HealthSupervisor,
+  adapterNameForAction,
+  projectActionLifecycle,
+  launcherLivenessDecision,
+} from "./r23-health.js";
+export {
   ProviderRegistry,
   VerificationRegistry,
   FunctionProvider,
