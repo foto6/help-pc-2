@@ -65,5 +65,49 @@
       "jsonNewRequests": 0
     }
   },
-  "release_gate": "NO_LIVE_CUTOVER"
+  "release_gate": "NO_LIVE_CUTOVER",
+  "candidate_manifests": {
+    "ubuntu": {
+      "object": "bridge.r23_candidate_manifest",
+      "sourceSha": "7e0d5e07f93990f103358850f8f3c10c1563f83a",
+      "sourceBranch": "agent/bridge-r23-cutover-rehearsal-20261001",
+      "baselineSha": "ba4525d0dc9ad808af73d766d0bb9ed0e9eee21b",
+      "stateSchemaVersion": 13,
+      "configDigest": "1d7d89ba22792fe4fceaf4113b6c825514d71774513423350a5e5abf1d64d17f",
+      "stateDigest": "4d51f7e41a43e1e1ec5ef32b07aa5601daf1c2d4a207e196e64788ffaade6780",
+      "backupStateDigest": "4d51f7e41a43e1e1ec5ef32b07aa5601daf1c2d4a207e196e64788ffaade6780",
+      "backupConfigDigest": "1d7d89ba22792fe4fceaf4113b6c825514d71774513423350a5e5abf1d64d17f",
+      "candidatePort": 0,
+      "cdpPort": 33055,
+      "validationCommand": "npm run validate:r23",
+      "releaseGate": "NO_LIVE_DEPLOY",
+      "rollback": {
+        "ready": true,
+        "reason": "exact_identity_required_before_execution",
+        "command_count": 8
+      },
+      "digest": "11471c274f1fccb488986077535d3730ea238058095ced0c7669e7e10c555670"
+    },
+    "windows": {
+      "object": "bridge.r23_candidate_manifest",
+      "sourceSha": "7e0d5e07f93990f103358850f8f3c10c1563f83a",
+      "sourceBranch": "agent/bridge-r23-cutover-rehearsal-20261001",
+      "baselineSha": "ba4525d0dc9ad808af73d766d0bb9ed0e9eee21b",
+      "stateSchemaVersion": 13,
+      "configDigest": "1d7d89ba22792fe4fceaf4113b6c825514d71774513423350a5e5abf1d64d17f",
+      "stateDigest": "d59a1264fd5cc1f6a3d91163e39eac5e34268a87af50543f92cb785b543be8b6",
+      "backupStateDigest": "d59a1264fd5cc1f6a3d91163e39eac5e34268a87af50543f92cb785b543be8b6",
+      "backupConfigDigest": "1d7d89ba22792fe4fceaf4113b6c825514d71774513423350a5e5abf1d64d17f",
+      "candidatePort": 0,
+      "cdpPort": 57864,
+      "validationCommand": "npm run validate:r23",
+      "releaseGate": "NO_LIVE_DEPLOY",
+      "rollback": {
+        "ready": true,
+        "reason": "exact_identity_required_before_execution",
+        "command_count": 8
+      },
+      "digest": "91b50e9d14702e94fad08b0ccadbaa8c027adddb8cdf38da83c869bd9e4b0a94"
+    }
+  }
 }
