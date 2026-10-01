@@ -136,7 +136,12 @@ export async function createConfiguredNativeMcpRuntime({
         ...r24Options,
       })
     : null;
-  const r26Required = testConfig === undefined || healthConfig.r26?.enabled === true;
+  // R26 evidence is a distinct producer contract. Do not translate the
+  // existing native-relay control API into pc_relay.* health or guess fields.
+  // Activate mutation gating only when an exact R26 evidence reader is wired,
+  // or when an isolated test explicitly enables the consumer.
+  const r26Required = typeof bridge.readRelayProgressHealth === "function"
+    || healthConfig.r26?.enabled === true;
   const r26Artifacts = r26Required ? validateVendoredR26Artifacts() : null;
   const r26Options = { ...(healthConfig.r26 ?? {}) };
   delete r26Options.enabled;
