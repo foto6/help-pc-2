@@ -813,20 +813,22 @@ export class NativeControlFacade {
     this.#persist();
   }
 
-  async #advance(session, request, tool) {
+  async #advance(session, request, tool, { healthCanary = false } = {}) {
     let action = request.actionId ? this.controlPlane.getAction(request.actionId) : null;
     if (action && !TERMINAL.has(action.status) && !RECONCILING.has(action.status)) {
-      await this.controlPlane.processNext();
+      if (healthCanary) await this.controlPlane.processSpecificReadOnly(request.actionId);
+      else await this.controlPlane.processNext();
       action = this.controlPlane.getAction(request.actionId);
     } else if (action && RECONCILING.has(action.status)) {
-      await this.controlPlane.processNext();
+      if (healthCanary) await this.controlPlane.processSpecificReadOnly(request.actionId);
+      else await this.controlPlane.processNext();
       action = this.controlPlane.getAction(request.actionId);
     }
     if (!action) throw new NativeFacadeError("Durable action record is missing.", { code: "ACTION_RECORD_MISSING", category: "state", httpStatus: 500 });
     return this.#projectAction(session, request, tool, action);
   }
 
-  async #advanceWithCancellation(session, request, tool, signal) {
+  async #advanceWithCancellation(session, request, tool, signal, options = {}) {
     let onAbort = null;
     if (signal) {
       onAbort = () => {
@@ -837,7 +839,7 @@ export class NativeControlFacade {
       else signal.addEventListener("abort", onAbort, { once: true });
     }
     try {
-      return await this.#advance(session, request, tool);
+      return await this.#advance(session, request, tool, options);
     } finally {
       if (signal && onAbort) signal.removeEventListener("abort", onAbort);
     }
@@ -856,6 +858,13 @@ export class NativeControlFacade {
     if (!tool) throw new NativeFacadeError(`Unknown native tool '${envelope.tool}'.`, { code: "TOOL_NOT_FOUND", category: "tool", httpStatus: 404 });
     const args = envelope.arguments ?? {};
     if (!args || typeof args !== "object" || Array.isArray(args)) throw new NativeFacadeError("arguments must be an object.", { code: "INVALID_ARGUMENT" });
+    const healthCanary = envelope.health_canary === true;
+    if (healthCanary && (tool.name !== "device.ping" || tool.effect !== "read_only" ||
+        Object.keys(args).length !== 0 || envelope.page != null)) {
+      throw new NativeFacadeError("health_canary is restricted to an unpaged device.ping request.", {
+        code: "INVALID_HEALTH_CANARY", category: "health", httpStatus: 400,
+      });
+    }
     if (hasProtectedPath(args)) {
       throw new NativeFacadeError("Protected path is outside facade dispatch scope.", { code: "PROTECTED_PATH_BLOCKED", category: "policy", httpStatus: 403 });
     }
@@ -925,7 +934,7 @@ export class NativeControlFacade {
       if (request.fingerprint !== fingerprint) throw new NativeFacadeError("Duplicate request_id was reused with different input.", { code: "DUPLICATE_REQUEST_MISMATCH", category: "idempotency", httpStatus: 409 });
       if (request.status === "completed" || request.status === "cancelled" || request.status === "error") return clone(request.response);
       if (!request.actionId) this.#ensureDurableAction(session, request, tool, page);
-      return this.#advanceWithCancellation(session, request, tool, signal);
+      return this.#advanceWithCancellation(session, request, tool, signal, { healthCanary });
     }
 
     request = {
@@ -945,7 +954,7 @@ export class NativeControlFacade {
     this.#persist();
 
     this.#ensureDurableAction(session, request, tool, page);
-    return this.#advanceWithCancellation(session, request, tool, signal);
+    return this.#advanceWithCancellation(session, request, tool, signal, { healthCanary });
   }
 
   #lookupSession(sessionId, resumeToken = null) {
