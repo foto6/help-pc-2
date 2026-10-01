@@ -51,8 +51,12 @@ test("MCP advertises adapter health and device.health runs only bounded read-onl
   const adapter = new HelpPc1Adapter({
     dryRun: false,
     healthGovernor: circuits,
-    invoke: async (request) => {
-      calls.push({ request_id: request.request_id, action: request.action });
+    invoke: async (request, context) => {
+      calls.push({
+        request_id: request.request_id,
+        logical_request_id: context.logicalRequestId,
+        action: request.action,
+      });
       if (request.action === "system.health") {
         return success(request, { executor: "alive" });
       }
@@ -128,5 +132,6 @@ test("MCP advertises adapter health and device.health runs only bounded read-onl
   assert.equal(body.data.r23_health.per_adapter_health.shell.status, "HEALTHY");
   assert.deepEqual(calls.map((item) => item.action), ["system.health", "health.get"]);
   assert.equal(controlPlane.snapshot().queue.length, 0);
-  assert.ok(calls[1].request_id.startsWith("r23-canary:"));
+  assert.ok(calls[1].logical_request_id.startsWith("r23-canary:"));
+  assert.notEqual(calls[1].request_id, calls[1].logical_request_id);
 });
