@@ -226,9 +226,29 @@ export function validateBridgeR23AuthorityPin(pin) {
         || manifest.releaseGate !== "NO_LIVE_DEPLOY"
         || manifest.rollback?.ready !== true
         || manifest.rollback?.reason !== "exact_identity_required_before_execution"
-        || manifest.rollback?.command_count !== 8
+        || !Array.isArray(manifest.rollback?.commands)
+        || manifest.rollback.commands.length !== 8
         || manifest.digest !== pin.ci_artifacts[os].candidate_manifest_digest) {
       fail("R27_BRIDGE_MANIFEST_DRIFT", `Bridge R23 ${os} candidate manifest drifted`);
+    }
+    const manifestWithoutDigest = {
+      object: manifest.object,
+      sourceSha: manifest.sourceSha,
+      sourceBranch: manifest.sourceBranch,
+      baselineSha: manifest.baselineSha,
+      stateSchemaVersion: manifest.stateSchemaVersion,
+      configDigest: manifest.configDigest,
+      stateDigest: manifest.stateDigest,
+      backupStateDigest: manifest.backupStateDigest,
+      backupConfigDigest: manifest.backupConfigDigest,
+      candidatePort: manifest.candidatePort,
+      cdpPort: manifest.cdpPort,
+      validationCommand: manifest.validationCommand,
+      releaseGate: manifest.releaseGate,
+      rollback: clone(manifest.rollback),
+    };
+    if (digestJson(manifestWithoutDigest) !== manifest.digest) {
+      fail("R27_BRIDGE_MANIFEST_DRIFT", `Bridge R23 ${os} candidate manifest digest mismatch`);
     }
   }
   return true;
