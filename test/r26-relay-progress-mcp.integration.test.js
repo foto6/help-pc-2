@@ -26,6 +26,7 @@ function progressFixture() {
   const value = JSON.parse(readFileSync(fixtureUrl, "utf8"));
   value.source.branch = R26_PRODUCER_PIN.branch;
   value.source.startup_head = R26_PRODUCER_PIN.sha;
+  value.source.relay_script_sha256 = R26_PRODUCER_PIN.relay_script_sha256;
   return value;
 }
 
