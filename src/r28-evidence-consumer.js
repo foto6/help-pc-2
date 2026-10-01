@@ -95,6 +95,44 @@ const RELAY_ERROR_CLASSES = new Set([
   "read_error",
 ]);
 
+const BRIDGE_SOURCE_BLOBS = Object.freeze({
+  ".github/workflows/r24-live-preflight.yml": "1553ace9c1ca5c6be037a3b560043285d750e67d",
+  "app/docs/BRIDGE_R24_LIVE_PREFLIGHT.md": "c32deadd02b1486c91268c20d93a79403a332bbe",
+  "app/live-preflight-r24.js": "4e5d2c9765ed51848564e85582d990872a7349b5",
+  "app/r24-live-preflight.js": "fa9e0b363ea35eca595ec2b049911be9284c1e1b",
+  "app/r24-live-preflight-contract.test.js": "17b14b318dba64da03b4affc904da5e7392ec856",
+  "app/r24-live-preflight-fixtures.js": "ab6f7b9284077568593ca0ed9f1321a75d77cc16",
+  "app/r24-readiness-report.js": "a561986d9ff526422c35253ba05c4b3165c35c63",
+});
+const BRIDGE_CI_ARTIFACTS = Object.freeze({
+  ubuntu: Object.freeze({
+    artifact_id: 11163470263,
+    name: "r24-readiness-ubuntu-latest",
+    archive_digest: "sha256:46399fa77887c1c2617a218f97ba266a1ebd2a3ea80e69b7f7b0c275e7dbbf51",
+    readiness_json_sha256: "180206a5e5f859c3ee4a97823b3e38070dcacd8bdc72b055502ba5a4b9a67a55",
+    fixture_json_sha256: "9186a39468a9c8c1a4b0c1f648cba38562c694d0d1910fa3c4da4abb3270b4eb",
+  }),
+  windows: Object.freeze({
+    artifact_id: 11163625213,
+    name: "r24-readiness-windows-latest",
+    archive_digest: "sha256:2e32c7a3b548668fa2d169cb390c92b57a360b6ad81f216fa51a74e628dc305a",
+    readiness_json_sha256: "79ec2c064bc32ed3e9674f44b985041dbcfefff404124f2d9ea93cf6f2e24a6f",
+    fixture_json_sha256: "4cbd7ad6f342db83d11d1993fdf53262633753497faacf9e5d5d0e4b87373eb4",
+  }),
+});
+const RELAY_SOURCE_BLOBS = Object.freeze({
+  "src/pc_relay/evidence.py": "665684b937b7e1d2e06ef3541bc535082b6a47a2",
+  "tools/read_relay_progress_evidence.py": "bba58cf4e6baa9d5ecc4e5435e6b684cd5272314",
+  "schemas/pc_relay.progress_evidence.v1.schema.json": "73962a7a51e01f72c8e58f240339f4bb4d30714d",
+  "src/pc_relay/progress.py": "c00ccc58f75de463898cd26bb6c4cfeab25a2ca6",
+  "schemas/pc_relay.progress.v1.schema.json": "04b8da53f638a244a668c8f0a9be4c9b165e1c5e",
+  "schemas/pc_relay.liveness_probe.v1.schema.json": "7990e850ef2c143a3d718bd15101c142feb80e1e",
+  "tests/fixtures/relay_progress_evidence_v1/evidence.example.json": "1c75abe63a5cf5af1531d6a21371d437cfa8a178",
+  "conformance/pc_relay.progress_evidence.v1/manifest.json": "20904979c5d3f392ab649f2380d6cd0a30908a27",
+  "conformance/pc_relay.progress_evidence.v1/binding-report.md": "43f47a0a5c5881b75d7d90f3656bcbd116ef1676",
+  ".github/workflows/r27-relay-evidence-delivery.yml": "771cf42df7669599f224ab31e04de2ab0ae3a63c",
+});
+
 export class R28EvidenceError extends Error {
   constructor(code, message = code, details = null) {
     super(message);
@@ -211,9 +249,7 @@ export function loadR28Pins({
   return { root, bridgeDir, relayDir, bridgePin, relayPin };
 }
 
-export function validateR28PinnedArtifacts(options = {}) {
-  const { bridgeDir, relayDir, bridgePin, relayPin } = loadR28Pins(options);
-
+export function validateR28BridgePin(bridgePin) {
   exactKeys(bridgePin, [
     "contract_version", "producer_repository", "producer_branch", "producer_sha",
     "producer_ci_run", "live_contract", "schema_authority", "source_blobs",
@@ -226,30 +262,36 @@ export function validateR28PinnedArtifacts(options = {}) {
       || bridgePin.producer_ci_run !== R28_AUTHORITIES.bridge_r24.ci_run
       || bridgePin.live_contract !== BRIDGE_R24_LIVE_PREFLIGHT_V1
       || bridgePin.release_gate !== "NO_LIVE_CUTOVER"
-      || bridgePin.schema_authority?.standalone_json_schema_published !== false) {
+      || bridgePin.schema_authority?.standalone_json_schema_published !== false
+      || bridgePin.schema_authority?.evaluator_path !== "app/live-preflight-r24.js"
+      || bridgePin.schema_authority?.evaluator_blob !== BRIDGE_SOURCE_BLOBS["app/live-preflight-r24.js"]
+      || bridgePin.schema_authority?.contract_test_path !== "app/r24-live-preflight-contract.test.js"
+      || bridgePin.schema_authority?.contract_test_blob !== BRIDGE_SOURCE_BLOBS["app/r24-live-preflight-contract.test.js"]) {
     fail("R28_BRIDGE_PRODUCER_DRIFT", "Bridge R24 producer pin drifted");
   }
-
-  const bridgeVendored = {
-    "app/live-preflight-r24.js": ["live-preflight-r24.js", "4e5d2c9765ed51848564e85582d990872a7349b5"],
-    "app/r24-live-preflight-contract.test.js": ["r24-live-preflight-contract.test.js", "17b14b318dba64da03b4affc904da5e7392ec856"],
-    "app/r24-live-preflight-fixtures.js": ["r24-live-preflight-fixtures.js", "ab6f7b9284077568593ca0ed9f1321a75d77cc16"],
-    "app/r24-readiness-report.js": ["r24-readiness-report.js", "a561986d9ff526422c35253ba05c4b3165c35c63"],
-  };
-  for (const [producerPath, [vendoredName, expectedBlob]] of Object.entries(bridgeVendored)) {
-    if (bridgePin.source_blobs?.[producerPath] !== expectedBlob) {
-      fail("R28_BRIDGE_BLOB_DRIFT", `Bridge source blob drifted: ${producerPath}`);
+  exactKeys(bridgePin.source_blobs, Object.keys(BRIDGE_SOURCE_BLOBS), "Bridge R24 source_blobs");
+  for (const [path, expected] of Object.entries(BRIDGE_SOURCE_BLOBS)) {
+    if (bridgePin.source_blobs[path] !== expected) {
+      fail("R28_BRIDGE_BLOB_DRIFT", `Bridge source blob drifted: ${path}`);
     }
-    const actual = gitBlobSha(readFileSync(join(bridgeDir, vendoredName)));
-    if (actual !== expectedBlob) {
-      fail("R28_BRIDGE_VENDORED_BLOB_DRIFT", `Vendored Bridge source drifted: ${vendoredName}`);
+  }
+  exactKeys(bridgePin.ci_artifacts, ["ubuntu", "windows"], "Bridge R24 ci_artifacts");
+  for (const os of ["ubuntu", "windows"]) {
+    exactKeys(bridgePin.ci_artifacts[os], Object.keys(BRIDGE_CI_ARTIFACTS[os]), `Bridge R24 ci_artifacts.${os}`);
+    for (const [key, expected] of Object.entries(BRIDGE_CI_ARTIFACTS[os])) {
+      if (bridgePin.ci_artifacts[os][key] !== expected) {
+        fail("R28_BRIDGE_ARTIFACT_DRIFT", `Bridge R24 ${os} artifact drifted: ${key}`);
+      }
     }
   }
   if (JSON.stringify(bridgePin.required_gate_ids) !== JSON.stringify(BRIDGE_REQUIRED_GATES)
       || JSON.stringify(bridgePin.allowed_gate_states) !== JSON.stringify(["PASS", "DEGRADED", "BLOCK", "UNKNOWN"])) {
     fail("R28_BRIDGE_CONTRACT_DRIFT", "Bridge R24 gate contract drifted");
   }
+  return true;
+}
 
+export function validateR28RelayPin(relayPin) {
   exactKeys(relayPin, [
     "contract_version", "producer_repository", "producer_branch", "producer_sha",
     "producer_ci_run", "evidence_contract", "manifest_contract", "upstream_r26_start_sha",
@@ -267,7 +309,52 @@ export function validateR28PinnedArtifacts(options = {}) {
       || relayPin.release_gate !== "NO_LIVE_CUTOVER") {
     fail("R28_RELAY_PRODUCER_DRIFT", "Relay R27 producer pin drifted");
   }
+  exactKeys(relayPin.source_blobs, Object.keys(RELAY_SOURCE_BLOBS), "Relay R27 source_blobs");
+  for (const [path, expected] of Object.entries(RELAY_SOURCE_BLOBS)) {
+    if (relayPin.source_blobs[path] !== expected) {
+      fail("R28_RELAY_BLOB_DRIFT", `Relay source blob drifted: ${path}`);
+    }
+  }
+  exactKeys(relayPin.delivery, [
+    "mechanism", "source_path", "read_only", "queue_side_effects",
+    "acknowledges_requests", "creates_leases", "triggers_retry", "triggers_replay",
+    "process_enumeration", "git_operations",
+  ], "Relay R27 delivery");
+  if (relayPin.delivery.mechanism !== "bounded_local_file_stdio"
+      || relayPin.delivery.source_path !== ".pc-relay/progress.v1.json"
+      || relayPin.delivery.read_only !== true
+      || relayPin.delivery.queue_side_effects !== false
+      || relayPin.delivery.acknowledges_requests !== false
+      || relayPin.delivery.creates_leases !== false
+      || relayPin.delivery.triggers_retry !== false
+      || relayPin.delivery.triggers_replay !== false
+      || relayPin.delivery.process_enumeration !== false
+      || relayPin.delivery.git_operations !== false) {
+    fail("R28_RELAY_DELIVERY_DRIFT", "Relay R27 delivery semantics drifted");
+  }
+  return true;
+}
 
+export function validateR28PinnedArtifacts(options = {}) {
+  const { bridgeDir, relayDir, bridgePin, relayPin } = loadR28Pins(options);
+  validateR28BridgePin(bridgePin);
+  validateR28RelayPin(relayPin);
+
+  const bridgeVendored = {
+    "app/live-preflight-r24.js": ["live-preflight-r24.js", "4e5d2c9765ed51848564e85582d990872a7349b5"],
+    "app/r24-live-preflight-contract.test.js": ["r24-live-preflight-contract.test.js", "17b14b318dba64da03b4affc904da5e7392ec856"],
+    "app/r24-live-preflight-fixtures.js": ["r24-live-preflight-fixtures.js", "ab6f7b9284077568593ca0ed9f1321a75d77cc16"],
+    "app/r24-readiness-report.js": ["r24-readiness-report.js", "a561986d9ff526422c35253ba05c4b3165c35c63"],
+  };
+  for (const [producerPath, [vendoredName, expectedBlob]] of Object.entries(bridgeVendored)) {
+    if (bridgePin.source_blobs?.[producerPath] !== expectedBlob) {
+      fail("R28_BRIDGE_BLOB_DRIFT", `Bridge source blob drifted: ${producerPath}`);
+    }
+    const actual = gitBlobSha(readFileSync(join(bridgeDir, vendoredName)));
+    if (actual !== expectedBlob) {
+      fail("R28_BRIDGE_VENDORED_BLOB_DRIFT", `Vendored Bridge source drifted: ${vendoredName}`);
+    }
+  }
   const relayVendored = {
     "schemas/pc_relay.progress_evidence.v1.schema.json": ["pc_relay.progress_evidence.v1.schema.json", "73962a7a51e01f72c8e58f240339f4bb4d30714d"],
     "schemas/pc_relay.progress.v1.schema.json": ["pc_relay.progress.v1.schema.json", "04b8da53f638a244a668c8f0a9be4c9b165e1c5e"],
@@ -306,8 +393,18 @@ export function validateR28PinnedArtifacts(options = {}) {
     fail("R28_RELAY_MANIFEST_DRIFT", "Relay R27 consumer manifest drifted");
   }
   const manifestBlobs = Object.fromEntries(manifest.source_blobs.map((item) => [item.path, item.git_blob_sha]));
-  for (const [path, expected] of Object.entries(relayPin.source_blobs)) {
-    if (manifestBlobs[path] !== undefined && manifestBlobs[path] !== expected) {
+  const manifestExpected = {
+    "src/pc_relay/evidence.py": RELAY_SOURCE_BLOBS["src/pc_relay/evidence.py"],
+    "tools/read_relay_progress_evidence.py": RELAY_SOURCE_BLOBS["tools/read_relay_progress_evidence.py"],
+    "schemas/pc_relay.progress_evidence.v1.schema.json": RELAY_SOURCE_BLOBS["schemas/pc_relay.progress_evidence.v1.schema.json"],
+    "src/pc_relay/progress.py": RELAY_SOURCE_BLOBS["src/pc_relay/progress.py"],
+    "schemas/pc_relay.progress.v1.schema.json": RELAY_SOURCE_BLOBS["schemas/pc_relay.progress.v1.schema.json"],
+    "schemas/pc_relay.liveness_probe.v1.schema.json": RELAY_SOURCE_BLOBS["schemas/pc_relay.liveness_probe.v1.schema.json"],
+    "tests/fixtures/relay_progress_evidence_v1/evidence.example.json": RELAY_SOURCE_BLOBS["tests/fixtures/relay_progress_evidence_v1/evidence.example.json"],
+  };
+  exactKeys(manifestBlobs, Object.keys(manifestExpected), "Relay R27 manifest.source_blobs");
+  for (const [path, expected] of Object.entries(manifestExpected)) {
+    if (manifestBlobs[path] !== expected) {
       fail("R28_RELAY_MANIFEST_BLOB_DRIFT", `Relay manifest blob drifted: ${path}`);
     }
   }
@@ -524,6 +621,19 @@ function validateRelayBinding(binding, progress, liveness) {
     "process_instance_id", "loop_generation_id", "loop_epoch", "progress_recorded_at_unix",
   ], "Relay R27 binding");
   const process = progress.process;
+  const observedAt = Number(liveness.__observed_at_unix);
+  const expectedProgressAge = Number.isFinite(observedAt)
+    ? Math.max(0, observedAt - Number(progress.recorded_at_unix))
+    : null;
+  const expectedQueueAge = Number.isFinite(observedAt)
+    ? Math.max(0, observedAt - Number(progress.queue.last_progress_at_unix))
+    : null;
+  const cycleBase = progress.last_successful_cycle_at_unix ?? progress.process.started_at_unix;
+  const expectedCycleAge = Number.isFinite(observedAt)
+    ? Math.max(0, observedAt - Number(cycleBase))
+    : null;
+  const approx = (a, b) => Number.isFinite(Number(a)) && Number.isFinite(Number(b))
+    && Math.abs(Number(a) - Number(b)) <= 0.01;
   return binding.relay_startup_head === progress.source.startup_head
     && binding.relay_script_sha256 === progress.source.relay_script_sha256
     && binding.process_pid === process.pid
@@ -534,7 +644,13 @@ function validateRelayBinding(binding, progress, liveness) {
     && binding.progress_recorded_at_unix === progress.recorded_at_unix
     && liveness.process_pid === binding.process_pid
     && liveness.loop_generation_id === binding.loop_generation_id
-    && liveness.loop_epoch === binding.loop_epoch;
+    && liveness.loop_epoch === binding.loop_epoch
+    && liveness.pending_count === progress.queue.pending_count
+    && liveness.consecutive_cycle_failures === progress.consecutive_cycle_failures
+    && liveness.last_error_classification === (progress.last_error?.classification ?? null)
+    && approx(liveness.progress_age_seconds, expectedProgressAge)
+    && approx(liveness.queue_progress_age_seconds, expectedQueueAge)
+    && approx(liveness.successful_cycle_age_seconds, expectedCycleAge);
 }
 
 export function consumeRelayR27Evidence(envelope, {
@@ -615,7 +731,8 @@ export function consumeRelayR27Evidence(envelope, {
   }
   validateR26Progress(envelope.progress, { requirePinnedProducer: true });
   validateR26Liveness(envelope.liveness);
-  const bindingOk = validateRelayBinding(envelope.binding, envelope.progress, envelope.liveness);
+  const livenessForBinding = { ...envelope.liveness, __observed_at_unix: envelope.observed_at_unix };
+  const bindingOk = validateRelayBinding(envelope.binding, envelope.progress, livenessForBinding);
   const progressDigestOk = sha256Canonical(envelope.progress) === envelope.progress_sha256;
   const healthy = envelope.liveness.state === "healthy_progressing";
   const processUnambiguous = Array.isArray(envelope.liveness.observed_pids)
