@@ -1,0 +1,59 @@
+{
+  "contract_version": "pc.native.r28.bridge_r24_authority_pin.v1",
+  "producer_repository": "foto6/WebAIBridge",
+  "producer_branch": "agent/bridge-r24-live-preflight-20261001",
+  "producer_sha": "4ff6315241df16bcfa4750b15f3a3a315296dc50",
+  "producer_ci_run": 36865003806,
+  "live_contract": "bridge.r24_live_preflight.v1",
+  "schema_authority": {
+    "standalone_json_schema_published": false,
+    "evaluator_path": "app/live-preflight-r24.js",
+    "evaluator_blob": "4e5d2c9765ed51848564e85582d990872a7349b5",
+    "contract_test_path": "app/r24-live-preflight-contract.test.js",
+    "contract_test_blob": "17b14b318dba64da03b4affc904da5e7392ec856"
+  },
+  "source_blobs": {
+    ".github/workflows/r24-live-preflight.yml": "1553ace9c1ca5c6be037a3b560043285d750e67d",
+    "app/docs/BRIDGE_R24_LIVE_PREFLIGHT.md": "c32deadd02b1486c91268c20d93a79403a332bbe",
+    "app/live-preflight-r24.js": "4e5d2c9765ed51848564e85582d990872a7349b5",
+    "app/r24-live-preflight.js": "fa9e0b363ea35eca595ec2b049911be9284c1e1b",
+    "app/r24-live-preflight-contract.test.js": "17b14b318dba64da03b4affc904da5e7392ec856",
+    "app/r24-live-preflight-fixtures.js": "ab6f7b9284077568593ca0ed9f1321a75d77cc16",
+    "app/r24-readiness-report.js": "a561986d9ff526422c35253ba05c4b3165c35c63"
+  },
+  "ci_artifacts": {
+    "ubuntu": {
+      "artifact_id": 11163470263,
+      "name": "r24-readiness-ubuntu-latest",
+      "archive_digest": "sha256:46399fa77887c1c2617a218f97ba266a1ebd2a3ea80e69b7f7b0c275e7dbbf51",
+      "readiness_json_sha256": "180206a5e5f859c3ee4a97823b3e38070dcacd8bdc72b055502ba5a4b9a67a55",
+      "fixture_json_sha256": "9186a39468a9c8c1a4b0c1f648cba38562c694d0d1910fa3c4da4abb3270b4eb"
+    },
+    "windows": {
+      "artifact_id": 11163625213,
+      "name": "r24-readiness-windows-latest",
+      "archive_digest": "sha256:2e32c7a3b548668fa2d169cb390c92b57a360b6ad81f216fa51a74e628dc305a",
+      "readiness_json_sha256": "79ec2c064bc32ed3e9674f44b985041dbcfefff404124f2d9ea93cf6f2e24a6f",
+      "fixture_json_sha256": "4cbd7ad6f342db83d11d1993fdf53262633753497faacf9e5d5d0e4b87373eb4"
+    }
+  },
+  "required_gate_ids": [
+    "process_identity",
+    "source_provenance",
+    "config_provenance",
+    "port_ownership",
+    "status_responsiveness",
+    "health_responsiveness",
+    "queue_quiescence",
+    "cdp_readonly_probe",
+    "durable_state",
+    "r23_candidate_manifest"
+  ],
+  "allowed_gate_states": [
+    "PASS",
+    "DEGRADED",
+    "BLOCK",
+    "UNKNOWN"
+  ],
+  "release_gate": "NO_LIVE_CUTOVER"
+}
