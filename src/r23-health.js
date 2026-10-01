@@ -513,25 +513,39 @@ export class R23HealthSupervisor {
 export function launcherLivenessDecision({
   processExists,
   duplicateProcess = false,
+  pidIdentityCurrent = true,
+  relayResponsive = true,
+  executorPresent = true,
+  networkAvailable = true,
+  transportReady = true,
   health,
   startupDeadlineExceeded = false,
-  networkAvailable = true,
   journalState = "present",
 } = {}) {
   const healthy = health?.contract_version === R23_HEALTH_V1 && health.status === "HEALTHY";
   const reasons = [];
   if (!processExists) reasons.push("PROCESS_ABSENT");
+  if (processExists && !pidIdentityCurrent) reasons.push("STALE_PID_IDENTITY");
   if (duplicateProcess) reasons.push("DUPLICATE_PROCESS");
+  if (!relayResponsive) reasons.push("RELAY_UNRESPONSIVE");
+  if (!executorPresent) reasons.push("EXECUTOR_ABSENT");
   if (!networkAvailable) reasons.push("NETWORK_UNAVAILABLE");
+  if (!transportReady) reasons.push("TRANSPORT_NOT_CONVERGED");
   if (journalState === "corrupt") reasons.push("JOURNAL_CORRUPT");
   if (processExists && !healthy) reasons.push("FRESHNESS_HANDSHAKE_FAILED");
   if (startupDeadlineExceeded && !healthy) reasons.push("STARTUP_CONVERGENCE_TIMEOUT");
   return {
     contract_version: R23_LAUNCHER_LIVENESS_V1,
-    state: healthy && processExists && !duplicateProcess
+    state: healthy && processExists && !duplicateProcess && pidIdentityCurrent
+        && relayResponsive && executorPresent && networkAvailable && transportReady
+        && journalState !== "corrupt"
       ? "HEALTHY"
       : processExists ? "RECOVERY_REQUIRED" : "STOPPED",
-    already_running_healthy: Boolean(healthy && processExists && !duplicateProcess),
+    already_running_healthy: Boolean(
+      healthy && processExists && !duplicateProcess && pidIdentityCurrent
+      && relayResponsive && executorPresent && networkAvailable && transportReady
+      && journalState !== "corrupt"
+    ),
     process_exists: Boolean(processExists),
     freshness_handshake_passed: Boolean(healthy),
     reasons: [...new Set(reasons)],
