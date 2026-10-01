@@ -16,6 +16,10 @@ import {
   R24RuntimeHealthConsumer,
   validateVendoredR24Artifacts,
 } from "./r24-runtime-health-consumer.js";
+import {
+  R26RelayProgressConsumer,
+  validateVendoredR26Artifacts,
+} from "./r26-relay-progress-consumer.js";
 
 export const PRODUCTION_BRIDGE_CONTRACT = "pc.native.builtin_relay_provider.v1";
 
@@ -116,6 +120,7 @@ export async function createConfiguredNativeMcpRuntime({
   if (bridge.readEvidence !== undefined) requireFunction(bridge.readEvidence, "readEvidence");
   if (bridge.bindExecutionContext !== undefined) requireFunction(bridge.bindExecutionContext, "bindExecutionContext");
   if (bridge.readTransportHealth !== undefined) requireFunction(bridge.readTransportHealth, "readTransportHealth");
+  if (bridge.readRelayProgressHealth !== undefined) requireFunction(bridge.readRelayProgressHealth, "readRelayProgressHealth");
 
   mkdirSync(stateDir, { recursive: true });
   // Normal production always consumes the exact pinned R24 contract. Legacy
@@ -129,6 +134,16 @@ export async function createConfiguredNativeMcpRuntime({
     ? new R24RuntimeHealthConsumer({
         artifacts: r24Artifacts,
         ...r24Options,
+      })
+    : null;
+  const r26Required = testConfig === undefined || healthConfig.r26?.enabled === true;
+  const r26Artifacts = r26Required ? validateVendoredR26Artifacts() : null;
+  const r26Options = { ...(healthConfig.r26 ?? {}) };
+  delete r26Options.enabled;
+  const relayProgressConsumer = r26Required
+    ? new R26RelayProgressConsumer({
+        artifacts: r26Artifacts,
+        ...r26Options,
       })
     : null;
   const circuitRegistry = new R23AdapterCircuitRegistry({
@@ -175,6 +190,13 @@ export async function createConfiguredNativeMcpRuntime({
         )
       : null,
     producerHealthConsumer,
+    relayProgressConsumer,
+    relayProgressProbe: bridge.readRelayProgressHealth
+      ? ({ signal }) => bridge.readRelayProgressHealth(
+          { request_id: null, action: "relay.progress.health" },
+          { source: "pc-native-mcp-r26-health", signal },
+        )
+      : null,
     ...(healthConfig.supervisor ?? {}),
   });
 
@@ -217,6 +239,8 @@ export async function createConfiguredNativeMcpRuntime({
     healthSupervisor,
     producerHealthConsumer,
     r24Artifacts,
+    relayProgressConsumer,
+    r26Artifacts,
     stateDir,
     moduleIdentity,
   };
