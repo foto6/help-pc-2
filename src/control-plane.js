@@ -277,15 +277,28 @@ export class ControlPlane {
     if (recovered.length) this.#persist(); return recovered;
   }
 
-  leaseNext({ workerId = "local-worker", leaseMs = this.defaultLeaseMs, reconciliationOnlyActionId = null } = {}) {
+  leaseNext({
+    workerId = "local-worker",
+    leaseMs = this.defaultLeaseMs,
+    reconciliationOnlyActionId = null,
+    onlyActionId = null,
+  } = {}) {
     if (!Number.isInteger(leaseMs) || leaseMs < 1) throw new ValidationError("leaseMs must be a positive integer.");
     if (reconciliationOnlyActionId !== null &&
         (typeof reconciliationOnlyActionId !== "string" || !reconciliationOnlyActionId)) {
       throw new ValidationError("reconciliationOnlyActionId must be a nonempty action ID.");
     }
+    if (onlyActionId !== null && (typeof onlyActionId !== "string" || !onlyActionId)) {
+      throw new ValidationError("onlyActionId must be a nonempty action ID.");
+    }
+    if (onlyActionId !== null && reconciliationOnlyActionId !== null &&
+        onlyActionId !== reconciliationOnlyActionId) {
+      throw new ValidationError("onlyActionId and reconciliationOnlyActionId must identify the same action.");
+    }
     this.recoverExpiredLeases(); const now = this.#time();
     for (let i = 0; i < this.queue.length; i += 1) {
       const action = this.actions.get(this.queue[i]); if (!action) continue;
+      if (onlyActionId !== null && action.id !== onlyActionId) continue;
       if (reconciliationOnlyActionId !== null && action.id !== reconciliationOnlyActionId) continue;
       if (action.status === "retry_wait") { if ((action.nextAttemptAtMs ?? 0) > now.ms) continue; action.status = "queued"; }
       if (action.status === "preflight_wait") { if ((action.nextPreflightAtMs ?? 0) > now.ms) continue; action.status = "queued"; }
@@ -754,6 +767,32 @@ export class ControlPlane {
   }
 
   async processNext({ workerId = "processNext", leaseMs = this.defaultLeaseMs } = {}) { const leased = this.leaseNext({ workerId, leaseMs }); if (!leased) return null; return this.executeLeased(leased.id, { workerId }); }
+
+  async processSpecificReadOnly(actionId, {
+    workerId = "read-only-canary",
+    leaseMs = this.defaultLeaseMs,
+  } = {}) {
+    const action = this.#action(actionId);
+    if (action.metadata?.effect !== "read_only") {
+      throw new ControlPlaneError(
+        "Specific health processing is restricted to read-only native actions.",
+        "READ_ONLY_CANARY_REQUIRED",
+        { actionId },
+      );
+    }
+    if (TERMINAL_ACTION_STATUSES.has(action.status)) return clone(action);
+    const leased = this.leaseNext({ workerId, leaseMs, onlyActionId: actionId });
+    if (!leased) return clone(this.#action(actionId));
+    if (leased.id !== actionId || leased.metadata?.effect !== "read_only" ||
+        leased.lease?.mode === "reconcile") {
+      throw new ControlPlaneError(
+        "Read-only specific processing selected an unsafe action.",
+        "READ_ONLY_CANARY_MISMATCH",
+        { actionId },
+      );
+    }
+    return this.executeLeased(leased.id, { workerId });
+  }
 
   async reconcileNext(actionId, { workerId = "reconcile-only", leaseMs = this.defaultLeaseMs } = {}) {
     const action = this.#action(actionId);
