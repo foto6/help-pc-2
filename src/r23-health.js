@@ -486,7 +486,14 @@ export class R23HealthSupervisor {
       this.lastCanaryErrorCode = null;
       this.pendingCanaryId = null;
       this.noteResult();
-      return { ok: true, request_id: requestId, status: result.status };
+      return {
+        ok: true,
+        request_id: requestId,
+        status: result.status,
+        data: result?.data && typeof result.data === "object" && !Array.isArray(result.data)
+          ? clone(result.data)
+          : null,
+      };
     } catch (error) {
       this.lastCanaryErrorCode = error?.code ?? "R23_CANARY_FAILED";
       return { ok: false, request_id: requestId, error_code: this.lastCanaryErrorCode };
