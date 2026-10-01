@@ -237,7 +237,6 @@ export class R23AdapterCircuitRegistry {
           controller.abort(new Error("adapter_timeout"));
           reject(timeoutError(adapter, bound, effect));
         }, bound);
-        timer.unref?.();
       });
       const result = await Promise.race([
         Promise.resolve().then(() => operation(controller.signal)),
@@ -379,7 +378,6 @@ export class R23HealthSupervisor {
           error.code = "TRANSPORT_HEALTH_TIMEOUT";
           reject(error);
         }, this.canaryTimeoutMs);
-        timer.unref?.();
       });
       const value = await Promise.race([
         this.transportProbe({ signal: controller.signal }),
@@ -429,7 +427,6 @@ export class R23HealthSupervisor {
           error.retryable = true;
           reject(error);
         }, this.canaryTimeoutMs);
-        timer.unref?.();
       });
       const result = await Promise.race([
         invoke({ requestId, signal: controller.signal }),
