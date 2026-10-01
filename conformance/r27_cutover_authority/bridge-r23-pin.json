@@ -1,0 +1,69 @@
+{
+  "contract_version": "pc.native.r27.bridge_r23_authority_pin.v1",
+  "bridge_repository": "foto6/WebAIBridge",
+  "bridge_branch": "agent/bridge-r23-cutover-rehearsal-20261001",
+  "bridge_sha": "7e0d5e07f93990f103358850f8f3c10c1563f83a",
+  "bridge_ci_run": 36861515420,
+  "bridge_baseline_sha": "ba4525d0dc9ad808af73d766d0bb9ed0e9eee21b",
+  "source_blobs": {
+    ".github/workflows/r23-cutover-rehearsal.yml": "77ca1f8a3f0eb5dad1482c124cc9013f7d689af9",
+    "app/cutover-r23.js": "0aa125960ebe37020cec19d9048089789d3bef01",
+    "app/r23-cutover-rehearsal.js": "82b6c6fe21b32445421a6aaf06128cc26eb22c8a",
+    "app/r23-readiness-report.js": "bd00e0674a40df5a0b301c5ccaa89d7c5df8008c",
+    "app/r23-cutover-contract.test.js": "663eba71c226904899ff72ce841191b26e72d938",
+    "app/docs/BRIDGE_R23_SAFE_CUTOVER_REHEARSAL.md": "e1d4de4ca6ee9610df9dd1dba0c9e1306da6ea6f"
+  },
+  "ci_artifacts": {
+    "ubuntu": {
+      "artifact_id": 11161244146,
+      "name": "r23-readiness-ubuntu-latest",
+      "archive_digest": "sha256:63f9a62a9bb2d83d1c3eee3eca9a169bd342e3ec15b9944294f7ce46cda7f8af",
+      "readiness_json_sha256": "f922dfdc10636e66015a1feb9c8d5673e8b0b6c493172a4f7a4c73d82d1ee827",
+      "evidence_json_sha256": "c7e503de0a38ba65f2e410a0f2d2ee847300699e2045e36d2f69186550fd7bf3",
+      "candidate_manifest_digest": "11471c274f1fccb488986077535d3730ea238058095ced0c7669e7e10c555670",
+      "state_digest": "4d51f7e41a43e1e1ec5ef32b07aa5601daf1c2d4a207e196e64788ffaade6780",
+      "config_digest": "1d7d89ba22792fe4fceaf4113b6c825514d71774513423350a5e5abf1d64d17f"
+    },
+    "windows": {
+      "artifact_id": 11161923643,
+      "name": "r23-readiness-windows-latest",
+      "archive_digest": "sha256:fa87af539c857c7bd35b5a77b47ea1ec234a151e0c4a2b74849b39b9fe4618be",
+      "readiness_json_sha256": "d9c41e518bf6a3934c330ba3e74e6064082f7627e0ae0553fa09c7a47f68a497",
+      "evidence_json_sha256": "15c639c93a581783069bb8566478e3d0b1930ccdaca567a30e5c2c5791f4f1d5",
+      "candidate_manifest_digest": "91b50e9d14702e94fad08b0ccadbaa8c027adddb8cdf38da83c869bd9e4b0a94",
+      "state_digest": "d59a1264fd5cc1f6a3d91163e39eac5e34268a87af50543f92cb785b543be8b6",
+      "config_digest": "1d7d89ba22792fe4fceaf4113b6c825514d71774513423350a5e5abf1d64d17f"
+    }
+  },
+  "rehearsal_contract": {
+    "readiness_object": "bridge.r23_cutover_readiness_report",
+    "evidence_scenario": "bridge-r23-safe-cutover-rehearsal",
+    "candidate_object": "bridge.r23_candidate_manifest",
+    "final_decision": "READY_FOR_EXPLICIT_CUTOVER",
+    "release_gate": "NO_LIVE_DEPLOY",
+    "healthy_candidate_gate_count": 8,
+    "rollback_stages": [
+      "before_stop",
+      "state_validation_failure",
+      "after_start",
+      "after_health_failure",
+      "after_first_assignment"
+    ],
+    "required_faults": [
+      "occupied_port",
+      "stale_pid",
+      "nonresponsive_status",
+      "code_reload_required",
+      "hung_cdp",
+      "pending_assignment"
+    ],
+    "mutation_invariants": {
+      "liveBridgeMutated": false,
+      "realProviderMutation": false,
+      "realConversationCreate": false,
+      "realConversationDelete": false,
+      "jsonNewRequests": 0
+    }
+  },
+  "release_gate": "NO_LIVE_CUTOVER"
+}
