@@ -184,3 +184,36 @@ test("coordinator handoff carries required live fields and stopping rules but no
   assert.ok(handoff.stopping_rules.some((item) => item.includes("UNKNOWN side effect")));
   assert.ok(handoff.stopping_rules.some((item) => item.includes("never kill/restart")));
 });
+
+
+test("R27 authority and report sources contain no live process-control or deployment primitive", () => {
+  const gateSource = readFileSync(
+    new URL("../src/r27-cutover-authority-gate.js", import.meta.url),
+    "utf8",
+  );
+  const reportSource = readFileSync(
+    new URL("../tools/r27-cutover-handoff-report.js", import.meta.url),
+    "utf8",
+  );
+  for (const source of [gateSource, reportSource]) {
+    assert.doesNotMatch(source, /child_process|spawn\s*\(|execFile|process\.kill|taskkill|Stop-Process|Restart-Service|Start-Service/);
+    assert.doesNotMatch(source, /\/json\/new|repoint|deploy\s+live|liveCutover\s*\(/i);
+  }
+});
+
+test("committed coordinator handoff is BLOCKED pending live preflight and has no executable action", () => {
+  const handoff = JSON.parse(readFileSync(
+    new URL("../conformance/r27_cutover_authority/coordinator-handoff.json", import.meta.url),
+    "utf8",
+  ));
+  assert.equal(handoff.contract_version, R27_COORDINATOR_HANDOFF_V1);
+  assert.equal(handoff.decision, "BLOCKED");
+  assert.equal(handoff.release_gate, "NO_LIVE_CUTOVER");
+  assert.equal(handoff.reason, "LIVE_PREFLIGHT_NOT_EXECUTED_IN_THIS_MILESTONE");
+  assert.equal(handoff.executable_live_cutover_action, null);
+  assert.deepEqual(handoff.executable_commands, []);
+  assert.equal(handoff.automatic_replay_authorized, false);
+  assert.equal(handoff.automatic_restart_authorized, false);
+  assert.equal(handoff.automatic_kill_authorized, false);
+  assert.equal(handoff.read_only_diagnostics_allowed, true);
+});
