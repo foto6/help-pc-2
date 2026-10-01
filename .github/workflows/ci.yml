@@ -72,3 +72,12 @@ jobs:
         run: npm run test:r27-cutover
       - name: Full test suite
         run: npm test
+      - name: Generate exact-head R27 coordinator handoff
+        run: node tools/r27-cutover-handoff-report.js --out r27-coordinator-handoff-${{ matrix.os }}.json
+      - name: Upload exact-head R27 coordinator handoff
+        uses: actions/upload-artifact@v4
+        with:
+          name: r27-coordinator-handoff-${{ matrix.os }}
+          path: r27-coordinator-handoff-${{ matrix.os }}.json
+          if-no-files-found: error
+          retention-days: 14
