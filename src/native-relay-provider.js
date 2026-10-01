@@ -229,6 +229,7 @@ export class NativeRelayExecutorProvider {
     this.invoke = this.invoke.bind(this);
     this.readCapabilities = this.readCapabilities.bind(this);
     this.readEvidence = this.readEvidence.bind(this);
+    this.readTransportHealth = this.readTransportHealth.bind(this);
   }
 
   get desktopId() {
@@ -362,6 +363,30 @@ export class NativeRelayExecutorProvider {
       this.#binding = next;
     }
     return { device: clone(device), binding: next, executor: clone(executor) };
+  }
+
+  async readTransportHealth(_request = {}, context = {}) {
+    if (context.signal?.aborted) throw cancelledBeforeDispatch();
+    const [relay, devices] = await Promise.all([
+      this.#json("/v1/relay/health", { signal: context.signal }),
+      this.#json("/v1/relay/devices", { signal: context.signal }),
+    ]);
+    const device = Array.isArray(devices.devices)
+      ? devices.devices.find((item) => item?.device_id === this.#deviceId) : null;
+    return Object.freeze({
+      contract_version: "pc.native.relay.health.v1",
+      process_alive: relay.process_alive === true || relay.running === true,
+      transport_connected: device?.online === true && relay.transport_connected !== false,
+      queue_progressing: relay.queue_progressing !== false,
+      executor_responsive: device?.online === true,
+      last_progress_at_ms: relay.last_progress_at_ms ?? null,
+      last_successful_result_at_ms: relay.last_successful_result_at_ms ?? null,
+      pending_deliveries: relay.pending_deliveries ?? null,
+      oldest_pending_age_ms: relay.oldest_pending_age_ms ?? null,
+      device_last_seen_at_ms: device?.last_seen_at_ms ?? null,
+      device_session_epoch_present: typeof device?.last_session_epoch === "string"
+        && device.last_session_epoch.length > 0,
+    });
   }
 
   async readCapabilities(_request = {}, context = {}) {
@@ -796,6 +821,7 @@ export function createNativeRelayExecutorBridge(options = {}) {
     readCapabilities: provider.readCapabilities,
     readDeviceIdentity: provider.readDeviceIdentity.bind(provider),
     readEvidence: provider.readEvidence,
+    readTransportHealth: provider.readTransportHealth,
     dryRun: false,
     desktopId: provider.desktopId,
     identity: NATIVE_RELAY_PROVIDER_IDENTITY,
