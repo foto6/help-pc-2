@@ -14,6 +14,7 @@ on:
       - agent/native-mcp-r23-hardening-20261001
       - agent/native-mcp-r25-r24-health-consumer-20261001
       - agent/native-mcp-r26-relay-progress-consumer-20261001
+      - agent/native-mcp-r27-cutover-authority-gate-20261001
   pull_request:
 
 permissions:
@@ -67,5 +68,7 @@ jobs:
         run: npm run test:r25-health
       - name: R26 consume exact relay progress health
         run: npm run test:r26-relay-progress
+      - name: R27 integrated cutover authority gate
+        run: npm run test:r27-cutover
       - name: Full test suite
         run: npm test
