@@ -12,6 +12,10 @@ import {
 } from "./native-relay-provider.js";
 import { importPinnedExecutorModule } from "./executor-module-identity.js";
 import { R23AdapterCircuitRegistry, R23HealthSupervisor } from "./r23-health.js";
+import {
+  R24RuntimeHealthConsumer,
+  validateVendoredR24Artifacts,
+} from "./r24-runtime-health-consumer.js";
 
 export const PRODUCTION_BRIDGE_CONTRACT = "pc.native.builtin_relay_provider.v1";
 
@@ -114,6 +118,11 @@ export async function createConfiguredNativeMcpRuntime({
   if (bridge.readTransportHealth !== undefined) requireFunction(bridge.readTransportHealth, "readTransportHealth");
 
   mkdirSync(stateDir, { recursive: true });
+  const r24Artifacts = validateVendoredR24Artifacts();
+  const producerHealthConsumer = new R24RuntimeHealthConsumer({
+    artifacts: r24Artifacts,
+    ...(healthConfig.r24 ?? {}),
+  });
   const circuitRegistry = new R23AdapterCircuitRegistry({
     ...(healthConfig.circuit ?? {}),
   });
@@ -157,6 +166,7 @@ export async function createConfiguredNativeMcpRuntime({
           { source: "pc-native-mcp-health", signal },
         )
       : null,
+    producerHealthConsumer,
     ...(healthConfig.supervisor ?? {}),
   });
 
@@ -197,6 +207,8 @@ export async function createConfiguredNativeMcpRuntime({
     bridge,
     circuitRegistry,
     healthSupervisor,
+    producerHealthConsumer,
+    r24Artifacts,
     stateDir,
     moduleIdentity,
   };
