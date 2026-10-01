@@ -20,6 +20,7 @@ import {
   desktopCommanderCompatibilityManifestV1,
 } from "./dc-compatibility-registry.js";
 import { DesktopCommanderCompatibilitySurface } from "./dc-compatibility.js";
+import { R23_HEALTH_V1, adapterNameForAction } from "./r23-health.js";
 
 export const MCP_HOST_VERSION = "1.0.0";
 export const MCP_MODERN_PROTOCOL = "2026-07-28";
@@ -114,6 +115,7 @@ export class NativeMcpRuntime {
     serverName = "pc-native-mcp",
     serverVersion = MCP_HOST_VERSION,
     maxToolResultBytes = 256 * 1024,
+    healthSupervisor = null,
   }) {
     this.facade = facade;
     this.desktopId = desktopId;
@@ -124,6 +126,7 @@ export class NativeMcpRuntime {
     this.serverName = serverName;
     this.serverVersion = serverVersion;
     this.maxToolResultBytes = maxToolResultBytes;
+    this.healthSupervisor = healthSupervisor;
   }
 
   static async create({
@@ -133,6 +136,7 @@ export class NativeMcpRuntime {
     serverVersion = MCP_HOST_VERSION,
     maxToolResultBytes = 256 * 1024,
     compatibilitySurface = null,
+    healthSupervisor = null,
   }) {
     if (!facade) throw new TypeError("facade is required");
     const manifest = await facade.capabilities();
@@ -171,7 +175,38 @@ export class NativeMcpRuntime {
       serverName,
       serverVersion,
       maxToolResultBytes,
+      healthSupervisor,
     });
+  }
+
+  async healthSnapshot({ refresh = false, canary = false } = {}) {
+    if (!this.healthSupervisor) return null;
+    if (refresh) await this.healthSupervisor.probeTransport();
+    if (canary && this.facadeSession) {
+      await this.healthSupervisor.runCanary({
+        sessionId: this.facadeSession.session_id,
+        invoke: async ({ requestId, signal }) => {
+          let response = null;
+          // Native requests may require a read-only preflight tick before
+          // execution. Every tick is pinned to this exact canary action.
+          for (let index = 0; index < 4; index += 1) {
+            response = await this.facade.invoke({
+              contract_version: NATIVE_CONTROL_PROTOCOL_V1,
+              session_id: this.facadeSession.session_id,
+              request_id: requestId,
+              tool: "device.ping",
+              arguments: {},
+              health_canary: true,
+            }, { signal });
+            if (response?.status === "completed" || response?.status === "error"
+                || response?.status === "reconciliation_required"
+                || response?.status === "cancelled") break;
+          }
+          return response;
+        },
+      });
+    }
+    return this.healthSupervisor.snapshot();
   }
 
   async ensureCapabilities() {
@@ -244,6 +279,7 @@ export class NativeMcpRuntime {
 
   async callNativeTool(tool, args, ctx) {
     const requestId = requestIdentity(tool.name, args, ctx);
+    this.healthSupervisor?.noteRequest();
     const { nativeArgs, page } = splitHostArguments(args);
     let response;
     try {
@@ -271,6 +307,18 @@ export class NativeMcpRuntime {
         ...(page === undefined ? {} : { page }),
       };
       response = await this.facade.invoke(request, { signal: ctx.mcpReq.signal });
+      if (response?.status === "completed") this.healthSupervisor?.noteResult();
+      if (tool.name === "device.health" && response?.status === "completed" && this.healthSupervisor) {
+        const health = await this.healthSnapshot({ refresh: true, canary: true });
+        response = {
+          ...response,
+          data: {
+            ...(response.data && typeof response.data === "object" && !Array.isArray(response.data)
+              ? response.data : { executor_health: response.data ?? null }),
+            r23_health: health,
+          },
+        };
+      }
     } catch (error) {
       response = facadeErrorResult(error);
       response.request_id = requestId;
@@ -287,6 +335,7 @@ export class NativeMcpRuntime {
 
   async callCompatibilityTool(tool, args, ctx) {
     const requestId = requestIdentity(tool.name, args, ctx);
+    this.healthSupervisor?.noteRequest();
     const { request_id: _requestId, ...compatibilityArguments } = args;
     let response;
     try {
@@ -297,6 +346,7 @@ export class NativeMcpRuntime {
         tool: tool.name,
         arguments: compatibilityArguments,
       }, { signal: ctx.mcpReq.signal });
+      if (response?.status === "completed") this.healthSupervisor?.noteResult();
     } catch (error) {
       response = compatibilityErrorResult(error, {
         requestId,
@@ -324,7 +374,11 @@ export class NativeMcpRuntime {
     const executorActions = new Set(
       Array.isArray(manifest.executor?.actions) ? manifest.executor.actions : [],
     );
+    const health = this.healthSupervisor?.snapshot() ?? null;
     for (const tool of TOOL_REGISTRY_LIST) {
+      const adapterHealth = health?.per_adapter_health?.[
+        adapterNameForAction(tool.executorAction)
+      ] ?? null;
       server.registerTool(
         tool.name,
         {
@@ -345,6 +399,9 @@ export class NativeMcpRuntime {
             "pc.native/streaming": tool.streaming,
             "pc.native/executor_action": tool.executorAction,
             "pc.native/available": executorActions.has(tool.executorAction),
+            "pc.native/r23_health_contract": R23_HEALTH_V1,
+            "pc.native/r23_health_status": health?.status ?? "UNAVAILABLE",
+            "pc.native/r23_adapter_health": adapterHealth,
             "pc.native/mcp_era": ctx.era ?? null,
           },
         },
@@ -382,6 +439,8 @@ export class NativeMcpRuntime {
             "pc.desktop_commander/selected_variant": advertised?.selected_variant ?? null,
             "pc.desktop_commander/availability_reason": advertised?.availability_reason ?? null,
             "pc.desktop_commander/capability_variants": advertised?.capability_variants ?? [],
+            "pc.desktop_commander/r23_health_contract": R23_HEALTH_V1,
+            "pc.desktop_commander/r23_health_status": health?.status ?? "UNAVAILABLE",
             "pc.desktop_commander/vendor_non_equivalents": compatibilityManifest.vendor_non_equivalents,
             "pc.desktop_commander/mcp_era": ctx.era ?? null,
           },
