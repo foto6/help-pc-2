@@ -1,0 +1,119 @@
+{
+  "contract_version": "pc.native.r27.cutover_handoff.v1",
+  "decision": "BLOCKED",
+  "release_gate": "NO_LIVE_CUTOVER",
+  "reason": "LIVE_PREFLIGHT_NOT_EXECUTED_IN_THIS_MILESTONE",
+  "authorities": {
+    "native_r26": {
+      "repository": "foto6/help-pc-2",
+      "sha": "46c50ea85c3cc4db6b0e43fbd2762d0420d1be28",
+      "ci_run": 36859871735
+    },
+    "bridge_r23": {
+      "repository": "foto6/WebAIBridge",
+      "branch": "agent/bridge-r23-cutover-rehearsal-20261001",
+      "sha": "7e0d5e07f93990f103358850f8f3c10c1563f83a",
+      "ci_run": 36861515420,
+      "ubuntu_artifact_id": 11161244146,
+      "ubuntu_artifact_digest": "sha256:63f9a62a9bb2d83d1c3eee3eca9a169bd342e3ec15b9944294f7ce46cda7f8af",
+      "windows_artifact_id": 11161923643,
+      "windows_artifact_digest": "sha256:fa87af539c857c7bd35b5a77b47ea1ec234a151e0c4a2b74849b39b9fe4618be"
+    },
+    "pc_executor_r24": {
+      "repository": "foto6/help-pc-1",
+      "branch": "agent/pc-executor-r24-runtime-health-20261001",
+      "sha": "60ba0ce92bf2f3cdd89e3213dba40793c6a90d8b",
+      "ci_run": 36806258696
+    },
+    "pc_relay_r26": {
+      "repository": "foto6/help-pc-1",
+      "branch": "agent/pc-relay-r26-progress-health-20261001",
+      "sha": "96d453bcdc866bfd26c06ad88e2ec0c033fbccdd",
+      "ci_run": 36833819136
+    }
+  },
+  "required_live_preflight": {
+    "bridge_live_preflight": {
+      "observed_at_ms": null,
+      "max_age_ms": null,
+      "candidate_provenance": {
+        "source_sha": "7e0d5e07f93990f103358850f8f3c10c1563f83a",
+        "source_branch": "agent/bridge-r23-cutover-rehearsal-20261001",
+        "state_schema_version": 13,
+        "config_digest": null
+      },
+      "process_ownership": {
+        "exact_pid_and_command": null,
+        "ambiguous": null
+      },
+      "backup": {
+        "state_valid": null,
+        "config_valid": null,
+        "state_digest": null,
+        "backup_state_digest": null,
+        "config_digest": null,
+        "backup_config_digest": null
+      },
+      "migration": {
+        "compatible": null,
+        "target_state_version": 13
+      },
+      "queue": {
+        "quiescent": null,
+        "active_assignments": null,
+        "active_tasks": null,
+        "active_outbox": null
+      },
+      "status": {
+        "responded": null,
+        "control_plane_responsive": null,
+        "operational_state": null,
+        "code_reload_required": null,
+        "age_ms": null,
+        "max_age_ms": null,
+        "latency_ms": null,
+        "max_latency_ms": null
+      },
+      "cdp": {
+        "required": null,
+        "responded": null,
+        "state": null,
+        "age_ms": null,
+        "max_age_ms": null,
+        "latency_ms": null,
+        "max_latency_ms": null
+      }
+    },
+    "r25_runtime_health": "fresh source-bound pc_executor.runtime_health.v1 snapshot",
+    "r25_runtime_producer_attestation": {
+      "sha": "60ba0ce92bf2f3cdd89e3213dba40793c6a90d8b",
+      "verified": null,
+      "observed_at_ms": null,
+      "max_age_ms": null
+    },
+    "r26_relay_progress": "fresh source-bound healthy_progressing pc_relay.progress/liveness snapshot",
+    "unknown_side_effects": {
+      "count": null,
+      "ids": []
+    },
+    "required_native_adapters": []
+  },
+  "stopping_rules": [
+    "STOP on any failed, stale, unknown, ambiguous or schema-drifted authority gate.",
+    "STOP on any UNKNOWN side effect; reconcile via outcome evidence and never replay as a new mutation.",
+    "STOP on ambiguous Bridge or relay ownership; never kill/restart by port, stale PID, or ambiguous process identity.",
+    "STOP if Bridge status is nonresponsive, stale, degraded, over budget, or code reload is required.",
+    "STOP if required CDP evidence is missing, stale, unhealthy, or over budget.",
+    "STOP if Bridge state/config backup digests do not exactly match pre-cutover state/config digests.",
+    "STOP if queue quiescence is false or any assignment/task/outbox side effect is pending.",
+    "STOP if R25 runtime health/generation/journal evidence is stale, unknown, corrupt, or a required adapter is not responsive.",
+    "STOP if R26 relay evidence is not fresh healthy_progressing with unambiguous ownership.",
+    "No live cutover action is encoded in this handoff."
+  ],
+  "read_only_diagnostics_allowed": true,
+  "automatic_replay_authorized": false,
+  "automatic_restart_authorized": false,
+  "automatic_kill_authorized": false,
+  "executable_live_cutover_action": null,
+  "executable_commands": []
+}
