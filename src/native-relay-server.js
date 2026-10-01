@@ -331,9 +331,11 @@ export class NativeRelayServer {
     const oldestPendingAgeMs = activeDeliveries.length
       ? Math.max(0, now - Math.min(...activeDeliveries.map((item) => Number(item.created_at_ms) || now)))
       : 0;
-    const queueProgressing = active === 0 || (
-      lastProgressAtMs !== null && now - lastProgressAtMs <= this.heartbeatTimeoutMs
-    );
+    const stalestPendingProgressAgeMs = activeDeliveries.length
+      ? Math.max(0, now - Math.min(...activeDeliveries.map((item) => Number(item.updated_at_ms) || now)))
+      : 0;
+    const queueProgressing = active === 0
+      || stalestPendingProgressAgeMs <= this.heartbeatTimeoutMs;
     const running = Boolean(this.httpServer);
     return {
       status: !running ? "unhealthy" : queueProgressing ? "ok" : "degraded",
@@ -346,6 +348,7 @@ export class NativeRelayServer {
       last_progress_at_ms: lastProgressAtMs,
       last_successful_result_at_ms: lastSuccessfulResultAtMs,
       oldest_pending_age_ms: oldestPendingAgeMs,
+      stalest_pending_progress_age_ms: stalestPendingProgressAgeMs,
       online_devices: this.sessions.size,
       connections: this.connections.size,
       pending_deliveries: active,
