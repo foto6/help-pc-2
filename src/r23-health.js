@@ -406,6 +406,11 @@ export class R23HealthSupervisor {
     return clone(this.transport);
   }
 
+  noteCanaryUnavailable(code = "R23_CANARY_CAPABILITY_UNAVAILABLE") {
+    this.lastCanaryAtMs = nowMs(this.clock);
+    this.lastCanaryErrorCode = code;
+  }
+
   async runCanary({ invoke, sessionId }) {
     if (typeof invoke !== "function") throw new TypeError("canary invoke must be a function");
     const now = nowMs(this.clock);
