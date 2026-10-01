@@ -13,6 +13,7 @@ import {
   R23_LAUNCHER_LIVENESS_V1,
   projectActionLifecycle,
   launcherLivenessDecision,
+  adapterNameForAction,
 } from "../src/index.js";
 
 function ids(prefix = "r23") {
@@ -424,4 +425,14 @@ test("request lifecycle projection covers all R23 diagnostic states", () => {
       ...action,
     }).lifecycle_state, expected);
   }
+});
+
+
+test("frozen and parity health/config Executor actions share the executor adapter health lane", () => {
+  assert.equal(adapterNameForAction("system.health"), "executor");
+  assert.equal(adapterNameForAction("system.config.get"), "executor");
+  assert.equal(adapterNameForAction("system.config.set"), "executor");
+  assert.equal(adapterNameForAction("health.get"), "executor");
+  assert.equal(adapterNameForAction("config.get"), "executor");
+  assert.equal(adapterNameForAction("config.set"), "executor");
 });
