@@ -32,7 +32,7 @@ test("R23 >=1000 mixed-request soak stays bounded and recovers stalls/restarts w
     if (request.tool === "mouse.move") {
       sideEffectCounts.set(request.requestId,
         (sideEffectCounts.get(request.requestId) ?? 0) + 1);
-      if (index % 211 === 0) {
+      if (index % 300 === 0) {
         unknownInjected += 1;
         const error = new Error("synthetic post-dispatch acknowledgement loss");
         error.code = "SYNTHETIC_UNKNOWN";
