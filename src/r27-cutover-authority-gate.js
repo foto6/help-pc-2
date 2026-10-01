@@ -414,7 +414,19 @@ export function evaluateR27CutoverAuthority(input, {
   clock = Date.now,
   bridgePin = loadBridgeR23AuthorityPin(),
 } = {}) {
-  validateBridgeR23AuthorityPin(bridgePin);
+  let bridgeAuthorityOk = true;
+  let bridgeAuthorityReason = "exact_bridge_r23_rehearsal_and_rollback_authority";
+  let bridgeAuthorityError = null;
+  try {
+    validateBridgeR23AuthorityPin(bridgePin);
+  } catch (error) {
+    bridgeAuthorityOk = false;
+    bridgeAuthorityReason = error?.code ?? "R27_BRIDGE_AUTHORITY_INVALID";
+    bridgeAuthorityError = {
+      code: error?.code ?? "R27_BRIDGE_AUTHORITY_INVALID",
+      category: error?.category ?? "cutover_authority",
+    };
+  }
   exactKeys(input, [
     "bridge_live_preflight",
     "r25_runtime_health",
@@ -438,15 +450,15 @@ export function evaluateR27CutoverAuthority(input, {
 
   const bridgeAuthorityGate = gate(
     "bridge_r23_rehearsal_authority",
-    true,
-    "exact_bridge_r23_rehearsal_and_rollback_authority",
-    {
+    bridgeAuthorityOk,
+    bridgeAuthorityReason,
+    bridgeAuthorityOk ? {
       bridge_sha: bridgePin.bridge_sha,
       bridge_ci_run: bridgePin.bridge_ci_run,
       ubuntu_artifact_id: bridgePin.ci_artifacts.ubuntu.artifact_id,
       windows_artifact_id: bridgePin.ci_artifacts.windows.artifact_id,
       rollback_stages: bridgePin.rehearsal_contract.rollback_stages,
-    },
+    } : bridgeAuthorityError,
   );
   const live = validateLivePreflight(input.bridge_live_preflight, clock);
   const r25 = validateR25(
@@ -501,10 +513,10 @@ export function evaluateR27CutoverAuthority(input, {
     gates,
     blockers: blockers.map((item) => ({ gate: item.id, reason: item.reason })),
     authorities: clone(R27_AUTHORITIES),
-    bridge_artifacts: {
+    bridge_artifacts: bridgeAuthorityOk ? {
       ubuntu: clone(bridgePin.ci_artifacts.ubuntu),
       windows: clone(bridgePin.ci_artifacts.windows),
-    },
+    } : null,
     stopping_rules: [
       "STOP on any failed, stale, unknown, ambiguous or schema-drifted authority gate.",
       "STOP on any UNKNOWN side effect and reconcile via outcome evidence; never replay as a new mutation.",
