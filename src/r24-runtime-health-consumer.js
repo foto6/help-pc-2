@@ -196,9 +196,13 @@ function validateJournal(value) {
 
 function gitBlobSha(content) {
   const bytes = Buffer.isBuffer(content) ? content : Buffer.from(content);
+  // GitHub stores these vendored JSON artifacts with LF. Windows checkout may
+  // materialize CRLF through core.autocrlf; normalize that checkout-only
+  // representation before reconstructing the canonical Git blob identity.
+  const canonical = Buffer.from(bytes.toString("utf8").replace(/\r\n/g, "\n"), "utf8");
   return createHash("sha1")
-    .update(Buffer.from(`blob ${bytes.length}\0`))
-    .update(bytes)
+    .update(Buffer.from(`blob ${canonical.length}\0`))
+    .update(canonical)
     .digest("hex");
 }
 
