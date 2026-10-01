@@ -108,6 +108,9 @@ test("exact observed incident: alive process + stale local HEAD + remote advance
   const remote = "e29d3746d2fbdc35b26e4b0725a63b78100a07c6";
   const snapshot = health({
     updated_at_unix: 900,
+    last_sync_at_unix: 899,
+    last_cycle_completed_at_unix: 899,
+    last_result_published_at_unix: 898,
     local_head: staleLocal,
     remote_head: staleLocal,
     request_count: 576,
@@ -153,7 +156,9 @@ test("bounded long-running phase gets 150s freshness budget but then becomes sta
   const running = health({
     phase: "execute_request",
     updated_at_unix: 900,
+    last_sync_at_unix: 899,
     last_cycle_completed_at_unix: 899,
+    last_result_published_at_unix: 898,
   });
   const ok = evaluateR28RelayFreshness(input({ health: running }), { nowUnix: 1020 });
   assert.equal(ok.decision, "HEALTHY");
