@@ -96,6 +96,9 @@ test("READY requires every named Bridge/R25/R26 gate and produces no executable 
   assert.equal(result.decision, "READY_FOR_EXPLICIT_CUTOVER");
   assert.equal(result.blockers.length, 0);
   assert.equal(result.gates.every((item) => item.ok), true);
+  assert.equal(result.explicit_cutover_preconditions_met, true);
+  assert.equal(result.live_cutover_authorized, false);
+  assert.equal(result.mutation_execution_authorized, false);
 
   const handoff = buildR27CoordinatorHandoff(result, {
     generatedAt: "2026-10-01T13:00:00.000Z",
@@ -149,7 +152,7 @@ test("Bridge moving SHA, artifact drift and failed rollback rehearsal become BLO
     });
     assert.equal(result.decision, "BLOCKED", name);
     assert.equal(result.read_only_diagnostics_allowed, true, name);
-    assert.equal(result.mutation_or_cutover_authorized, false, name);
+    assert.equal(result.live_cutover_authorized, false, name);
     const authority = result.gates.find((item) => item.id === "bridge_r23_rehearsal_authority");
     assert.equal(authority.ok, false, name);
   }
@@ -161,7 +164,7 @@ test("all critical single-gate failure fixtures identify at least one blocker", 
     const result = evaluateR27CutoverAuthority(input, { clock: () => fixtures.clock_ms });
     assert.equal(result.decision, "BLOCKED", spec.name);
     assert.ok(result.blockers.length >= 1, spec.name);
-    assert.equal(result.mutation_or_cutover_authorized, false, spec.name);
+    assert.equal(result.live_cutover_authorized, false, spec.name);
     assert.equal(result.read_only_diagnostics_allowed, true, spec.name);
   }
 });
