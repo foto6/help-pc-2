@@ -118,8 +118,8 @@
           "VERIFY exact PID 777 command fingerprint sha256:exact-candidate-command; STOP on mismatch.",
           "STOP candidate PID 777 gracefully only after exact identity verification; never kill by port.",
           "VERIFY candidate PID 777 exited and expected port is unowned; STOP on ambiguity.",
-          "COPY \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\bridge-r23-cutover-hPES7B\\\\r23-backup\\\\state.json\" -> \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\bridge-r23-cutover-hPES7B\\\\state.json\" atomically and verify SHA-256.",
-          "COPY \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\bridge-r23-cutover-hPES7B\\\\r23-backup\\\\supervisor-watchdog.json\" -> \"C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\bridge-r23-cutover-hPES7B\\\\supervisor-watchdog.json\" atomically and verify SHA-256.",
+          "COPY \"C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\bridge-r23-cutover-hPES7B\\r23-backup\\state.json\" -> \"C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\bridge-r23-cutover-hPES7B\\state.json\" atomically and verify SHA-256.",
+          "COPY \"C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\bridge-r23-cutover-hPES7B\\r23-backup\\supervisor-watchdog.json\" -> \"C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\bridge-r23-cutover-hPES7B\\supervisor-watchdog.json\" atomically and verify SHA-256.",
           "RUN previous exact start command: EXACT_PREVIOUS_START_COMMAND_FROM_COORDINATOR",
           "VERIFY bounded GET http://127.0.0.1:17448/api/status and require exact previous provenance.",
           "KEEP NO_LIVE_DEPLOY if any verification is unknown or fails."
