@@ -271,9 +271,13 @@ test("launcher liveness contract never equates PID existence with health", () =>
   };
   const cases = [
     [{ processExists: true, health: degraded }, "RECOVERY_REQUIRED", "FRESHNESS_HANDSHAKE_FAILED"],
+    [{ processExists: true, pidIdentityCurrent: false, health: healthy }, "RECOVERY_REQUIRED", "STALE_PID_IDENTITY"],
     [{ processExists: true, duplicateProcess: true, health: healthy }, "RECOVERY_REQUIRED", "DUPLICATE_PROCESS"],
+    [{ processExists: true, relayResponsive: false, health: degraded }, "RECOVERY_REQUIRED", "RELAY_UNRESPONSIVE"],
+    [{ processExists: true, executorPresent: false, health: degraded }, "RECOVERY_REQUIRED", "EXECUTOR_ABSENT"],
     [{ processExists: true, health: degraded, startupDeadlineExceeded: true }, "RECOVERY_REQUIRED", "STARTUP_CONVERGENCE_TIMEOUT"],
     [{ processExists: true, health: degraded, networkAvailable: false }, "RECOVERY_REQUIRED", "NETWORK_UNAVAILABLE"],
+    [{ processExists: true, health: degraded, transportReady: false }, "RECOVERY_REQUIRED", "TRANSPORT_NOT_CONVERGED"],
     [{ processExists: true, health: degraded, journalState: "corrupt" }, "RECOVERY_REQUIRED", "JOURNAL_CORRUPT"],
     [{ processExists: false, health: degraded }, "STOPPED", "PROCESS_ABSENT"],
   ];
