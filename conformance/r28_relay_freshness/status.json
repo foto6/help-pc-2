@@ -1,0 +1,16 @@
+{
+  "contract_version": "pc.native.r28.relay_freshness_status.v1",
+  "decision": "WAITING_FOR_LIVE_HEALTH_EVIDENCE",
+  "producer_sha": "2158066be7f4141c70e9bf24f6138d399bff7164",
+  "producer_ci_run": 36885427807,
+  "consumer_branch": "agent/native-mcp-r28-relay-freshness-qa-20261001",
+  "deterministic_incident_fixture": "STALE",
+  "pid_only_health_accepted": false,
+  "normal_wrapper_runtime_chain_supported": true,
+  "automatic_restart_authorized": false,
+  "automatic_kill_authorized": false,
+  "automatic_replay_authorized": false,
+  "live_cutover_authorized": false,
+  "live_producer_deployed": false,
+  "next_gate": "independent exact-head CI then explicit live cutover authorization"
+}
