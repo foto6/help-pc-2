@@ -211,6 +211,40 @@ export function validateVendoredR26Artifacts({
   if (progressSchema.$id !== R26_PROGRESS_V1 || livenessSchema.$id !== R26_LIVENESS_V1) {
     fail("R26_SCHEMA_DRIFT", "Vendored relay schema IDs drifted");
   }
+  const manifest = JSON.parse(readFileSync(join(directory, files[2][0]), "utf8"));
+  if (manifest.schema !== "pc_relay.progress.consumer_manifest.v1"
+      || manifest.producer_repository !== R26_PRODUCER_PIN.repository
+      || manifest.producer_branch !== R26_PRODUCER_PIN.branch
+      || manifest.source_base_sha !== R26_PRODUCER_PIN.manifest_source_base_sha
+      || manifest.progress_contract_version !== R26_PROGRESS_V1
+      || manifest.liveness_contract_version !== R26_LIVENESS_V1
+      || manifest.runtime_delivery?.progress_path !== ".pc-relay/progress.v1.json"
+      || manifest.runtime_delivery?.committed_to_git !== false
+      || manifest.runtime_delivery?.launcher_auto_kill_on_ambiguous_ownership !== false
+      || manifest.recovery_invariants?.side_effect_started_without_terminal_result !== "reconciliation_required"
+      || manifest.recovery_invariants?.side_effect_replay_authorized_after_liveness_recovery !== false
+      || manifest.recovery_invariants?.duplicate_result_commit_allowed !== false
+      || manifest.safety?.probe_reads_credentials !== false
+      || manifest.safety?.probe_reads_environment !== false
+      || manifest.safety?.live_service_mutation_required !== false) {
+    fail("R26_PRODUCER_MANIFEST_DRIFT", "Vendored R26 producer consumer manifest drifted");
+  }
+  const manifestBlobs = Object.fromEntries(
+    (Array.isArray(manifest.source_blobs) ? manifest.source_blobs : [])
+      .map((item) => [item.path, item.git_blob_sha]),
+  );
+  for (const [path, expected] of Object.entries({
+    "src/pc_relay/progress.py": R26_PRODUCER_PIN.source_blobs.progress_source,
+    "tools/github_relay.py": R26_PRODUCER_PIN.source_blobs.relay_script,
+    "tools/start_pc_control_relay.ps1": R26_PRODUCER_PIN.source_blobs.launcher,
+    "schemas/pc_relay.progress.v1.schema.json": R26_PRODUCER_PIN.source_blobs.progress_schema,
+    "schemas/pc_relay.liveness_probe.v1.schema.json": R26_PRODUCER_PIN.source_blobs.liveness_schema,
+    "tests/fixtures/relay_progress_v1/progress.example.json": R26_PRODUCER_PIN.source_blobs.progress_fixture,
+  })) {
+    if (manifestBlobs[path] !== expected) {
+      fail("R26_PRODUCER_MANIFEST_DRIFT", `Producer manifest blob drifted: ${path}`);
+    }
+  }
   const fixture = JSON.parse(readFileSync(join(directory, files[3][0]), "utf8"));
   validateR26Progress(fixture, { requirePinnedProducer: false });
   return Object.freeze({
