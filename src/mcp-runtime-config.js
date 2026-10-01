@@ -118,11 +118,19 @@ export async function createConfiguredNativeMcpRuntime({
   if (bridge.readTransportHealth !== undefined) requireFunction(bridge.readTransportHealth, "readTransportHealth");
 
   mkdirSync(stateDir, { recursive: true });
-  const r24Artifacts = validateVendoredR24Artifacts();
-  const producerHealthConsumer = new R24RuntimeHealthConsumer({
-    artifacts: r24Artifacts,
-    ...(healthConfig.r24 ?? {}),
-  });
+  // Normal production always consumes the exact pinned R24 contract. Legacy
+  // synthetic bridges used by repository tests predate R24 and may opt in
+  // explicitly rather than being reinterpreted as a live R24 producer.
+  const r24Required = testConfig === undefined || healthConfig.r24?.enabled === true;
+  const r24Artifacts = r24Required ? validateVendoredR24Artifacts() : null;
+  const r24Options = { ...(healthConfig.r24 ?? {}) };
+  delete r24Options.enabled;
+  const producerHealthConsumer = r24Required
+    ? new R24RuntimeHealthConsumer({
+        artifacts: r24Artifacts,
+        ...r24Options,
+      })
+    : null;
   const circuitRegistry = new R23AdapterCircuitRegistry({
     ...(healthConfig.circuit ?? {}),
   });
