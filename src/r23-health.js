@@ -296,6 +296,7 @@ export class R23HealthSupervisor {
     circuitRegistry = new R23AdapterCircuitRegistry({ clock }),
     processAlive = () => true,
     transportProbe = null,
+    producerHealthConsumer = null,
     staleProgressMs = 20_000,
     staleResultMs = 60_000,
     canaryTimeoutMs = 5_000,
@@ -305,6 +306,7 @@ export class R23HealthSupervisor {
     this.circuitRegistry = circuitRegistry;
     this.processAlive = processAlive;
     this.transportProbe = transportProbe;
+    this.producerHealthConsumer = producerHealthConsumer;
     this.staleProgressMs = boundedNumber(staleProgressMs, 20_000, 100, 600_000);
     this.staleResultMs = boundedNumber(staleResultMs, 60_000, 100, 3_600_000);
     this.canaryTimeoutMs = boundedNumber(canaryTimeoutMs, 5_000, 100, 120_000);
@@ -335,6 +337,43 @@ export class R23HealthSupervisor {
 
   noteResult() {
     this.lastResultAtMs = nowMs(this.clock);
+  }
+
+  ingestProducerRuntimeHealth(payload) {
+    if (!this.producerHealthConsumer) return null;
+    return this.producerHealthConsumer.ingest(payload);
+  }
+
+  noteProducerRuntimeHealthError(code = "R24_PRODUCER_HEALTH_MISSING") {
+    if (!this.producerHealthConsumer) return;
+    this.producerHealthConsumer.lastError = {
+      code,
+      observed_at_ms: nowMs(this.clock),
+    };
+  }
+
+  producerRuntimeHealth() {
+    return this.producerHealthConsumer?.snapshot?.() ?? null;
+  }
+
+  producerActionReadiness(action, { effect = "read_only" } = {}) {
+    if (!this.producerHealthConsumer) {
+      return { state: "UNKNOWN", adapter: adapterNameForAction(action), reason: "R24_CONSUMER_UNAVAILABLE" };
+    }
+    return this.producerHealthConsumer.actionReadiness(action, { effect });
+  }
+
+  shouldEnforceProducerHealth() {
+    return Boolean(this.producerHealthConsumer?.last || this.producerHealthConsumer?.lastError);
+  }
+
+  cutoverReadiness() {
+    return this.producerHealthConsumer?.cutoverReadiness?.() ?? {
+      decision: "NO_LIVE_CUTOVER",
+      prerequisites: { exact_r24_consumer_available: false },
+      health_prerequisites_satisfied: false,
+      release_ready: false,
+    };
   }
 
   #queueSnapshot() {
@@ -475,12 +514,16 @@ export class R23HealthSupervisor {
     const degradedAdapter = Object.values(circuits.adapters)
       .some((entry) => entry.status === "DEGRADED");
     const journal = circuits.outcome_journal_integrity;
+    const producerRuntimeHealth = this.producerRuntimeHealth();
+    const producerSystemState = producerRuntimeHealth?.system_state ?? "UNKNOWN";
     const hasUnknownLifecycle = queue.lifecycles.some((row) => row.lifecycle_state === "unknown");
     let status = "HEALTHY";
-    if (!processAlive || !queueProgressing || journal.status === "CORRUPT") status = "UNHEALTHY";
+    if (!processAlive || !queueProgressing || journal.status === "CORRUPT"
+        || producerSystemState === "UNHEALTHY") status = "UNHEALTHY";
     else if (!transportConnected || !executorResponsive || unhealthyAdapter
         || degradedAdapter || journal.status === "MISSING"
-        || (journal.status === "UNKNOWN" && hasUnknownLifecycle)) status = "DEGRADED";
+        || (journal.status === "UNKNOWN" && hasUnknownLifecycle)
+        || (producerRuntimeHealth && producerSystemState === "UNKNOWN")) status = "DEGRADED";
     return {
       contract_version: R23_HEALTH_V1,
       status,
@@ -489,7 +532,12 @@ export class R23HealthSupervisor {
       queue_progressing: queueProgressing,
       executor_responsive: executorResponsive,
       per_adapter_health: circuits.adapters,
-      outcome_journal_integrity: journal,
+      producer_runtime_health: producerRuntimeHealth,
+      producer_adapter_health: producerRuntimeHealth?.adapters ?? null,
+      producer_adapter_specific_degraded: producerRuntimeHealth?.adapter_specific_degraded ?? [],
+      producer_adapter_specific_unhealthy: producerRuntimeHealth?.adapter_specific_unhealthy ?? [],
+      outcome_journal_integrity: producerRuntimeHealth?.outcome_journal ?? journal,
+      cutover_readiness: this.cutoverReadiness(),
       last_successful_request_age_ms: healthAge(now, this.lastRequestAtMs),
       last_successful_result_age_ms: healthAge(now, this.lastResultAtMs),
       last_canary_age_ms: healthAge(now, this.lastCanaryAtMs),
