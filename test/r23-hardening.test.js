@@ -11,6 +11,7 @@ import {
   NativeRelayExecutorProvider,
   R23_HEALTH_V1,
   R23_LAUNCHER_LIVENESS_V1,
+  projectActionLifecycle,
   launcherLivenessDecision,
 } from "../src/index.js";
 
@@ -356,4 +357,71 @@ test("relay provider exposes process/transport/queue health without dispatching 
   assert.equal(health.queue_progressing, true);
   assert.equal(health.executor_responsive, false);
   assert.equal(health.pending_deliveries, 0);
+});
+
+
+test("stalled transport probe is bounded and reports disconnected instead of hanging", async () => {
+  const supervisor = new R23HealthSupervisor({
+    processAlive: () => true,
+    canaryTimeoutMs: 50,
+    transportProbe: async () => new Promise(() => {}),
+  });
+  const started = Date.now();
+  const transport = await supervisor.probeTransport();
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed >= 40 && elapsed < 500, `bounded transport probe took ${elapsed}ms`);
+  assert.equal(transport.connected, false);
+  assert.equal(transport.executor_responsive, false);
+  assert.equal(transport.error_code, "TRANSPORT_HEALTH_TIMEOUT");
+  assert.equal(supervisor.snapshot().status, "DEGRADED");
+});
+
+test("timed-out canary keeps the same deterministic request id for reconciliation/progress retry", async () => {
+  const supervisor = new R23HealthSupervisor({
+    canaryTimeoutMs: 50,
+  });
+  const seen = [];
+  const first = await supervisor.runCanary({
+    sessionId: "canary-reuse",
+    invoke: async ({ requestId }) => {
+      seen.push(requestId);
+      return new Promise(() => {});
+    },
+  });
+  assert.equal(first.ok, false);
+  assert.equal(first.error_code, "R23_CANARY_TIMEOUT");
+
+  const second = await supervisor.runCanary({
+    sessionId: "canary-reuse",
+    invoke: async ({ requestId }) => {
+      seen.push(requestId);
+      return { request_id: requestId, status: "completed" };
+    },
+  });
+  assert.equal(second.ok, true);
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0], seen[1]);
+  assert.ok(seen[0].startsWith("r23-canary:canary-reuse:"));
+});
+
+test("request lifecycle projection covers all R23 diagnostic states", () => {
+  const cases = [
+    [{ status: "queued" }, "queued"],
+    [{ status: "preflighting" }, "dispatched"],
+    [{ status: "executing" }, "executing"],
+    [{ status: "succeeded", reconciliationAttempts: 0 }, "completed"],
+    [{ status: "failed", error: { code: "ADAPTER_TIMEOUT" } }, "timeout"],
+    [{ status: "uncertain_outcome" }, "unknown"],
+    [{ status: "succeeded", reconciliationAttempts: 1 }, "reconciled"],
+  ];
+  for (const [action, expected] of cases) {
+    assert.equal(projectActionLifecycle({
+      id: "lifecycle-" + expected,
+      correlationId: "request-" + expected,
+      executionAttempts: 1,
+      reconciliationAttempts: 0,
+      createdAtMs: 1,
+      ...action,
+    }).lifecycle_state, expected);
+  }
 });
