@@ -13,6 +13,7 @@ export const R26_PRODUCER_PIN = Object.freeze({
   branch: "agent/pc-relay-r26-progress-health-20261001",
   sha: "96d453bcdc866bfd26c06ad88e2ec0c033fbccdd",
   workflow_run: 36833819136,
+  relay_script_sha256: "9a50c40a591e92fc4c8c05202baf5af7f24937d018c57ca2b13b8097b5eca383",
   manifest_source_base_sha: "4ce8901221ad994ae5b44299d6601e1c9cc6a047",
   source_blobs: Object.freeze({
     progress_source: "c00ccc58f75de463898cd26bb6c4cfeab25a2ca6",
@@ -141,6 +142,7 @@ export function validateR26ProducerPin(pin) {
     "producer_branch",
     "producer_sha",
     "producer_workflow_run",
+    "runtime_script_sha256",
     "manifest_source_base_sha",
     "progress_contract",
     "liveness_contract",
@@ -155,6 +157,7 @@ export function validateR26ProducerPin(pin) {
       || pin.producer_branch !== R26_PRODUCER_PIN.branch
       || pin.producer_sha !== R26_PRODUCER_PIN.sha
       || pin.producer_workflow_run !== R26_PRODUCER_PIN.workflow_run
+      || pin.runtime_script_sha256 !== R26_PRODUCER_PIN.relay_script_sha256
       || pin.manifest_source_base_sha !== R26_PRODUCER_PIN.manifest_source_base_sha
       || pin.progress_contract !== R26_PROGRESS_V1
       || pin.liveness_contract !== R26_LIVENESS_V1) {
@@ -245,6 +248,8 @@ export function validateR26Progress(payload, { requirePinnedProducer = true } = 
       expected_sha: R26_PRODUCER_PIN.sha,
       actual_branch: payload.source.branch,
       actual_sha: payload.source.startup_head,
+      expected_relay_script_sha256: R26_PRODUCER_PIN.relay_script_sha256,
+      actual_relay_script_sha256: payload.source.relay_script_sha256,
     });
   }
 
