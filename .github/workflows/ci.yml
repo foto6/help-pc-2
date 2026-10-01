@@ -11,6 +11,7 @@ on:
       - agent/pc-native-control-full-dc
       - agent/pc-native-control-final-candidate
       - agent/pc-control-wire-registry-r15-20260928
+      - agent/native-mcp-r23-hardening-20261001
   pull_request:
 
 permissions:
@@ -56,5 +57,9 @@ jobs:
         run: npm run test:preflight
       - name: Focused Executor journal recovery
         run: npm run test:journal
+      - name: R23 native MCP/control hardening
+        run: npm run test:r23
+      - name: R23 autonomous soak/chaos
+        run: npm run test:r23-soak
       - name: Full test suite
         run: npm test
