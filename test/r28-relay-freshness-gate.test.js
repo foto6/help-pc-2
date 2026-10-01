@@ -11,7 +11,8 @@ import {
 } from "../src/index.js";
 
 function gitBlobSha1(bytes) {
-  const body = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  const raw = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  const body = Buffer.from(raw.toString("utf8").replace(/\r\n/g, "\n"), "utf8");
   return createHash("sha1")
     .update(Buffer.from(`blob ${body.length}\0`))
     .update(body)
