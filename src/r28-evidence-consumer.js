@@ -342,7 +342,7 @@ export function validateR28PinnedArtifacts(options = {}) {
 
   const bridgeVendored = {
     "app/live-preflight-r24.js": ["live-preflight-r24.js", "4e5d2c9765ed51848564e85582d990872a7349b5"],
-    "app/r24-live-preflight-contract.test.js": ["r24-live-preflight-contract.test.js", "17b14b318dba64da03b4affc904da5e7392ec856"],
+    "app/r24-live-preflight-contract.test.js": ["r24-live-preflight-contract.source.js", "17b14b318dba64da03b4affc904da5e7392ec856"],
     "app/r24-live-preflight-fixtures.js": ["r24-live-preflight-fixtures.js", "ab6f7b9284077568593ca0ed9f1321a75d77cc16"],
     "app/r24-readiness-report.js": ["r24-readiness-report.js", "a561986d9ff526422c35253ba05c4b3165c35c63"],
   };
