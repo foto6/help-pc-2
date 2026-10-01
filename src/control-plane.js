@@ -3,6 +3,7 @@ import { ProviderRegistry, VerificationRegistry } from "./adapters.js";
 import { RuntimeMetrics } from "./metrics.js";
 import { redactMetadata } from "./persistence.js";
 import { TERMINAL_ACTION_STATUSES, ValidationError, validateActionSpec } from "./schemas.js";
+import { R23_LIFECYCLE_V1, R23_LIFECYCLE_STATES, projectActionLifecycle } from "./r23-health.js";
 
 export class ControlPlaneError extends Error {
   constructor(message, code, details = undefined) { super(message); this.name = "ControlPlaneError"; this.code = code; this.details = details; }
@@ -220,8 +221,27 @@ export class ControlPlane {
     preflightStatus: action.preflightStatus, preflightAttestationDigest: action.preflightAttestationDigest,
     preflightCapabilitiesDigest: action.preflightCapabilitiesDigest, capabilityDriftCount: action.capabilityDriftCount,
     error: action.error, uncertainty: action.uncertainty, lease: action.lease,
+    lifecycle: projectActionLifecycle(action),
   }); }
   listActions({ sessionId, status } = {}) { return [...this.actions.values()].filter((action) => (!sessionId || action.sessionId === sessionId) && (!status || action.status === status)).map(clone); }
+  getLifecycleDiagnostics({ limit = 512 } = {}) {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 4096) {
+      throw new ValidationError("lifecycle diagnostics limit must be 1..4096.");
+    }
+    const rows = [...this.actions.values()]
+      .slice(-limit)
+      .map(projectActionLifecycle);
+    const counts = Object.fromEntries(R23_LIFECYCLE_STATES.map((state) => [state, 0]));
+    for (const row of rows) counts[row.lifecycle_state] += 1;
+    return clone({
+      contract_version: R23_LIFECYCLE_V1,
+      retained: rows.length,
+      queue_depth: this.queue.length,
+      states: [...R23_LIFECYCLE_STATES],
+      counts,
+      records: rows,
+    });
+  }
 
   #transitionUncertain(action, reason, error = null) {
     const now = this.#time(); const wasUncertain = action.status === "uncertain_outcome" || action.status === "reconciliation_wait";
