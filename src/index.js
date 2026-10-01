@@ -1,4 +1,22 @@
 export {
+  R28_CUTOVER_AUTHORITY_V1,
+  R28_HANDOFF_V1,
+  BRIDGE_R24_LIVE_PREFLIGHT_V1,
+  RELAY_R27_PROGRESS_EVIDENCE_V1,
+  R28_DECISIONS,
+  R28_AUTHORITIES,
+  R28EvidenceError,
+  loadR28Pins,
+  validateR28BridgePin,
+  validateR28RelayPin,
+  validateR28PinnedArtifacts,
+  consumeBridgeR24Evidence,
+  consumeRelayR27Evidence,
+  evaluateR28CutoverAuthority,
+  buildR28CoordinatorHandoff,
+} from "./r28-evidence-consumer.js";
+
+export {
   R27_CUTOVER_AUTHORITY_V1,
   R27_COORDINATOR_HANDOFF_V1,
   R27_DECISIONS,
