@@ -1,0 +1,26 @@
+{
+  "contract_version": "pc.native.r25.r24_runtime_health_pin.v1",
+  "producer_repository": "foto6/help-pc-1",
+  "producer_branch": "agent/pc-executor-r24-runtime-health-20261001",
+  "producer_sha": "60ba0ce92bf2f3cdd89e3213dba40793c6a90d8b",
+  "producer_workflow_run": 36806258696,
+  "producer_contract": "pc_executor.runtime_health.v1",
+  "source_blobs": {
+    "src/pc_executor/runtime_health.py": "6b7a7bfd84e02855de468e87a621e349527f52d6",
+    "schemas/pc_executor.runtime_health.v1.schema.json": "62d691862c4c66088bdb55b5fe35193529b6532f",
+    "tests/fixtures/runtime_health_v1/manifest.json": "54b8ff1548529403d775cd4f4f5ffff997fe6d39",
+    "tests/fixtures/runtime_health_v1/runtime_health.example.json": "aee3ce093250a0ca3659496c20ccb37940ec76cb"
+  },
+  "vendored_paths": {
+    "schema": "conformance/r24_runtime_health_v1/pc_executor.runtime_health.v1.schema.json",
+    "producer_consumer_manifest": "conformance/r24_runtime_health_v1/producer-consumer-manifest.json",
+    "fixture": "conformance/r24_runtime_health_v1/runtime_health.example.json"
+  },
+  "delivery": {
+    "native_tool": "device.health",
+    "executor_action": "health.get",
+    "response_field": "runtime_health"
+  },
+  "release_gate": "NO_LIVE_CUTOVER",
+  "runtime_source_sha_wire_attested": false
+}
