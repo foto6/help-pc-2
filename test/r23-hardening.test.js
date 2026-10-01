@@ -6,6 +6,9 @@ import {
   HelpPc1Adapter,
   R23AdapterCircuitRegistry,
   R23HealthSupervisor,
+  NativeRelayState,
+  NativeRelayServer,
+  NativeRelayExecutorProvider,
   R23_HEALTH_V1,
   R23_LAUNCHER_LIVENESS_V1,
   launcherLivenessDecision,
@@ -294,4 +297,63 @@ test("launcher liveness contract never equates PID existence with health", () =>
   const ok = launcherLivenessDecision({ processExists: true, health: healthy });
   assert.equal(ok.state, "HEALTHY");
   assert.equal(ok.already_running_healthy, true);
+});
+
+
+test("relay process-alive health degrades when an active delivery stops progressing", async (t) => {
+  let now = 10_000;
+  const state = new NativeRelayState({ clock: () => now });
+  const server = new NativeRelayServer({
+    state,
+    controlToken: "r23-relay-health-control-token-0123456789",
+    heartbeatTimeoutMs: 100,
+    clock: () => now,
+  });
+  const started = await server.start();
+  t.after(() => server.stop());
+  assert.ok(started.url);
+
+  state.createDelivery({
+    deviceId: "device-r23",
+    requestId: "request-stalled",
+    requestVersion: "pc.native.control.v1",
+    deliveryId: "delivery-stalled",
+    semantics: "read_only",
+    fingerprint: "fingerprint-stalled",
+    sessionEpoch: "epoch-r23",
+  });
+  const fresh = server.health();
+  assert.equal(fresh.process_alive, true);
+  assert.equal(fresh.queue_progressing, true);
+  assert.equal(fresh.status, "ok");
+
+  now += 101;
+  const stale = server.health();
+  assert.equal(stale.process_alive, true);
+  assert.equal(stale.pending_deliveries, 1);
+  assert.equal(stale.queue_progressing, false);
+  assert.equal(stale.oldest_pending_age_ms, 101);
+  assert.equal(stale.status, "degraded");
+});
+
+test("relay provider exposes process/transport/queue health without dispatching a native request", async (t) => {
+  const state = new NativeRelayState();
+  const token = "r23-relay-probe-control-token-01234567890123";
+  const server = new NativeRelayServer({ state, controlToken: token });
+  const started = await server.start();
+  t.after(() => server.stop());
+
+  const provider = new NativeRelayExecutorProvider({
+    relayUrl: started.url,
+    relayToken: token,
+    deviceId: "device-not-connected",
+    desktopId: "desktop-r23",
+  });
+  const health = await provider.readTransportHealth();
+  assert.equal(health.contract_version, "pc.native.relay.health.v1");
+  assert.equal(health.process_alive, true);
+  assert.equal(health.transport_connected, false);
+  assert.equal(health.queue_progressing, true);
+  assert.equal(health.executor_responsive, false);
+  assert.equal(health.pending_deliveries, 0);
 });
