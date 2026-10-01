@@ -1,0 +1,34 @@
+{
+  "contract_version": "pc.native.r28.relay_freshness_authority.v1",
+  "producer": {
+    "repository": "foto6/help-pc-1",
+    "branch": "agent/pc-relay-stale-sync-watchdog-20261001",
+    "sha": "2158066be7f4141c70e9bf24f6138d399bff7164",
+    "workflow_run": 36885427807,
+    "contract": "pc_relay.health.v1",
+    "source_blobs": {
+      "health_schema": "2a2f4e88e3b483db768fc95972c2ed25fa9a187e",
+      "producer_pin": "935940dfc0678c65fa76db3a2c1d0364de4fbe8f",
+      "relay": "d10c3064ae21833cc7288d37adead7dc0f67e15d",
+      "launcher": "c9545f09b8dc6eb2d10cf1903736e95829cbaba0"
+    }
+  },
+  "vendored_blobs": {
+    "pc_relay.health.v1.schema.json": "2a2f4e88e3b483db768fc95972c2ed25fa9a187e",
+    "producer-pin.r2.json": "935940dfc0678c65fa76db3a2c1d0364de4fbe8f"
+  },
+  "incident": {
+    "local_stale_head": "be374169e51309bbc943f68e7965f23f53c85380",
+    "observed_remote_head": "e29d3746d2fbdc35b26e4b0725a63b78100a07c6",
+    "queued_without_results": 22,
+    "process_chain": [
+      "launcher_wrapper",
+      "relay_runtime"
+    ],
+    "stderr_empty": true,
+    "manual_fetch_succeeded": true,
+    "probe_consumed_before_restart": false
+  },
+  "release_gate": "NO_LIVE_CUTOVER",
+  "live_producer_deployed": false
+}
