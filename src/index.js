@@ -1,4 +1,12 @@
 export {
+  R28_HEALTH_V1,
+  R28_FRESHNESS_GATE_V1,
+  R28_PRODUCER_PIN,
+  validateR28HealthSnapshot,
+  evaluateR28RelayFreshness,
+} from "./r28-relay-freshness-gate.js";
+
+export {
   R27_CUTOVER_AUTHORITY_V1,
   R27_COORDINATOR_HANDOFF_V1,
   R27_DECISIONS,
