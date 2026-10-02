@@ -110,9 +110,9 @@ async function boundedRuntimeProbe(runtime, timeoutMs) {
     timeoutMs,
   );
   try {
-    const capabilityPromise = runtime.ensureCapabilities();
+    const capabilityPromise = runtime.ensureCapabilities({ signal: controller.signal });
     const healthPromise = typeof runtime.healthSnapshot === "function"
-      ? runtime.healthSnapshot({ refresh: true, canary: false })
+      ? runtime.healthSnapshot({ refresh: true, canary: false, signal: controller.signal })
       : Promise.resolve(null);
     const timeout = new Promise((_, reject) => {
       controller.signal.addEventListener("abort", () => reject(controller.signal.reason), { once: true });
