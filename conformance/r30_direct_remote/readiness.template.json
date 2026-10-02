@@ -1,0 +1,42 @@
+{
+  "contract_version": "pc.native.r30.direct_remote_readiness.v1",
+  "milestone": "NATIVE_MCP_R30_DIRECT_AUTHENTICATED_REMOTE_LANE",
+  "source_state": "SOURCE_READY",
+  "live_rehearsal_gate": "READY_FOR_EXPLICIT_LIVE_REHEARSAL",
+  "actual_remote_chatgpt_tool_exposed": false,
+  "actual_remote_plugin_registration_performed": false,
+  "missing_external_authority": "REMOTE_CHATGPT_PLUGIN_GATEWAY_REGISTRATION",
+  "release_gate": "NO_LIVE_CUTOVER",
+  "transport": {
+    "protocol": "MCP Streamable HTTP",
+    "mcp_path": "/mcp",
+    "health_path": "/healthz",
+    "server_contract": "pc.native.direct_remote_mcp.v1",
+    "health_contract": "pc.native.direct_remote_mcp.health.v1",
+    "client_auth": "Bearer token, separate from relay/device credentials",
+    "remote_bind": "exact allowlist required for non-loopback bind",
+    "public_origin": "HTTPS required outside isolated tests",
+    "stable_side_effect_request_id": true
+  },
+  "safety": {
+    "raw_executor_exposed": false,
+    "arbitrary_shell_endpoint_exposed": false,
+    "discovery_claims_desktop": false,
+    "automatic_side_effect_replay": false,
+    "token_bytes_in_metadata": false,
+    "live_service_mutation": false,
+    "firewall_or_tunnel_mutation": false,
+    "task_or_service_registration": false
+  },
+  "required_external_steps": [
+    "Provision an HTTPS gateway endpoint that preserves the exact public Host header.",
+    "Provide PC_NATIVE_REMOTE_MCP_TOKEN from a credential authority distinct from PC_NATIVE_RELAY_TOKEN.",
+    "Register the HTTPS /mcp endpoint with the remote ChatGPT/plugin gateway under explicit platform authority.",
+    "Run an explicit live rehearsal before any production cutover."
+  ],
+  "exact_head": null,
+  "ci_run_id": null,
+  "runner_os": null,
+  "generated_at": null,
+  "digest": null
+}
