@@ -197,6 +197,27 @@ export {
   assertCredentialSeparation,
   startDirectRemoteMcpServer,
 } from "./direct-remote-mcp.js";
+export {
+  PC_CONTROL_DIRECT_GATEWAY_V1,
+  PC_CONTROL_PLUGIN_SURFACE_V1,
+  PC_CONTROL_CANARY_EVIDENCE_V1,
+  PC_CONTROL_READINESS_V1,
+  PC_CONTROL_PLUGIN_CANDIDATE_V1,
+  R31_STATES,
+  R31_R30_SOURCE_SHA,
+  PROTECTED_PATH_POLICY_ID,
+  PcControlDirectGatewayError,
+  PcControlDirectCandidateGateway,
+  PcControlDualLaneGateway,
+  digestJson as pcControlDirectDigestJson,
+  pluginSurfaceFromMcp,
+  comparePluginSurfaces,
+  evaluateR31Readiness,
+  buildCanaryEvidence,
+  runReadOnlyCanary,
+  validateR31SourcePin,
+  loadR31PluginCandidateMetadata,
+} from "./pc-control-direct-candidate.js";
 export { createConfiguredNativeMcpRuntime, PRODUCTION_BRIDGE_CONTRACT } from "./mcp-runtime-config.js";
 
 export {
