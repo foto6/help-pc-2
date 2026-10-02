@@ -20,6 +20,13 @@ function committedBlobSha(path) {
   return execFileSync("git", ["rev-parse", `HEAD:${path}`], { encoding: "utf8" }).trim();
 }
 
+function committedBlobIdentities() {
+  return Object.fromEntries(
+    Object.values(R29_PRODUCER_PIN.source_blobs)
+      .map((item) => [item.vendored_path, committedBlobSha(item.vendored_path)]),
+  );
+}
+
 test("R29 is pinned to the exact help-pc-1 producer SHA and green CI run", () => {
   assert.equal(R29_PRODUCER_PIN.producer.repository, "foto6/help-pc-1");
   assert.equal(R29_PRODUCER_PIN.producer.branch, "agent/pc-relay-watchdog-cutover-candidate-20261002");
@@ -30,8 +37,10 @@ test("R29 is pinned to the exact help-pc-1 producer SHA and green CI run", () =>
 });
 
 test("every vendored R29 producer file is the same committed Git blob as the exact producer", () => {
-  const verified = validateR29VendoredProducerBlobs();
+  const identities = committedBlobIdentities();
+  const verified = validateR29VendoredProducerBlobs(identities);
   assert.deepEqual(verified, { ok: true, failures: [] });
+  assert.equal(validateR29VendoredProducerBlobs().ok, false);
   for (const item of Object.values(R29_PRODUCER_PIN.source_blobs)) {
     assert.equal(committedBlobSha(item.vendored_path), item.git_blob_sha1, item.vendored_path);
   }
@@ -101,7 +110,7 @@ test("startup failure, degraded/process-only, stale, duplicate and reconciliatio
 });
 
 test("independent static safety inspection passes every source-bound gate", () => {
-  const safety = inspectR29ProducerSafety();
+  const safety = inspectR29ProducerSafety({ committedBlobIdentities: committedBlobIdentities() });
   assert.equal(safety.source_blob_count, 15);
   assert.equal(safety.incident_logical_process_count, 1);
   assert.deepEqual(safety.scenario_states, {
@@ -114,7 +123,7 @@ test("independent static safety inspection passes every source-bound gate", () =
 });
 
 test("R29 report reaches decision readiness without authorizing live cutover or mutation", () => {
-  const result = evaluateR29RelayCutoverQa();
+  const result = evaluateR29RelayCutoverQa({ committedBlobIdentities: committedBlobIdentities() });
   assert.equal(result.contract_version, R29_QA_V1);
   assert.equal(result.decision, R29_READY);
   assert.notEqual(result.decision, R29_BLOCKED);
@@ -131,8 +140,10 @@ test("R29 report reaches decision readiness without authorizing live cutover or 
 test("R29 implementation has no executable process-control primitive", () => {
   const source = readFileSync(new URL("../src/r29-relay-cutover-qa.js", import.meta.url), "utf8");
   const report = readFileSync(new URL("../tools/r29-relay-cutover-qa-report.js", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /node:child_process|spawn\s*\(|execFile\s*\(|process\.kill\s*\(/);
   for (const text of [source, report]) {
-    assert.doesNotMatch(text, /from\s+["']node:child_process|spawn\s*\(|execFile\s*\(|process\.kill\s*\(/);
+    assert.doesNotMatch(text, /process\.kill\s*\(|Stop-Process|taskkill|Restart-Service|Start-Service|Stop-Service/i);
     assert.doesNotMatch(text, /powershell(?:\.exe)?\s+-|schtasks\s+\/|sc\.exe\s+/i);
   }
+  assert.match(report, /execFileSync\("git", \["rev-parse", `HEAD:/);
 });
