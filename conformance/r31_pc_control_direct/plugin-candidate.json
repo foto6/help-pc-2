@@ -1,0 +1,38 @@
+{
+  "contract_version": "pc.control.plugin_candidate.v1",
+  "candidate_version": "0.3.0-candidate",
+  "source_pin": "pc.control.r31.source_pin.v1",
+  "current_authority": "github_relay",
+  "candidate_lane": "r30_direct_remote_mcp",
+  "actual_pc_control_cutover": false,
+  "endpoint_contract": {
+    "env": "PC_CONTROL_DIRECT_MCP_ENDPOINT",
+    "required_path": "/mcp",
+    "https_required_outside_tests": true
+  },
+  "auth_contract": {
+    "env": "PC_CONTROL_DIRECT_MCP_TOKEN",
+    "bearer": true,
+    "min_length": 32,
+    "must_be_distinct_from_device_or_relay_credentials": true,
+    "log_or_metadata_exposure": false
+  },
+  "timeouts": {
+    "connect_env": "PC_CONTROL_DIRECT_CONNECT_TIMEOUT_MS",
+    "request_env": "PC_CONTROL_DIRECT_REQUEST_TIMEOUT_MS"
+  },
+  "migration": {
+    "mode": "dual_lane_read_only_canary",
+    "side_effect_authority": "github_relay",
+    "direct_candidate_side_effects_enabled": false,
+    "read_only_candidate_probe_allowed": true,
+    "side_effect_mirroring_allowed": false,
+    "fallback_after_unknown_allowed": false
+  },
+  "request_semantics": {
+    "stable_request_id_required_for_candidate_side_effects": true,
+    "reconciliation_status": "reconciliation_required",
+    "automatic_replay": false
+  },
+  "protected_path_policy": "pc.native.facade.protected_path_fail_closed.v1"
+}
