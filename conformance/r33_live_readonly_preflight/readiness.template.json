@@ -1,0 +1,31 @@
+{
+  "contract_version": "pc.control.r33.preflight_readiness_report.v1",
+  "state": "BLOCKED",
+  "blockers": [
+    "LIVE_WINDOWS_PREFLIGHT_NOT_EXECUTED_IN_CI"
+  ],
+  "ready_for_coordinator_canary": false,
+  "actual_read_only_canary_executed": false,
+  "read_only_canary_pass_claimed": false,
+  "actual_pc_control_cutover": false,
+  "current_authority": "github_relay",
+  "current_working_path_changed": false,
+  "run_canary_command": null,
+  "safety": {
+    "side_effect_probe_count": 0,
+    "automatic_replay_authorized": false,
+    "fallback_authorized": false,
+    "relay_restart": false,
+    "bridge_restart": false,
+    "mcp_restart": false,
+    "plugin_mutated": false,
+    "service_or_task_changed": false,
+    "firewall_or_tunnel_changed": false,
+    "credential_bytes_persisted": false
+  },
+  "exact_head": null,
+  "ci_run_id": null,
+  "runner_os": null,
+  "generated_at": null,
+  "digest": null
+}
