@@ -9,7 +9,7 @@ import {
   r32SourceAuthorityProfile,
   r32Digest,
 } from "./r32-local-canary-operator.js";
-import { relayDigestJson } from "./native-relay-protocol.js";
+import { digestJson as relayDigestJson } from "./native-relay-protocol.js";
 
 export const R33_PREFLIGHT_V1 = "pc.control.r33.live_readonly_canary_preflight.v1";
 export const R33_DISCOVERY_V1 = "pc.control.r33.runtime_discovery.v1";
