@@ -34,7 +34,11 @@
     "report:r30-direct-remote": "node tools/r30-direct-remote-readiness-report.js",
     "test:r31-pc-control-direct": "node --test test/r31-pc-control-direct-candidate.test.js test/r31-pc-control-direct.integration.test.js test/r30-direct-remote-mcp.test.js test/r30-direct-remote-chaos.integration.test.js test/final-control-relay-e2e.test.js",
     "r31:canary": "node tools/r31-pc-control-direct-canary.js",
-    "report:r31-pc-control-direct": "node tools/r31-pc-control-direct-readiness-report.js"
+    "report:r31-pc-control-direct": "node tools/r31-pc-control-direct-readiness-report.js",
+    "test:r32-local-canary": "node --test test/r32-local-canary-operator.test.js test/r31-pc-control-direct-candidate.test.js test/r31-pc-control-direct.integration.test.js",
+    "report:r32-local-canary": "node tools/r32-local-canary-readiness-report.js",
+    "r32:authority-snapshot": "node tools/r32-authority-snapshot.js",
+    "r32:canary": "node tools/r32-read-only-canary.js"
   },
   "engines": {
     "node": ">=20"
