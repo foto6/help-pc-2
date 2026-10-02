@@ -263,6 +263,8 @@ test("PowerShell preflight is read-only and never executes RunCanary or mutates 
   assert.match(source,/\/v1\/relay\/health/);
   assert.match(source,/\/v1\/relay\/devices/);
   assert.match(source,/PC_NATIVE_RELAY_TOKEN_FILE/);
+  assert.match(source,/\$env:OS\s+-eq\s+"Windows_NT"/);
+  assert.doesNotMatch(source,/\$IsWindows\b/);
   assert.doesNotMatch(source,/Start-Process|Stop-Process|Restart-Service|Stop-Service|Start-Service|Register-ScheduledTask|Unregister-ScheduledTask|New-NetFirewallRule|netsh|cloudflared|ngrok/i);
   assert.doesNotMatch(source,/-Action\s+RunCanary/);
   assert.doesNotMatch(source,/PC_NATIVE_RELAY_TOKEN\s*=/);

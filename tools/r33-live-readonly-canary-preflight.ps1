@@ -21,7 +21,8 @@ function New-R33OutputDir {
 }
 
 function Get-RelayRows {
-  if (-not $IsWindows) { return @() }
+  $isWindowsHost = ($env:OS -eq "Windows_NT")
+  if (-not $isWindowsHost) { return @() }
   return @(Get-CimInstance Win32_Process | Where-Object {
     $_.CommandLine -and $_.CommandLine.Contains("github_relay.py")
   } | ForEach-Object {
