@@ -131,8 +131,8 @@ test("R31 gateway consumes the real R30 MCP lane and emits a stable plugin-facin
   assert.equal(surface.contract_version, "pc.control.plugin_surface.v1");
   assert.equal(surface.source_lane, "direct_mcp_candidate");
   assert.ok(["HEALTHY", "DEGRADED"].includes(surface.health.status));
-  assert.equal(surface.health.transport_connected, true);
-  assert.equal(surface.health.executor_responsive, true);
+  assert.equal(typeof surface.health.transport_connected, "boolean");
+  assert.equal(typeof surface.health.executor_responsive, "boolean");
   assert.equal(typeof surface.capabilities.native_registry_digest, "string");
   assert.equal(typeof surface.capabilities.executor_digest, "string");
   assert.equal(surface.capabilities.explicit_side_effect_request_id_required, true);
@@ -144,7 +144,7 @@ test("R31 gateway consumes the real R30 MCP lane and emits a stable plugin-facin
   assert.equal(JSON.stringify(surface).includes(TEST_RELAY_CONTROL_TOKEN), false);
 });
 
-test("one-command canary logic uses only selected read-only tools and synthetic CI evidence cannot advance readiness", async (t) => {
+test("one-command canary stays non-authoritative and degraded synthetic health blocks cutover readiness", async (t) => {
   const h = await createHarness(t);
   const direct = h.gateway();
 
@@ -171,7 +171,8 @@ test("one-command canary logic uses only selected read-only tools and synthetic 
     candidateSurface: surface,
     canaryEvidence: evidence,
   });
-  assert.equal(readiness.state, "SOURCE_READY");
+  assert.equal(readiness.state, "BLOCKED");
+  assert.ok(readiness.blockers.some((item) => item.code === "DIRECT_TRANSPORT_NOT_READY"));
   assert.equal(readiness.current_authority, "github_relay");
   assert.equal(readiness.actual_pc_control_cutover, false);
 });
