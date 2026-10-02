@@ -18,6 +18,7 @@ on:
       - agent/native-mcp-r28-relay-freshness-qa-20261001
       - agent/native-mcp-r29-relay-cutover-qa-20261002
       - agent/native-mcp-r30-direct-remote-lane-20261002
+      - agent/native-mcp-r31-pc-control-direct-lane-20261002
   pull_request:
 
 permissions:
@@ -81,6 +82,8 @@ jobs:
         run: npm run test:r29-relay-cutover-qa
       - name: R30 direct authenticated remote MCP lane
         run: npm run test:r30-direct-remote
+      - name: R31 pc-control direct-lane candidate
+        run: npm run test:r31-pc-control-direct
       - name: Full test suite
         run: npm test
       - name: Generate exact-head R27 coordinator handoff
@@ -108,5 +111,14 @@ jobs:
         with:
           name: r30-direct-remote-readiness-${{ matrix.os }}
           path: r30-direct-remote-readiness-${{ matrix.os }}.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Generate exact-head R31 pc-control direct readiness
+        run: node tools/r31-pc-control-direct-readiness-report.js --out r31-pc-control-direct-readiness-${{ matrix.os }}.json
+      - name: Upload exact-head R31 pc-control direct readiness
+        uses: actions/upload-artifact@v4
+        with:
+          name: r31-pc-control-direct-readiness-${{ matrix.os }}
+          path: r31-pc-control-direct-readiness-${{ matrix.os }}.json
           if-no-files-found: error
           retention-days: 14
