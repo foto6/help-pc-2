@@ -16,6 +16,7 @@ on:
       - agent/native-mcp-r26-relay-progress-consumer-20261001
       - agent/native-mcp-r27-cutover-authority-gate-20261001
       - agent/native-mcp-r28-relay-freshness-qa-20261001
+      - agent/native-mcp-r29-relay-cutover-qa-20261002
   pull_request:
 
 permissions:
@@ -75,6 +76,8 @@ jobs:
         run: npm run test:r28-relay-freshness
       - name: R28 independent relay freshness QA
         run: node --test test/r28-relay-freshness-gate.test.js
+      - name: R29 independent relay cutover/autostart QA
+        run: npm run test:r29-relay-cutover-qa
       - name: Full test suite
         run: npm test
       - name: Generate exact-head R27 coordinator handoff
@@ -84,5 +87,14 @@ jobs:
         with:
           name: r27-coordinator-handoff-${{ matrix.os }}
           path: r27-coordinator-handoff-${{ matrix.os }}.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Generate exact-head R29 relay cutover QA report
+        run: node tools/r29-relay-cutover-qa-report.js --out r29-relay-cutover-qa-${{ matrix.os }}.json
+      - name: Upload exact-head R29 relay cutover QA report
+        uses: actions/upload-artifact@v4
+        with:
+          name: r29-relay-cutover-qa-${{ matrix.os }}
+          path: r29-relay-cutover-qa-${{ matrix.os }}.json
           if-no-files-found: error
           retention-days: 14
