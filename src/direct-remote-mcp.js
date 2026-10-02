@@ -275,25 +275,37 @@ export async function startDirectRemoteMcpServer({
       }
 
       const controller = new AbortController();
-      const timer = setTimeout(() => {
-        stats.requestTimeouts += 1;
-        controller.abort(Object.assign(new Error("direct_remote_request_timeout"), {
-          code: "DIRECT_REMOTE_REQUEST_TIMEOUT",
-        }));
-      }, requestTimeoutMs);
+      let timer = null;
+      let timedOut = false;
+      const boundedRequest = new Request(request, { signal: controller.signal });
+      const operation = mcpHandler.fetch(boundedRequest, {
+        authInfo: {
+          token: "[REDACTED]",
+          clientId: "pc-native-direct-remote-client",
+          scopes: ["mcp"],
+          expiresAt: Math.floor(Date.now() / 1000) + 300,
+        },
+      });
+      operation.catch(() => {});
+      const timeoutResponse = new Promise((resolve) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          stats.requestTimeouts += 1;
+          controller.abort(Object.assign(new Error("direct_remote_request_timeout"), {
+            code: "DIRECT_REMOTE_REQUEST_TIMEOUT",
+          }));
+          resolve(jsonResponse(504, {
+            error: "request_timeout",
+            reconciliation_required: true,
+            automatic_replay: false,
+          }));
+        }, requestTimeoutMs);
+      });
       try {
-        const boundedRequest = new Request(request, { signal: controller.signal });
-        const response = await mcpHandler.fetch(boundedRequest, {
-          authInfo: {
-            token: "[REDACTED]",
-            clientId: "pc-native-direct-remote-client",
-            scopes: ["mcp"],
-            expiresAt: Math.floor(Date.now() / 1000) + 300,
-          },
-        });
-        stats.lastSuccessfulRequestAtMs = Date.now();
+        const response = await Promise.race([operation, timeoutResponse]);
+        if (!timedOut) stats.lastSuccessfulRequestAtMs = Date.now();
         return response;
-      } catch (error) {
+      } catch {
         if (controller.signal.aborted) {
           return jsonResponse(504, {
             error: "request_timeout",
@@ -303,7 +315,7 @@ export async function startDirectRemoteMcpServer({
         }
         return jsonResponse(500, { error: "internal_error" });
       } finally {
-        clearTimeout(timer);
+        if (timer) clearTimeout(timer);
       }
     },
   };
