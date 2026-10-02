@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pc.control.r32.authority_snapshot.v1.schema.json",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "contract_version",
+    "evidence_origin",
+    "observed_at_ms",
+    "source_lane",
+    "current_authority",
+    "live_health",
+    "source_profile",
+    "blockers",
+    "safe_for_comparison",
+    "raw_results_included",
+    "credentials_included",
+    "actual_pc_control_cutover",
+    "snapshot_digest"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "pc.control.r32.authority_snapshot.v1"
+    },
+    "evidence_origin": {
+      "type": "string"
+    },
+    "source_lane": {
+      "const": "github_relay"
+    },
+    "current_authority": {
+      "const": true
+    },
+    "safe_for_comparison": {
+      "type": "boolean"
+    },
+    "raw_results_included": {
+      "const": false
+    },
+    "credentials_included": {
+      "const": false
+    },
+    "actual_pc_control_cutover": {
+      "const": false
+    },
+    "snapshot_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
