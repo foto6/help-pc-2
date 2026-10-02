@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pc.control.r33.runtime_discovery.v1.schema.json",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "contract_version",
+    "relay_checkout",
+    "relay_process",
+    "authority_snapshot",
+    "native_relay",
+    "credential_path",
+    "native_device_id",
+    "secret_bytes_persisted",
+    "raw_command_lines_persisted",
+    "process_environment_scraped",
+    "port_scan_performed",
+    "side_effect_probe_count",
+    "current_authority_changed"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "pc.control.r33.runtime_discovery.v1"
+    },
+    "secret_bytes_persisted": {
+      "const": false
+    },
+    "raw_command_lines_persisted": {
+      "const": false
+    },
+    "process_environment_scraped": {
+      "const": false
+    },
+    "port_scan_performed": {
+      "const": false
+    },
+    "side_effect_probe_count": {
+      "const": 0
+    },
+    "current_authority_changed": {
+      "const": false
+    }
+  }
+}
