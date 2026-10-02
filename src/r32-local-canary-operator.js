@@ -134,6 +134,7 @@ export function buildR32AuthoritySnapshot({
   const blockers = [];
   if (!sourceBound) blockers.push({ code: "AUTHORITY_WATCHDOG_SCHEMA_MISMATCH" });
   if (unknown) blockers.push({ code: "AUTHORITY_LIVE_EVIDENCE_UNKNOWN" });
+  if (healthStatus !== "HEALTHY") blockers.push({ code: "AUTHORITY_HEALTH_NOT_HEALTHY", detail: watchdog.state });
   if (watchdog.reconciliation_required) blockers.push({ code: "AUTHORITY_RECONCILIATION_REQUIRED" });
   if (watchdog.recovery.automatic_side_effect_replay) blockers.push({ code: "AUTHORITY_REPLAY_SEMANTICS_INVALID" });
 
