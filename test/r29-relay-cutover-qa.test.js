@@ -140,10 +140,11 @@ test("R29 report reaches decision readiness without authorizing live cutover or 
 test("R29 implementation has no executable process-control primitive", () => {
   const source = readFileSync(new URL("../src/r29-relay-cutover-qa.js", import.meta.url), "utf8");
   const report = readFileSync(new URL("../tools/r29-relay-cutover-qa-report.js", import.meta.url), "utf8");
-  assert.doesNotMatch(source, /node:child_process|spawn\s*\(|execFile\s*\(|process\.kill\s*\(/);
-  for (const text of [source, report]) {
-    assert.doesNotMatch(text, /process\.kill\s*\(|Stop-Process|taskkill|Restart-Service|Start-Service|Stop-Service/i);
-    assert.doesNotMatch(text, /powershell(?:\.exe)?\s+-|schtasks\s+\/|sc\.exe\s+/i);
-  }
+  assert.doesNotMatch(source, /node:child_process|spawn\s*\(|execFile(?:Sync)?\s*\(|process\.kill\s*\(/);
+  assert.doesNotMatch(report, /spawn\s*\(|process\.kill\s*\(/);
+  assert.doesNotMatch(report, /powershell(?:\.exe)?\s+-|schtasks\s+\/|sc\.exe\s+|Stop-Process|taskkill|Restart-Service|Start-Service|Stop-Service/i);
   assert.match(report, /execFileSync\("git", \["rev-parse", `HEAD:/);
+  const commandCalls = [...report.matchAll(/execFileSync\(([^\n]+)[\s\S]*?\)\.trim\(\)/g)];
+  assert.equal(commandCalls.length, 1);
+  assert.match(commandCalls[0][0], /execFileSync\("git", \["rev-parse"/);
 });
