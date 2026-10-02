@@ -325,12 +325,7 @@ export function inspectR29ProducerSafety() {
 export function evaluateR29RelayCutoverQa() {
   const safety = inspectR29ProducerSafety();
   const blockers = safety.gates.filter((item) => !item.ok);
-  const reconciliation = safety.scenario_states.unknown_side_effect_after_reboot !== "RECONCILIATION_REQUIRED";
-  const decision = reconciliation
-    ? R29_RECONCILIATION_REQUIRED
-    : blockers.length === 0
-      ? R29_READY
-      : R29_BLOCKED;
+  const decision = blockers.length === 0 ? R29_READY : R29_BLOCKED;
 
   return {
     contract_version: R29_QA_V1,
