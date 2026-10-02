@@ -233,6 +233,7 @@ export async function createConfiguredNativeMcpRuntime({
     desktopId: bridge.desktopId ?? desktopId,
     compatibilitySurface,
     healthSupervisor,
+    requireStableRequestIdForSideEffects: mode === "direct-remote",
   });
 
   return {
