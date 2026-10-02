@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 export const PC_CONTROL_DIRECT_GATEWAY_V1 = "pc.control.direct_candidate_gateway.v1";
@@ -19,6 +20,59 @@ export const PROTECTED_PATH_POLICY_ID = "pc.native.facade.protected_path_fail_cl
 
 const READ_ONLY = "read_only";
 const SIDE_EFFECT = "side_effect";
+
+function gitBlobSha1(bytes) {
+  const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  const header = Buffer.from(`blob ${buffer.length}\0`, "utf8");
+  return createHash("sha1").update(header).update(buffer).digest("hex");
+}
+
+export function validateR31SourcePin() {
+  const pin = JSON.parse(readFileSync(
+    new URL("../conformance/r31_pc_control_direct/source-pin.json", import.meta.url),
+    "utf8",
+  ));
+  if (pin.contract_version !== "pc.control.r31.source_pin.v1"
+      || pin.repository !== "foto6/help-pc-2"
+      || pin.exact_sha !== R31_R30_SOURCE_SHA
+      || pin.exact_head_ci?.run_id !== 36985223664
+      || pin.exact_head_ci?.conclusion !== "success") {
+    throw new PcControlDirectGatewayError("R31 R30 source authority pin is invalid.", {
+      code: "R31_SOURCE_PIN_INVALID",
+      category: "source_pin",
+    });
+  }
+  for (const [path, expected] of Object.entries(pin.blobs ?? {})) {
+    const actual = gitBlobSha1(readFileSync(new URL(`../${path}`, import.meta.url)));
+    if (actual !== expected) {
+      throw new PcControlDirectGatewayError("Pinned R30 source blob drifted.", {
+        code: "R31_SOURCE_BLOB_DRIFT",
+        category: "source_pin",
+        details: { path, expected, actual },
+      });
+    }
+  }
+  return structuredClone(pin);
+}
+
+export function loadR31PluginCandidateMetadata() {
+  const metadata = JSON.parse(readFileSync(
+    new URL("../conformance/r31_pc_control_direct/plugin-candidate.json", import.meta.url),
+    "utf8",
+  ));
+  if (metadata.contract_version !== PC_CONTROL_PLUGIN_CANDIDATE_V1
+      || metadata.current_authority !== "github_relay"
+      || metadata.actual_pc_control_cutover !== false
+      || metadata.migration?.side_effect_authority !== "github_relay"
+      || metadata.migration?.side_effect_mirroring_allowed !== false
+      || metadata.request_semantics?.automatic_replay !== false) {
+    throw new PcControlDirectGatewayError("R31 plugin candidate metadata is invalid.", {
+      code: "R31_PLUGIN_CANDIDATE_METADATA_INVALID",
+      category: "source_pin",
+    });
+  }
+  return structuredClone(metadata);
+}
 
 export class PcControlDirectGatewayError extends Error {
   constructor(message, {
