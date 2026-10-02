@@ -202,6 +202,7 @@ export class NativeRelayExecutorProvider {
   #fetch;
   #binding = null;
   #waitTimeoutMs;
+  #controlTimeoutMs;
   #desktopId;
 
   constructor({
@@ -211,6 +212,7 @@ export class NativeRelayExecutorProvider {
     desktopId = process.env.PC_NATIVE_DESKTOP_ID ?? "desktop-A",
     fetchImpl = globalThis.fetch,
     waitTimeoutMs = 30_000,
+    controlTimeoutMs = Number.parseInt(process.env.PC_NATIVE_RELAY_CONTROL_TIMEOUT_MS ?? "5000", 10),
   } = {}) {
     this.#relayUrl = normalizeRelayUrl(relayUrl);
     this.#token = requireText(relayToken, "relayToken");
@@ -223,8 +225,12 @@ export class NativeRelayExecutorProvider {
     if (!Number.isInteger(waitTimeoutMs) || waitTimeoutMs < 1 || waitTimeoutMs > 120_000) {
       throw new TypeError("waitTimeoutMs must be an integer between 1 and 120000");
     }
+    if (!Number.isInteger(controlTimeoutMs) || controlTimeoutMs < 100 || controlTimeoutMs > 120_000) {
+      throw new TypeError("controlTimeoutMs must be an integer between 100 and 120000");
+    }
     this.#fetch = fetchImpl;
     this.#waitTimeoutMs = waitTimeoutMs;
+    this.#controlTimeoutMs = controlTimeoutMs;
 
     this.invoke = this.invoke.bind(this);
     this.readCapabilities = this.readCapabilities.bind(this);
@@ -246,6 +252,21 @@ export class NativeRelayExecutorProvider {
   } = {}) {
     const target = new URL(path, this.#relayUrl);
     let response;
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort(Object.assign(new Error("relay_control_timeout"), { code: "RELAY_CONTROL_TIMEOUT" }));
+    }, this.#controlTimeoutMs);
+    let removeAbort = null;
+    if (signal) {
+      const onAbort = () => controller.abort(signal.reason ?? new Error("cancelled"));
+      if (signal.aborted) onAbort();
+      else {
+        signal.addEventListener("abort", onAbort, { once: true });
+        removeAbort = () => signal.removeEventListener("abort", onAbort);
+      }
+    }
     try {
       response = await this.#fetch(target, {
         method,
@@ -254,18 +275,24 @@ export class NativeRelayExecutorProvider {
           ...(body === undefined ? {} : { "content-type": "application/json" }),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        ...(signal ? { signal } : {}),
+        signal: controller.signal,
       });
     } catch (error) {
-      if (signal?.aborted) throw cancelledBeforeDispatch();
-      throw new NativeRelayProviderError("Relay control API is unavailable.", {
-        code: "RELAY_CONTROL_UNAVAILABLE",
-        category: "relay_control",
-        retryable: networkDispatchState === "not_dispatched",
-        dispatchState: networkDispatchState,
-        outcomeUncertain: networkOutcomeUncertain,
-        automaticReplay: false,
-      });
+      if (signal?.aborted && !timedOut) throw cancelledBeforeDispatch();
+      throw new NativeRelayProviderError(
+        timedOut ? "Relay control API timed out." : "Relay control API is unavailable.",
+        {
+          code: timedOut ? "RELAY_CONTROL_TIMEOUT" : "RELAY_CONTROL_UNAVAILABLE",
+          category: "relay_control",
+          retryable: networkDispatchState === "not_dispatched",
+          dispatchState: networkDispatchState,
+          outcomeUncertain: networkOutcomeUncertain,
+          automaticReplay: false,
+        },
+      );
+    } finally {
+      clearTimeout(timer);
+      removeAbort?.();
     }
 
     let payload = null;
