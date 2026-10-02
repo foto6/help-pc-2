@@ -204,9 +204,12 @@ test("lost device acknowledgement after side-effect dispatch stays reconciliatio
   assert.equal(h.state.deliveryByRequestId(args.request_id).status, "reconciliation_required");
   assert.equal(h.state.deliveryByRequestId(args.request_id).result?.automatic_replay, false);
 
-  const reconnected = await connectDevice(h.address, { epoch });
+  const reconnected = await connectDevice(h.address, { epoch: epoch + "-reconnect" });
   await h.replacePeer(reconnected);
-  const retry = structured(await client.callTool({ name: "file.write", arguments: args }));
+  await client.close();
+  await h.restartRuntime(CLIENT_TOKEN_A);
+  const recoveredClient = await h.client();
+  const retry = structured(await recoveredClient.callTool({ name: "file.write", arguments: args }));
   assert.equal(retry.status, "reconciliation_required");
   await assert.rejects(h.peer.nextRequest(150), /message timeout/);
 });
@@ -251,8 +254,11 @@ test("relay restart with preserved state and epoch does not replay a completed s
   assert.equal(structured(await pending).status, "completed");
 
   const epoch = h.peer.epoch;
-  await h.restartRelay({ epoch });
-  const duplicate = structured(await client.callTool({ name: "file.write", arguments: args }));
+  await h.restartRelay({ epoch: epoch + "-relay-restart" });
+  await client.close();
+  await h.restartRuntime(CLIENT_TOKEN_A);
+  const restartedClient = await h.client();
+  const duplicate = structured(await restartedClient.callTool({ name: "file.write", arguments: args }));
   assert.equal(duplicate.status, "completed");
   await assert.rejects(h.peer.nextRequest(150), /message timeout/);
 });
@@ -288,6 +294,7 @@ test("device offline and stale epoch produce bounded BLOCKED diagnostics without
 
 test("capability drift is rejected before remote tool dispatch", async (t) => {
   const h = await harness(t);
+  const client = await h.client();
   const current = h.state.deviceView(TEST_RELAY_DEVICE_ID, true);
   const record = h.state.state.devices.find((item) => item.deviceId === TEST_RELAY_DEVICE_ID);
   const drifted = deviceCapabilities({ digest: "f".repeat(64) });
@@ -295,7 +302,6 @@ test("capability drift is rejected before remote tool dispatch", async (t) => {
   record.capabilitiesDigest = relayDigestJson(drifted);
   record.lastSessionEpoch = current.last_session_epoch;
 
-  const client = await h.client();
   await assert.rejects(client.callTool({
     name: "device.ping",
     arguments: { request_id: "r30-capability-drift" },
