@@ -1,0 +1,703 @@
+import { createHash } from "node:crypto";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+
+export const PC_CONTROL_DIRECT_GATEWAY_V1 = "pc.control.direct_candidate_gateway.v1";
+export const PC_CONTROL_PLUGIN_SURFACE_V1 = "pc.control.plugin_surface.v1";
+export const PC_CONTROL_CANARY_EVIDENCE_V1 = "pc.control.direct_canary_evidence.v1";
+export const PC_CONTROL_READINESS_V1 = "pc.control.direct_readiness.v1";
+export const PC_CONTROL_PLUGIN_CANDIDATE_V1 = "pc.control.plugin_candidate.v1";
+
+export const R31_STATES = Object.freeze([
+  "SOURCE_READY",
+  "READ_ONLY_CANARY_PASS",
+  "READY_FOR_EXPLICIT_PLUGIN_CANDIDATE",
+  "BLOCKED",
+]);
+
+export const R31_R30_SOURCE_SHA = "29cefa62efcf3f3295dca32b0a202b21c5831969";
+export const PROTECTED_PATH_POLICY_ID = "pc.native.facade.protected_path_fail_closed.v1";
+
+const READ_ONLY = "read_only";
+const SIDE_EFFECT = "side_effect";
+
+export class PcControlDirectGatewayError extends Error {
+  constructor(message, {
+    code = "PC_CONTROL_DIRECT_GATEWAY_ERROR",
+    category = "pc_control_direct_gateway",
+    retryable = false,
+    details = null,
+  } = {}) {
+    super(message);
+    this.name = "PcControlDirectGatewayError";
+    this.code = code;
+    this.category = category;
+    this.retryable = retryable;
+    this.details = details;
+  }
+}
+
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+  }
+  return value;
+}
+
+export function canonicalJson(value) {
+  return JSON.stringify(canonical(value));
+}
+
+export function digestJson(value) {
+  return createHash("sha256").update(canonicalJson(value), "utf8").digest("hex");
+}
+
+function boundedInt(value, name, minimum, maximum) {
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new TypeError(`${name} must be an integer between ${minimum} and ${maximum}`);
+  }
+  return value;
+}
+
+function normalizeEndpoint(value, { allowInsecureHttpForTests = false } = {}) {
+  if (typeof value !== "string" || !value.trim()) throw new TypeError("endpoint is required");
+  let url;
+  try { url = new URL(value); } catch { throw new TypeError("endpoint must be an absolute URL"); }
+  if (!["https:", ...(allowInsecureHttpForTests ? ["http:"] : [])].includes(url.protocol)) {
+    throw new TypeError("endpoint must use https outside isolated tests");
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    throw new TypeError("endpoint must not contain credentials, query, or fragment");
+  }
+  if (url.pathname !== "/mcp") throw new TypeError("endpoint path must be exactly /mcp");
+  return url;
+}
+
+function normalizeToken(value) {
+  if (typeof value !== "string" || value.length < 32) {
+    throw new TypeError("token must contain at least 32 characters");
+  }
+  return value;
+}
+
+function withTimeout(promiseFactory, timeoutMs, code) {
+  const controller = new AbortController();
+  let timer = null;
+  const operation = Promise.resolve().then(() => promiseFactory(controller.signal));
+  operation.catch(() => {});
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const error = new PcControlDirectGatewayError("Direct candidate request timed out.", {
+        code,
+        category: "timeout",
+        retryable: false,
+      });
+      controller.abort(error);
+      reject(error);
+    }, timeoutMs);
+  });
+  return Promise.race([operation, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
+function toolEffect(tool) {
+  return tool?._meta?.["pc.native/effect"]
+    ?? tool?._meta?.["pc.desktop_commander/effect"]
+    ?? null;
+}
+
+function toolAvailable(tool) {
+  const native = tool?._meta?.["pc.native/available"];
+  const compatibility = tool?._meta?.["pc.desktop_commander/available"];
+  if (typeof native === "boolean") return native;
+  if (typeof compatibility === "boolean") return compatibility;
+  return null;
+}
+
+function firstUnique(values, field) {
+  const unique = [...new Set(values.filter((value) => typeof value === "string" && value))];
+  if (unique.length > 1) {
+    throw new PcControlDirectGatewayError(`Direct candidate exposed inconsistent ${field}.`, {
+      code: "DIRECT_CAPABILITY_INCONSISTENT",
+      category: "capability",
+      details: { field, count: unique.length },
+    });
+  }
+  return unique[0] ?? null;
+}
+
+export function pluginSurfaceFromMcp({ health, tools, observedAtMs = Date.now(), latencyMs = null }) {
+  if (!health || typeof health !== "object" || Array.isArray(health)) {
+    throw new PcControlDirectGatewayError("Direct health payload is missing.", {
+      code: "DIRECT_HEALTH_INVALID",
+      category: "health",
+    });
+  }
+  if (!Array.isArray(tools)) {
+    throw new PcControlDirectGatewayError("Direct tools/list payload is missing.", {
+      code: "DIRECT_TOOL_LIST_INVALID",
+      category: "schema",
+    });
+  }
+  const normalizedTools = tools.map((tool) => {
+    const effect = toolEffect(tool);
+    if (![READ_ONLY, SIDE_EFFECT].includes(effect)) {
+      throw new PcControlDirectGatewayError("Direct tool effect classification is missing or invalid.", {
+        code: "DIRECT_TOOL_EFFECT_INVALID",
+        category: "schema",
+        details: { tool: tool?.name ?? null },
+      });
+    }
+    if (typeof tool?.name !== "string" || !tool.name) {
+      throw new PcControlDirectGatewayError("Direct tool name is invalid.", {
+        code: "DIRECT_TOOL_SCHEMA_INVALID",
+        category: "schema",
+      });
+    }
+    return {
+      name: tool.name,
+      effect,
+      available: toolAvailable(tool),
+      input_schema_digest: digestJson(tool.inputSchema ?? null),
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+
+  const nativeRegistryDigest = firstUnique(
+    tools.map((tool) => tool?._meta?.["pc.native/registry_digest"]
+      ?? tool?._meta?.["pc.desktop_commander/native_registry_digest"]),
+    "native registry digest",
+  );
+  const executorDigest = firstUnique(
+    tools.map((tool) => tool?._meta?.["pc.native/executor_digest"]
+      ?? tool?._meta?.["pc.desktop_commander/executor_digest"]),
+    "Executor digest",
+  );
+  const compatibilityRegistryDigest = firstUnique(
+    tools.map((tool) => tool?._meta?.["pc.desktop_commander/compat_registry_digest"]),
+    "compatibility registry digest",
+  );
+
+  const surface = {
+    contract_version: PC_CONTROL_PLUGIN_SURFACE_V1,
+    source_lane: "direct_mcp_candidate",
+    observed_at_ms: observedAtMs,
+    health: {
+      status: health.status ?? "UNKNOWN",
+      reason: health.reason ?? null,
+      latency_ms: latencyMs,
+      transport_connected: health.transport_connected ?? null,
+      queue_progressing: health.queue_progressing ?? null,
+      executor_responsive: health.executor_responsive ?? null,
+    },
+    capabilities: {
+      protocol_version: health.protocol_version ?? null,
+      native_registry_digest: nativeRegistryDigest ?? health.registry_digest ?? null,
+      executor_digest: executorDigest ?? health.executor_digest ?? null,
+      compatibility_registry_digest: compatibilityRegistryDigest,
+      protected_path_policy: PROTECTED_PATH_POLICY_ID,
+      explicit_side_effect_request_id_required: true,
+      reconciliation_status: "reconciliation_required",
+      automatic_replay: false,
+    },
+    tools: normalizedTools,
+  };
+  return {
+    ...surface,
+    tool_surface_digest: digestJson({
+      capabilities: surface.capabilities,
+      tools: surface.tools,
+    }),
+  };
+}
+
+function healthUrlFromMcp(endpoint) {
+  const url = new URL(endpoint);
+  url.pathname = "/healthz";
+  return url;
+}
+
+function mapTransportError(error) {
+  if (error instanceof PcControlDirectGatewayError) return error;
+  const text = String(error?.message ?? error);
+  const status = error?.status ?? error?.response?.status ?? null;
+  if (status === 401 || /401|unauthorized/i.test(text)) {
+    return new PcControlDirectGatewayError("Direct MCP authentication failed.", {
+      code: "DIRECT_AUTH_MISMATCH",
+      category: "auth",
+    });
+  }
+  return new PcControlDirectGatewayError("Direct MCP lane is unavailable.", {
+    code: "DIRECT_LANE_UNAVAILABLE",
+    category: "transport",
+    retryable: false,
+  });
+}
+
+export class PcControlDirectCandidateGateway {
+  constructor({
+    endpoint,
+    token,
+    fetchImpl = globalThis.fetch,
+    clientFactory = null,
+    connectTimeoutMs = 5_000,
+    requestTimeoutMs = 30_000,
+    allowInsecureHttpForTests = false,
+    mode = "read_only_canary",
+  } = {}) {
+    this.endpoint = normalizeEndpoint(endpoint, { allowInsecureHttpForTests });
+    this.token = normalizeToken(token);
+    if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl must be a function");
+    if (clientFactory !== null && typeof clientFactory !== "function") {
+      throw new TypeError("clientFactory must be a function or null");
+    }
+    boundedInt(connectTimeoutMs, "connectTimeoutMs", 100, 30_000);
+    boundedInt(requestTimeoutMs, "requestTimeoutMs", 250, 120_000);
+    if (!["read_only_canary", "explicit_plugin_candidate"].includes(mode)) {
+      throw new TypeError("mode must be read_only_canary or explicit_plugin_candidate");
+    }
+    this.fetchImpl = fetchImpl;
+    this.clientFactory = clientFactory;
+    this.connectTimeoutMs = connectTimeoutMs;
+    this.requestTimeoutMs = requestTimeoutMs;
+    this.mode = mode;
+    this.client = null;
+    this.toolIndex = null;
+  }
+
+  async #client() {
+    if (this.client) return this.client;
+    try {
+      if (this.clientFactory) {
+        this.client = await withTimeout(
+          () => this.clientFactory({
+            endpoint: new URL(this.endpoint),
+            token: this.token,
+          }),
+          this.connectTimeoutMs,
+          "DIRECT_CONNECT_TIMEOUT",
+        );
+        return this.client;
+      }
+      const transport = new StreamableHTTPClientTransport(new URL(this.endpoint), {
+        authProvider: { token: async () => this.token },
+      });
+      const client = new Client(
+        { name: "pc-control-direct-candidate", version: "0.3.0-candidate" },
+        { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+      );
+      await withTimeout(
+        () => client.connect(transport),
+        this.connectTimeoutMs,
+        "DIRECT_CONNECT_TIMEOUT",
+      );
+      this.client = client;
+      return client;
+    } catch (error) {
+      throw mapTransportError(error);
+    }
+  }
+
+  async health() {
+    const target = healthUrlFromMcp(this.endpoint);
+    const started = performance.now();
+    try {
+      const response = await withTimeout(
+        (signal) => this.fetchImpl(target, {
+          headers: { authorization: `Bearer ${this.token}` },
+          signal,
+        }),
+        this.connectTimeoutMs,
+        "DIRECT_HEALTH_TIMEOUT",
+      );
+      let body = null;
+      try { body = await response.json(); } catch {}
+      if (response.status === 401) {
+        throw new PcControlDirectGatewayError("Direct MCP authentication failed.", {
+          code: "DIRECT_AUTH_MISMATCH",
+          category: "auth",
+        });
+      }
+      if (!response.ok && response.status !== 503) {
+        throw new PcControlDirectGatewayError("Direct MCP health request failed.", {
+          code: "DIRECT_HEALTH_UNAVAILABLE",
+          category: "health",
+        });
+      }
+      if (!body || typeof body !== "object" || Array.isArray(body)
+          || typeof body.contract_version !== "string") {
+        throw new PcControlDirectGatewayError("Direct MCP health schema is invalid.", {
+          code: "DIRECT_HEALTH_SCHEMA_MISMATCH",
+          category: "schema",
+        });
+      }
+      return {
+        payload: body,
+        latency_ms: Math.round((performance.now() - started) * 1000) / 1000,
+      };
+    } catch (error) {
+      throw mapTransportError(error);
+    }
+  }
+
+  async listTools() {
+    try {
+      const client = await this.#client();
+      const listed = await withTimeout(
+        () => client.listTools(),
+        this.requestTimeoutMs,
+        "DIRECT_TOOLS_LIST_TIMEOUT",
+      );
+      if (!Array.isArray(listed?.tools)) {
+        throw new PcControlDirectGatewayError("Direct tools/list schema is invalid.", {
+          code: "DIRECT_TOOL_LIST_INVALID",
+          category: "schema",
+        });
+      }
+      this.toolIndex = new Map(listed.tools.map((tool) => [tool.name, tool]));
+      return listed.tools;
+    } catch (error) {
+      throw mapTransportError(error);
+    }
+  }
+
+  async describe() {
+    const health = await this.health();
+    const tools = await this.listTools();
+    return pluginSurfaceFromMcp({
+      health: health.payload,
+      tools,
+      latencyMs: health.latency_ms,
+    });
+  }
+
+  async callTool({ name, arguments: args = {} } = {}) {
+    if (typeof name !== "string" || !name) throw new TypeError("tool name is required");
+    if (!args || typeof args !== "object" || Array.isArray(args)) {
+      throw new TypeError("tool arguments must be an object");
+    }
+    const tools = this.toolIndex ? [...this.toolIndex.values()] : await this.listTools();
+    const tool = this.toolIndex?.get(name) ?? tools.find((entry) => entry.name === name);
+    if (!tool) {
+      throw new PcControlDirectGatewayError("Direct candidate tool is not advertised.", {
+        code: "DIRECT_TOOL_NOT_FOUND",
+        category: "tool",
+      });
+    }
+    const effect = toolEffect(tool);
+    if (effect === SIDE_EFFECT && this.mode !== "explicit_plugin_candidate") {
+      throw new PcControlDirectGatewayError("Candidate side effects are blocked in dual-lane canary mode.", {
+        code: "CANDIDATE_SIDE_EFFECT_BLOCKED",
+        category: "policy",
+      });
+    }
+    if (effect === SIDE_EFFECT && (typeof args.request_id !== "string" || !args.request_id)) {
+      throw new PcControlDirectGatewayError("Candidate side effects require the stable plugin request_id.", {
+        code: "REMOTE_STABLE_REQUEST_ID_REQUIRED",
+        category: "idempotency",
+      });
+    }
+    try {
+      const client = await this.#client();
+      const result = await withTimeout(
+        () => client.callTool({ name, arguments: args }),
+        this.requestTimeoutMs,
+        "DIRECT_TOOL_CALL_TIMEOUT",
+      );
+      const structured = result?.structuredContent && typeof result.structuredContent === "object"
+        ? result.structuredContent
+        : null;
+      if (structured?.status === "reconciliation_required") {
+        return {
+          contract_version: PC_CONTROL_DIRECT_GATEWAY_V1,
+          lane: "direct_mcp_candidate",
+          tool: name,
+          status: "reconciliation_required",
+          request_id: structured.request_id ?? args.request_id ?? null,
+          automatic_replay: false,
+          fallback_authorized: false,
+          result: structured,
+        };
+      }
+      return {
+        contract_version: PC_CONTROL_DIRECT_GATEWAY_V1,
+        lane: "direct_mcp_candidate",
+        tool: name,
+        status: structured?.status ?? (result?.isError ? "error" : "completed"),
+        request_id: structured?.request_id ?? args.request_id ?? null,
+        automatic_replay: false,
+        fallback_authorized: false,
+        result: structured,
+      };
+    } catch (error) {
+      throw mapTransportError(error);
+    }
+  }
+
+  async close() {
+    const client = this.client;
+    this.client = null;
+    this.toolIndex = null;
+    if (client && typeof client.close === "function") {
+      await client.close().catch(() => {});
+    }
+  }
+}
+
+function normalizedToolMap(surface) {
+  if (!surface || surface.contract_version !== PC_CONTROL_PLUGIN_SURFACE_V1
+      || !Array.isArray(surface.tools)) {
+    throw new PcControlDirectGatewayError("Plugin surface contract is invalid.", {
+      code: "PLUGIN_SURFACE_SCHEMA_MISMATCH",
+      category: "schema",
+    });
+  }
+  return new Map(surface.tools.map((tool) => [tool.name, tool]));
+}
+
+export function comparePluginSurfaces(authority, candidate, {
+  maxHealthLatencyMs = 5_000,
+} = {}) {
+  boundedInt(maxHealthLatencyMs, "maxHealthLatencyMs", 1, 120_000);
+  const blockers = [];
+  const authorityTools = normalizedToolMap(authority);
+  const candidateTools = normalizedToolMap(candidate);
+  const fail = (code, detail = null) => blockers.push({ code, detail });
+
+  if (authority.capabilities?.native_registry_digest
+      !== candidate.capabilities?.native_registry_digest) {
+    fail("REGISTRY_DIGEST_MISMATCH");
+  }
+  if (authority.capabilities?.executor_digest
+      !== candidate.capabilities?.executor_digest) {
+    fail("EXECUTOR_DIGEST_MISMATCH");
+  }
+  if (authority.capabilities?.protected_path_policy
+      !== candidate.capabilities?.protected_path_policy) {
+    fail("PROTECTED_PATH_POLICY_MISMATCH");
+  }
+  if (candidate.capabilities?.explicit_side_effect_request_id_required !== true) {
+    fail("REQUEST_ID_SEMANTICS_MISMATCH");
+  }
+  if (candidate.capabilities?.automatic_replay !== false
+      || candidate.capabilities?.reconciliation_status !== "reconciliation_required") {
+    fail("RECONCILIATION_SEMANTICS_MISMATCH");
+  }
+  if (!["HEALTHY", "DEGRADED"].includes(candidate.health?.status)) {
+    fail("DIRECT_HEALTH_BLOCKED", candidate.health?.status ?? "UNKNOWN");
+  }
+  if (!Number.isFinite(candidate.health?.latency_ms)
+      || candidate.health.latency_ms > maxHealthLatencyMs) {
+    fail("DIRECT_HEALTH_LATENCY_BOUND");
+  }
+  if (candidate.health?.transport_connected !== true
+      || candidate.health?.executor_responsive !== true) {
+    fail("DIRECT_TRANSPORT_NOT_READY");
+  }
+
+  const allNames = [...new Set([...authorityTools.keys(), ...candidateTools.keys()])].sort();
+  for (const name of allNames) {
+    const left = authorityTools.get(name);
+    const right = candidateTools.get(name);
+    if (!left || !right) {
+      fail("TOOL_AVAILABILITY_MISMATCH", name);
+      continue;
+    }
+    if (left.effect !== right.effect) fail("TOOL_EFFECT_MISMATCH", name);
+    if (left.available !== right.available) fail("TOOL_AVAILABILITY_MISMATCH", name);
+    if (left.input_schema_digest !== right.input_schema_digest) {
+      fail("TOOL_SCHEMA_MISMATCH", name);
+    }
+  }
+
+  return {
+    compatible: blockers.length === 0,
+    blockers,
+    authority_tool_surface_digest: authority.tool_surface_digest ?? null,
+    candidate_tool_surface_digest: candidate.tool_surface_digest ?? null,
+  };
+}
+
+export class PcControlDualLaneGateway {
+  constructor({
+    authority,
+    candidate,
+    mirrorReadOnly = false,
+  } = {}) {
+    if (!authority || typeof authority.callTool !== "function" || typeof authority.describe !== "function") {
+      throw new TypeError("authority must provide describe() and callTool()");
+    }
+    if (!(candidate instanceof PcControlDirectCandidateGateway)
+        && (!candidate || typeof candidate.callTool !== "function" || typeof candidate.describe !== "function")) {
+      throw new TypeError("candidate must provide describe() and callTool()");
+    }
+    this.authority = authority;
+    this.candidate = candidate;
+    this.mirrorReadOnly = mirrorReadOnly === true;
+  }
+
+  async describe() {
+    const [authority, candidate] = await Promise.all([
+      this.authority.describe(),
+      this.candidate.describe(),
+    ]);
+    return { authority, candidate };
+  }
+
+  async callTool({ name, arguments: args = {} } = {}) {
+    const authoritySurface = await this.authority.describe();
+    const tool = normalizedToolMap(authoritySurface).get(name);
+    if (!tool) {
+      throw new PcControlDirectGatewayError("Authority tool is not advertised.", {
+        code: "AUTHORITY_TOOL_NOT_FOUND",
+        category: "tool",
+      });
+    }
+    if (tool.effect === SIDE_EFFECT) {
+      return this.authority.callTool({ name, arguments: args });
+    }
+    if (!this.mirrorReadOnly) {
+      return this.authority.callTool({ name, arguments: args });
+    }
+    const [authorityResult, candidateResult] = await Promise.all([
+      this.authority.callTool({ name, arguments: args }),
+      this.candidate.callTool({ name, arguments: args }),
+    ]);
+    return {
+      authority: authorityResult,
+      candidate_read_only_probe: {
+        status: candidateResult?.status ?? null,
+        request_id: candidateResult?.request_id ?? null,
+        result_digest: digestJson(candidateResult?.result ?? null),
+      },
+      side_effect_mirrored: false,
+    };
+  }
+}
+
+export function evaluateR31Readiness({
+  sourceReady,
+  authoritySurface = null,
+  candidateSurface = null,
+  canaryEvidence = null,
+  explicitPluginCandidateEvaluation = false,
+  maxHealthLatencyMs = 5_000,
+} = {}) {
+  if (sourceReady !== true) {
+    return {
+      contract_version: PC_CONTROL_READINESS_V1,
+      state: "BLOCKED",
+      blockers: [{ code: "SOURCE_NOT_READY" }],
+      actual_pc_control_cutover: false,
+      current_authority: "github_relay",
+    };
+  }
+
+  if (!authoritySurface || !candidateSurface || !canaryEvidence) {
+    return {
+      contract_version: PC_CONTROL_READINESS_V1,
+      state: "SOURCE_READY",
+      blockers: [],
+      actual_pc_control_cutover: false,
+      current_authority: "github_relay",
+    };
+  }
+
+  let comparison;
+  try {
+    comparison = comparePluginSurfaces(authoritySurface, candidateSurface, { maxHealthLatencyMs });
+  } catch (error) {
+    return {
+      contract_version: PC_CONTROL_READINESS_V1,
+      state: "BLOCKED",
+      blockers: [{ code: error?.code ?? "SURFACE_COMPARISON_FAILED" }],
+      actual_pc_control_cutover: false,
+      current_authority: "github_relay",
+    };
+  }
+  const blockers = [...comparison.blockers];
+
+  if (canaryEvidence.contract_version !== PC_CONTROL_CANARY_EVIDENCE_V1) {
+    blockers.push({ code: "CANARY_SCHEMA_MISMATCH" });
+  }
+  if (canaryEvidence.side_effect_calls !== 0) {
+    blockers.push({ code: "CANARY_SIDE_EFFECT_VIOLATION" });
+  }
+  if (canaryEvidence.replay_authorized === true) {
+    blockers.push({ code: "REPLAY_AUTHORIZATION_FORBIDDEN" });
+  }
+  if (canaryEvidence.status !== "PASS") {
+    blockers.push({ code: "CANARY_NOT_PASS" });
+  }
+  if (blockers.length) {
+    return {
+      contract_version: PC_CONTROL_READINESS_V1,
+      state: "BLOCKED",
+      blockers,
+      comparison,
+      actual_pc_control_cutover: false,
+      current_authority: "github_relay",
+    };
+  }
+
+  if (canaryEvidence.evidence_origin !== "live_explicit_read_only_canary") {
+    return {
+      contract_version: PC_CONTROL_READINESS_V1,
+      state: "SOURCE_READY",
+      blockers: [],
+      comparison,
+      actual_pc_control_cutover: false,
+      current_authority: "github_relay",
+      reason: "source_or_synthetic_evidence_cannot_advance_plugin_readiness",
+    };
+  }
+
+  return {
+    contract_version: PC_CONTROL_READINESS_V1,
+    state: explicitPluginCandidateEvaluation
+      ? "READY_FOR_EXPLICIT_PLUGIN_CANDIDATE"
+      : "READ_ONLY_CANARY_PASS",
+    blockers: [],
+    comparison,
+    actual_pc_control_cutover: false,
+    current_authority: "github_relay",
+  };
+}
+
+export function buildCanaryEvidence({
+  evidenceOrigin,
+  surface,
+  calls,
+  startedAtMs,
+  completedAtMs,
+} = {}) {
+  const normalizedCalls = Array.isArray(calls) ? calls.map((call) => ({
+    tool: call.tool,
+    effect: call.effect,
+    status: call.status,
+    latency_ms: call.latency_ms,
+    request_id_present: call.request_id_present === true,
+    result_digest: call.result_digest ?? null,
+  })) : [];
+  const sideEffectCalls = normalizedCalls.filter((call) => call.effect === SIDE_EFFECT).length;
+  const status = surface
+    && ["HEALTHY", "DEGRADED"].includes(surface.health?.status)
+    && sideEffectCalls === 0
+    && normalizedCalls.every((call) => call.status === "completed")
+      ? "PASS" : "BLOCKED";
+  return {
+    contract_version: PC_CONTROL_CANARY_EVIDENCE_V1,
+    evidence_origin: evidenceOrigin ?? "source_fixture",
+    status,
+    started_at_ms: startedAtMs ?? null,
+    completed_at_ms: completedAtMs ?? null,
+    side_effect_calls: sideEffectCalls,
+    replay_authorized: false,
+    surface_digest: surface?.tool_surface_digest ?? null,
+    capability_registry_digest: surface?.capabilities?.native_registry_digest ?? null,
+    executor_digest: surface?.capabilities?.executor_digest ?? null,
+    health_status: surface?.health?.status ?? "UNKNOWN",
+    health_latency_ms: surface?.health?.latency_ms ?? null,
+    calls: normalizedCalls,
+  };
+}
