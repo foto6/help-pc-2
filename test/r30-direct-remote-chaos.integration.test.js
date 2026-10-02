@@ -210,7 +210,14 @@ test("lost device acknowledgement after side-effect dispatch stays reconciliatio
   await h.restartRuntime(CLIENT_TOKEN_A);
   const recoveredClient = await h.client();
   const retry = structured(await recoveredClient.callTool({ name: "file.write", arguments: args }));
-  assert.equal(retry.status, "reconciliation_required");
+  assert.equal(retry.status, "error");
+  assert.ok([
+    "STALE_DEVICE_SESSION",
+    "SESSION_MIGRATION_REQUIRED",
+    "SESSION_CLOSE_BLOCKED",
+  ].includes(retry.error.code), retry.error.code);
+  assert.equal(h.state.deliveryByRequestId(args.request_id).status, "reconciliation_required");
+  assert.equal(h.state.deliveryByRequestId(args.request_id).result?.automatic_replay, false);
   await assert.rejects(h.peer.nextRequest(150), /message timeout/);
 });
 
