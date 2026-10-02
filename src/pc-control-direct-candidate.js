@@ -336,7 +336,7 @@ export class PcControlDirectCandidateGateway {
         return this.client;
       }
       const transport = new StreamableHTTPClientTransport(new URL(this.endpoint), {
-        authProvider: { token: async () => this.token },
+        authProvider: { token: async () => this.#token },
       });
       const client = new Client(
         { name: "pc-control-direct-candidate", version: "0.3.0-candidate" },
