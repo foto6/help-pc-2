@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pc.control.r32.local_canary_evidence.v1.schema.json",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "contract_version",
+    "state",
+    "evidence_origin",
+    "actual_coordinator_run",
+    "synthetic_evidence",
+    "initialize_status",
+    "side_effect_calls",
+    "replay_authorized",
+    "fallback_authorized",
+    "current_authority",
+    "current_authority_changed",
+    "actual_pc_control_cutover",
+    "blockers",
+    "evidence_digest"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "pc.control.r32.local_canary_evidence.v1"
+    },
+    "state": {
+      "enum": [
+        "SOURCE_READY",
+        "READ_ONLY_CANARY_PASS",
+        "BLOCKED"
+      ]
+    },
+    "evidence_origin": {
+      "enum": [
+        "synthetic_ci",
+        "coordinator_live_read_only_canary"
+      ]
+    },
+    "actual_coordinator_run": {
+      "type": "boolean"
+    },
+    "synthetic_evidence": {
+      "type": "boolean"
+    },
+    "initialize_status": {
+      "enum": [
+        "PASS",
+        "BLOCKED"
+      ]
+    },
+    "side_effect_calls": {
+      "const": 0
+    },
+    "replay_authorized": {
+      "const": false
+    },
+    "fallback_authorized": {
+      "const": false
+    },
+    "current_authority": {
+      "const": "github_relay"
+    },
+    "current_authority_changed": {
+      "const": false
+    },
+    "actual_pc_control_cutover": {
+      "const": false
+    },
+    "evidence_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
