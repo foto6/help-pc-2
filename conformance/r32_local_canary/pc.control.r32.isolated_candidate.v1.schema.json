@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pc.control.r32.isolated_candidate.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "instance_id",
+    "pid",
+    "bind_host",
+    "mcp_endpoint",
+    "health_endpoint",
+    "state_dir",
+    "token_file",
+    "isolated_state",
+    "current_authority",
+    "current_authority_changed",
+    "service_or_task_registered",
+    "firewall_or_tunnel_changed",
+    "live_cutover_performed",
+    "started_at"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "pc.control.r32.isolated_candidate.v1"
+    },
+    "instance_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "pid": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "bind_host": {
+      "const": "127.0.0.1"
+    },
+    "mcp_endpoint": {
+      "type": "string",
+      "pattern": "^http://127\\.0\\.0\\.1:"
+    },
+    "health_endpoint": {
+      "type": "string",
+      "pattern": "^http://127\\.0\\.0\\.1:"
+    },
+    "state_dir": {
+      "type": "string",
+      "minLength": 1
+    },
+    "token_file": {
+      "type": "string",
+      "minLength": 1
+    },
+    "isolated_state": {
+      "const": true
+    },
+    "current_authority": {
+      "const": "github_relay"
+    },
+    "current_authority_changed": {
+      "const": false
+    },
+    "service_or_task_registered": {
+      "const": false
+    },
+    "firewall_or_tunnel_changed": {
+      "const": false
+    },
+    "live_cutover_performed": {
+      "const": false
+    },
+    "started_at": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}
