@@ -1,0 +1,16 @@
+{
+  "contract_version": "pc.control.r32.source_pin.v1",
+  "repository": "foto6/help-pc-2",
+  "exact_start_sha": "6bf59b63b4681966f02c14248caccd6b1783f616",
+  "exact_start_ci": {
+    "run_id": 36989774978,
+    "conclusion": "success"
+  },
+  "inherited_authorities": {
+    "r31_source_ready_sha": "6bf59b63b4681966f02c14248caccd6b1783f616",
+    "r30_direct_remote_sha": "29cefa62efcf3f3295dca32b0a202b21c5831969",
+    "current_authority": "github_relay"
+  },
+  "release_gate": "NO_LIVE_CUTOVER",
+  "live_canary_executed": false
+}
