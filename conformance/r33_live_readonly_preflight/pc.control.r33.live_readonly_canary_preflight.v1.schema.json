@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pc.control.r33.live_readonly_canary_preflight.v1.schema.json",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "contract_version",
+    "state",
+    "blockers",
+    "current_authority",
+    "current_authority_changed",
+    "actual_read_only_canary_executed",
+    "read_only_canary_pass_claimed",
+    "actual_pc_control_cutover",
+    "side_effect_probe_count",
+    "automatic_replay_authorized",
+    "fallback_authorized",
+    "live_mutation_authorized",
+    "run_canary_command",
+    "report_digest"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "pc.control.r33.live_readonly_canary_preflight.v1"
+    },
+    "state": {
+      "enum": [
+        "READY_FOR_COORDINATOR_CANARY",
+        "BLOCKED"
+      ]
+    },
+    "current_authority": {
+      "const": "github_relay"
+    },
+    "current_authority_changed": {
+      "const": false
+    },
+    "actual_read_only_canary_executed": {
+      "const": false
+    },
+    "read_only_canary_pass_claimed": {
+      "const": false
+    },
+    "actual_pc_control_cutover": {
+      "const": false
+    },
+    "side_effect_probe_count": {
+      "const": 0
+    },
+    "automatic_replay_authorized": {
+      "const": false
+    },
+    "fallback_authorized": {
+      "const": false
+    },
+    "live_mutation_authorized": {
+      "const": false
+    },
+    "run_canary_command": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "report_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
