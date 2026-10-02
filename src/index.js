@@ -1,4 +1,20 @@
 export {
+  R32_AUTHORITY_SNAPSHOT_V1,
+  R32_CANARY_EVIDENCE_V1,
+  R32_READINESS_V1,
+  R32_CANDIDATE_DESCRIPTOR_V1,
+  R32_STATES,
+  r32Digest,
+  r32SourceAuthorityProfile,
+  buildR32AuthoritySnapshot,
+  compareR32AuthorityCandidate,
+  assertR32SafeCanaryTools,
+  buildR32CanaryEvidence,
+  evaluateR32Readiness,
+  validateR32CandidateDescriptor,
+} from "./r32-local-canary-operator.js";
+
+export {
   R29_QA_V1,
   R29_READY,
   R29_BLOCKED,
