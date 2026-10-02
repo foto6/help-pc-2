@@ -43,7 +43,11 @@ export function validateR31SourcePin() {
     });
   }
   for (const [path, expected] of Object.entries(pin.blobs ?? {})) {
-    const actual = gitBlobSha1(readFileSync(new URL(`../${path}`, import.meta.url)));
+    // GitHub Windows runners may materialize repository text as CRLF while the
+    // canonical Git blob remains LF. These pinned authority paths are all text;
+    // normalize only checkout line endings before reconstructing the Git blob.
+    const checkoutText = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+    const actual = gitBlobSha1(Buffer.from(checkoutText.replace(/\r\n/g, "\n"), "utf8"));
     if (actual !== expected) {
       throw new PcControlDirectGatewayError("Pinned R30 source blob drifted.", {
         code: "R31_SOURCE_BLOB_DRIFT",
