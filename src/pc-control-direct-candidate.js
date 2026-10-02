@@ -486,7 +486,33 @@ export class PcControlDirectCandidateGateway {
         result: structured,
       };
     } catch (error) {
-      throw mapTransportError(error);
+      const mapped = mapTransportError(error);
+      if (effect === SIDE_EFFECT
+          && typeof args.request_id === "string"
+          && args.request_id
+          && !["DIRECT_AUTH_MISMATCH", "DIRECT_CONNECT_TIMEOUT"].includes(mapped.code)) {
+        return {
+          contract_version: PC_CONTROL_DIRECT_GATEWAY_V1,
+          lane: "direct_mcp_candidate",
+          tool: name,
+          status: "reconciliation_required",
+          request_id: args.request_id,
+          automatic_replay: false,
+          fallback_authorized: false,
+          result: {
+            contract_version: "pc.native.response.v1",
+            request_id: args.request_id,
+            status: "reconciliation_required",
+            data: {
+              lookup_required: true,
+              reason: mapped.code,
+              automatic_replay: false,
+            },
+            error: null,
+          },
+        };
+      }
+      throw mapped;
     }
   }
 
@@ -542,9 +568,19 @@ export function comparePluginSurfaces(authority, candidate, {
   if (!["HEALTHY", "DEGRADED"].includes(candidate.health?.status)) {
     fail("DIRECT_HEALTH_BLOCKED", candidate.health?.status ?? "UNKNOWN");
   }
+  if (authority.health?.status !== candidate.health?.status) {
+    fail("HEALTH_STATUS_MISMATCH", {
+      authority: authority.health?.status ?? "UNKNOWN",
+      candidate: candidate.health?.status ?? "UNKNOWN",
+    });
+  }
   if (!Number.isFinite(candidate.health?.latency_ms)
       || candidate.health.latency_ms > maxHealthLatencyMs) {
     fail("DIRECT_HEALTH_LATENCY_BOUND");
+  }
+  if (!Number.isFinite(authority.health?.latency_ms)
+      || authority.health.latency_ms > maxHealthLatencyMs) {
+    fail("AUTHORITY_HEALTH_LATENCY_BOUND");
   }
   if (candidate.health?.transport_connected !== true
       || candidate.health?.executor_responsive !== true) {
@@ -615,17 +651,27 @@ export class PcControlDualLaneGateway {
     if (!this.mirrorReadOnly) {
       return this.authority.callTool({ name, arguments: args });
     }
-    const [authorityResult, candidateResult] = await Promise.all([
+    const [authorityOutcome, candidateOutcome] = await Promise.allSettled([
       this.authority.callTool({ name, arguments: args }),
       this.candidate.callTool({ name, arguments: args }),
     ]);
+    if (authorityOutcome.status === "rejected") throw authorityOutcome.reason;
+    const candidateProbe = candidateOutcome.status === "fulfilled"
+      ? {
+          status: candidateOutcome.value?.status ?? null,
+          request_id: candidateOutcome.value?.request_id ?? null,
+          result_digest: digestJson(candidateOutcome.value?.result ?? null),
+          error_code: null,
+        }
+      : {
+          status: "blocked",
+          request_id: null,
+          result_digest: null,
+          error_code: candidateOutcome.reason?.code ?? "DIRECT_READ_ONLY_PROBE_FAILED",
+        };
     return {
-      authority: authorityResult,
-      candidate_read_only_probe: {
-        status: candidateResult?.status ?? null,
-        request_id: candidateResult?.request_id ?? null,
-        result_digest: digestJson(candidateResult?.result ?? null),
-      },
+      authority: authorityOutcome.value,
+      candidate_read_only_probe: candidateProbe,
       side_effect_mirrored: false,
     };
   }
