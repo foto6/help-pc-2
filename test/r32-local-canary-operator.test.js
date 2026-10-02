@@ -187,6 +187,25 @@ test("surface comparison fails closed on registry, protected policy, effect or s
   assert.ok(compareR32AuthorityCandidate(authority,schema).blockers.some((b)=>b.code==="TOOL_SCHEMA_MISMATCH"));
 });
 
+test("successful ping+info live canary can prove executor responsiveness after pre-canary DEGRADED health", () => {
+  const authority=buildR32AuthoritySnapshot({watchdogStatus:healthyWatchdog()});
+  const candidate=candidateFromProfile(authority);
+  candidate.health={...candidate.health,status:"DEGRADED",transport_connected:true,queue_progressing:true,executor_responsive:false};
+
+  const before=compareR32AuthorityCandidate(authority,candidate);
+  assert.ok(before.blockers.some((b)=>b.code==="HEALTH_STATUS_MISMATCH"));
+  assert.ok(before.blockers.some((b)=>b.code==="CANDIDATE_TRANSPORT_NOT_READY"));
+
+  const after=compareR32AuthorityCandidate(authority,candidate,{candidateCanaryEvidence:r31Canary()});
+  assert.equal(after.compatible,true);
+  assert.equal(after.executor_responsiveness_proven_by_read_only_canary,true);
+
+  const failed=r31Canary();
+  failed.calls[0]={...failed.calls[0],status:"error"};
+  const rejected=compareR32AuthorityCandidate(authority,candidate,{candidateCanaryEvidence:failed});
+  assert.equal(rejected.compatible,false);
+});
+
 test("R32 canary allowlist refuses side effects and non-approved read-only tools", () => {
   const authority=buildR32AuthoritySnapshot({watchdogStatus:healthyWatchdog()});
   const candidate=candidateFromProfile(authority);
@@ -254,6 +273,9 @@ test("invalid isolation identity blocks live canary promotion", () => {
 test("PowerShell operator cleanup is candidate-specific and contains no service/firewall/tunnel mutation", () => {
   const source=readFileSync(new URL("../tools/r32-local-canary-operator.ps1",import.meta.url),"utf8");
   assert.match(source,/r32-isolated-candidate\.js/);
+  assert.match(source,/\$maxWatchdogAttempts\s*=\s*5/);
+  assert.match(source,/state -ne "PROCESS_EXISTS"/);
+  assert.match(source,/Start-Sleep -Milliseconds 250/);
   assert.match(source,/Stop-Process -Id \$pidValue/);
   assert.match(source,/refusing cleanup: PID is not the exact isolated R32 candidate/);
   assert.doesNotMatch(source,/Register-ScheduledTask|New-ScheduledTask|New-Service|Restart-Service|Stop-Service|netsh|New-NetFirewallRule|ssh -R|cloudflared|ngrok/i);

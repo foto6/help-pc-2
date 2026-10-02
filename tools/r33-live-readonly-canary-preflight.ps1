@@ -21,7 +21,7 @@ function New-R33OutputDir {
 }
 
 function Get-RelayRows {
-  $isWindowsHost = ($env:OS -eq "Windows_NT")
+  $isWindowsHost = ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT)
   if (-not $isWindowsHost) { return @() }
   return @(Get-CimInstance Win32_Process | Where-Object {
     $_.CommandLine -and $_.CommandLine.Contains("github_relay.py")
@@ -137,9 +137,9 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $OutputDir = (Resolve-Path -LiteralPath $OutputDir).Path
 
 $relayRows = Get-RelayRows
-$resolvedRelayRepo = Resolve-RelayRepo $relayRows $RelayRepo
-$matchingRows = Matching-RelayRows $relayRows $resolvedRelayRepo
-$logicalCount = Logical-RelayCount $matchingRows
+$resolvedRelayRepo = Resolve-RelayRepo -Rows $relayRows -Explicit $RelayRepo
+$matchingRows = Matching-RelayRows -Rows $relayRows -Repo $resolvedRelayRepo
+$logicalCount = Logical-RelayCount -Rows $matchingRows
 
 $authoritySnapshotPath = Join-Path $OutputDir "authority-snapshot.json"
 $watchdogPath = Join-Path $OutputDir "authority-watchdog.json"
@@ -155,8 +155,28 @@ if ($resolvedRelayRepo -and (Test-Path -LiteralPath (Join-Path $resolvedRelayRep
   }
 
   $sw = [Diagnostics.Stopwatch]::StartNew()
-  $watchdogOutput = & python @args 2>$null
-  $watchdogExit = $LASTEXITCODE
+  $watchdogOutput = $null
+  $watchdogExit = $null
+  $watchdog = $null
+  $maxWatchdogAttempts = 5
+  for ($attempt = 1; $attempt -le $maxWatchdogAttempts; $attempt++) {
+    $candidateOutput = & python @args 2>$null
+    $candidateExit = $LASTEXITCODE
+    $candidateWatchdog = $null
+    if (-not [string]::IsNullOrWhiteSpace(($candidateOutput -join ""))) {
+      try {
+        $candidateWatchdog = ($candidateOutput -join [Environment]::NewLine) | ConvertFrom-Json
+      } catch {
+        $candidateWatchdog = $null
+      }
+    }
+    $watchdogOutput = $candidateOutput
+    $watchdogExit = $candidateExit
+    $watchdog = $candidateWatchdog
+    if (-not $candidateWatchdog -or $candidateWatchdog.state -eq "HEALTHY") { break }
+    if ($candidateWatchdog.state -ne "PROCESS_EXISTS") { break }
+    if ($attempt -lt $maxWatchdogAttempts) { Start-Sleep -Milliseconds 250 }
+  }
   $sw.Stop()
   if (-not [string]::IsNullOrWhiteSpace(($watchdogOutput -join ""))) {
     [IO.File]::WriteAllText(
@@ -171,7 +191,7 @@ if ($resolvedRelayRepo -and (Test-Path -LiteralPath (Join-Path $resolvedRelayRep
         $runtimeRow = $matchingRows | Where-Object { $_.pid -eq $runtimePid } | Select-Object -First 1
         if ($runtimeRow) { $runtimeParentPid = [int]$runtimeRow.parent_pid }
       }
-      Invoke-Node @(
+      Invoke-Node -Arguments @(
         (Join-Path $RepoRoot "tools/r32-authority-snapshot.js"),
         "--watchdog-status", $watchdogPath,
         "--latency-ms", ([math]::Round($sw.Elapsed.TotalMilliseconds,3).ToString([Globalization.CultureInfo]::InvariantCulture)),
@@ -261,7 +281,7 @@ $discoveryPath = Join-Path $OutputDir "runtime-discovery.json"
 )
 
 $reportPath = Join-Path $OutputDir "preflight-report.json"
-Invoke-Node @(
+Invoke-Node -Arguments @(
   (Join-Path $RepoRoot "tools/r33-preflight-evaluate.js"),
   "--input", $discoveryPath,
   "--out", $reportPath,
