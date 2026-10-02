@@ -34,6 +34,27 @@ function negotiationClient(manifest) {
 }
 
 function facadeErrorResult(error) {
+  const code = error?.code ?? "MCP_NATIVE_HOST_ERROR";
+  const reconciliationRequired = error?.outcomeUncertain === true
+    || error?.category === "uncertain_outcome"
+    || code === "UNKNOWN_RECONCILE"
+    || code === "SESSION_REQUEST_RECONCILIATION_REQUIRED"
+    || code === "RECONCILIATION_REQUIRED";
+  if (reconciliationRequired) {
+    return {
+      contract_version: NATIVE_RESPONSE_V1,
+      request_id: null,
+      session_id: null,
+      status: "reconciliation_required",
+      data: {
+        lookup_required: true,
+        reason: code,
+        automatic_replay: false,
+      },
+      error: null,
+      stream: null,
+    };
+  }
   return {
     contract_version: NATIVE_RESPONSE_V1,
     request_id: null,
@@ -41,7 +62,7 @@ function facadeErrorResult(error) {
     status: "error",
     data: null,
     error: {
-      code: error?.code ?? "MCP_NATIVE_HOST_ERROR",
+      code,
       category: error?.category ?? "host",
       message: String(error?.message ?? error),
       retryable: error?.retryable === true,
