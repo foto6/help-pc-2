@@ -28,7 +28,10 @@
     "report:r27-cutover": "node tools/r27-cutover-handoff-report.js",
     "test:r28-relay-freshness": "node --test test/r28-relay-freshness-gate.test.js test/r27-cutover-authority.test.js test/r26-relay-progress-consumer.test.js",
     "test:r29-relay-cutover-qa": "node --test test/r29-relay-cutover-qa.test.js test/r28-relay-freshness-gate.test.js test/r27-cutover-authority.test.js",
-    "report:r29-relay-cutover-qa": "node tools/r29-relay-cutover-qa-report.js"
+    "report:r29-relay-cutover-qa": "node tools/r29-relay-cutover-qa-report.js",
+    "mcp:remote": "node bin/pc-native-mcp-remote.js",
+    "test:r30-direct-remote": "node --test test/r30-direct-remote-mcp.test.js test/r30-direct-remote-chaos.integration.test.js test/final-control-relay-e2e.test.js",
+    "report:r30-direct-remote": "node tools/r30-direct-remote-readiness-report.js"
   },
   "engines": {
     "node": ">=20"
@@ -42,6 +45,7 @@
   },
   "bin": {
     "pc-native-mcp-stdio": "./bin/pc-native-mcp-stdio.js",
-    "pc-native-mcp-http": "./bin/pc-native-mcp-http.js"
+    "pc-native-mcp-http": "./bin/pc-native-mcp-http.js",
+    "pc-native-mcp-remote": "./bin/pc-native-mcp-remote.js"
   }
 }
