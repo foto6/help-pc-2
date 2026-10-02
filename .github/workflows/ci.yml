@@ -17,6 +17,7 @@ on:
       - agent/native-mcp-r27-cutover-authority-gate-20261001
       - agent/native-mcp-r28-relay-freshness-qa-20261001
       - agent/native-mcp-r29-relay-cutover-qa-20261002
+      - agent/native-mcp-r30-direct-remote-lane-20261002
   pull_request:
 
 permissions:
@@ -78,6 +79,8 @@ jobs:
         run: node --test test/r28-relay-freshness-gate.test.js
       - name: R29 independent relay cutover/autostart QA
         run: npm run test:r29-relay-cutover-qa
+      - name: R30 direct authenticated remote MCP lane
+        run: npm run test:r30-direct-remote
       - name: Full test suite
         run: npm test
       - name: Generate exact-head R27 coordinator handoff
@@ -96,5 +99,14 @@ jobs:
         with:
           name: r29-relay-cutover-qa-${{ matrix.os }}
           path: r29-relay-cutover-qa-${{ matrix.os }}.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Generate exact-head R30 direct remote readiness
+        run: node tools/r30-direct-remote-readiness-report.js --out r30-direct-remote-readiness-${{ matrix.os }}.json
+      - name: Upload exact-head R30 direct remote readiness
+        uses: actions/upload-artifact@v4
+        with:
+          name: r30-direct-remote-readiness-${{ matrix.os }}
+          path: r30-direct-remote-readiness-${{ matrix.os }}.json
           if-no-files-found: error
           retention-days: 14
