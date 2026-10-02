@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pc.control.direct_readiness.v1.schema.json",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "state",
+    "blockers",
+    "actual_pc_control_cutover",
+    "current_authority"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "pc.control.direct_readiness.v1"
+    },
+    "state": {
+      "enum": [
+        "SOURCE_READY",
+        "READ_ONLY_CANARY_PASS",
+        "READY_FOR_EXPLICIT_PLUGIN_CANDIDATE",
+        "BLOCKED"
+      ]
+    },
+    "blockers": {
+      "type": "array"
+    },
+    "actual_pc_control_cutover": {
+      "const": false
+    },
+    "current_authority": {
+      "const": "github_relay"
+    }
+  }
+}
