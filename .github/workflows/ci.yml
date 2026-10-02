@@ -19,6 +19,7 @@ on:
       - agent/native-mcp-r29-relay-cutover-qa-20261002
       - agent/native-mcp-r30-direct-remote-lane-20261002
       - agent/native-mcp-r31-pc-control-direct-lane-20261002
+      - agent/native-mcp-r32-local-canary-operator-20261002
   pull_request:
 
 permissions:
@@ -84,6 +85,23 @@ jobs:
         run: npm run test:r30-direct-remote
       - name: R31 pc-control direct-lane candidate
         run: npm run test:r31-pc-control-direct
+      - name: R32 local read-only canary operator
+        run: npm run test:r32-local-canary
+      - name: R32 PowerShell operator syntax
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'tools/r32-local-canary-operator.ps1'),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
       - name: Full test suite
         run: npm test
       - name: Generate exact-head R27 coordinator handoff
@@ -120,5 +138,14 @@ jobs:
         with:
           name: r31-pc-control-direct-readiness-${{ matrix.os }}
           path: r31-pc-control-direct-readiness-${{ matrix.os }}.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Generate exact-head R32 local canary readiness
+        run: node tools/r32-local-canary-readiness-report.js --out r32-local-canary-readiness-${{ matrix.os }}.json
+      - name: Upload exact-head R32 local canary readiness
+        uses: actions/upload-artifact@v4
+        with:
+          name: r32-local-canary-readiness-${{ matrix.os }}
+          path: r32-local-canary-readiness-${{ matrix.os }}.json
           if-no-files-found: error
           retention-days: 14
