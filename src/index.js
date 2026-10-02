@@ -1,4 +1,16 @@
 export {
+  R33_PREFLIGHT_V1,
+  R33_DISCOVERY_V1,
+  R33_NATIVE_RELAY_PROBE_V1,
+  R33_READY,
+  R33_BLOCKED,
+  R33_BLOCKERS,
+  buildR33RunCanaryCommand,
+  evaluateR33Preflight,
+  loadR33SourcePin,
+} from "./r33-live-readonly-canary-preflight.js";
+
+export {
   R32_AUTHORITY_SNAPSHOT_V1,
   R32_CANARY_EVIDENCE_V1,
   R32_READINESS_V1,
