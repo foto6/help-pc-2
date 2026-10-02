@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { evaluateR29RelayCutoverQa } from "../src/index.js";
+import { R29_PRODUCER_PIN, evaluateR29RelayCutoverQa } from "../src/index.js";
 
 function argValue(flag) {
   const index = process.argv.indexOf(flag);
@@ -22,7 +23,15 @@ if (!/^[0-9a-f]{40}$/.test(sourceSha)) {
   throw new Error("R29 QA report requires the exact 40-hex consumer source SHA.");
 }
 
-const evaluation = evaluateR29RelayCutoverQa();
+const committedBlobIdentities = Object.fromEntries(
+  Object.values(R29_PRODUCER_PIN.source_blobs).map((item) => [
+    item.vendored_path,
+    execFileSync("git", ["rev-parse", `HEAD:${item.vendored_path}`], {
+      encoding: "utf8",
+    }).trim(),
+  ]),
+);
+const evaluation = evaluateR29RelayCutoverQa({ committedBlobIdentities });
 const report = {
   ...evaluation,
   object: "pc.native.r29.relay_cutover_qa_report.v1",
