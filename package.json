@@ -26,7 +26,9 @@
     "test:r26-relay-progress": "node --test test/r26-relay-progress-consumer.test.js test/r26-relay-progress-mcp.integration.test.js test/r25-r24-runtime-health-consumer.test.js test/r25-r24-health-mcp.integration.test.js test/r23-hardening.test.js",
     "test:r27-cutover": "node --test test/r27-cutover-authority.test.js test/r26-relay-progress-consumer.test.js test/r25-r24-runtime-health-consumer.test.js test/r23-hardening.test.js",
     "report:r27-cutover": "node tools/r27-cutover-handoff-report.js",
-    "test:r28-relay-freshness": "node --test test/r28-relay-freshness-gate.test.js test/r27-cutover-authority.test.js test/r26-relay-progress-consumer.test.js"
+    "test:r28-relay-freshness": "node --test test/r28-relay-freshness-gate.test.js test/r27-cutover-authority.test.js test/r26-relay-progress-consumer.test.js",
+    "test:r29-relay-cutover-qa": "node --test test/r29-relay-cutover-qa.test.js test/r28-relay-freshness-gate.test.js test/r27-cutover-authority.test.js",
+    "report:r29-relay-cutover-qa": "node tools/r29-relay-cutover-qa-report.js"
   },
   "engines": {
     "node": ">=20"
