@@ -4,11 +4,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { request as httpRequest } from "node:http";
+import { performance } from "node:perf_hooks";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 import {
   DIRECT_REMOTE_HEALTH_V1,
   PRODUCTION_BRIDGE_CONTRACT,
+  NativeRelayExecutorProvider,
   assertCredentialSeparation,
   createConfiguredNativeMcpRuntime,
   startDirectRemoteMcpServer,
@@ -219,4 +221,44 @@ test("remote bind and credential authority fail closed unless explicitly separat
     }),
     (error) => error.code === "REMOTE_BIND_NOT_AUTHORIZED",
   );
+});
+
+
+test("relay control connect and response-body stalls are bounded before discovery can hang", async () => {
+  const base = {
+    relayUrl: "http://127.0.0.1:9",
+    relayToken: TEST_RELAY_CONTROL_TOKEN,
+    deviceId: "r30-timeout-device",
+    controlTimeoutMs: 100,
+  };
+
+  const hangingConnect = new NativeRelayExecutorProvider({
+    ...base,
+    fetchImpl: async (_url, options) => new Promise((_, reject) => {
+      options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+    }),
+  });
+  let started = performance.now();
+  await assert.rejects(
+    hangingConnect.readCapabilities(),
+    (error) => error.code === "RELAY_CONTROL_TIMEOUT" && error.automaticReplay === false,
+  );
+  assert.ok(performance.now() - started < 750);
+
+  const hangingBody = new NativeRelayExecutorProvider({
+    ...base,
+    fetchImpl: async (_url, options) => ({
+      ok: true,
+      status: 200,
+      json: async () => new Promise((_, reject) => {
+        options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
+      }),
+    }),
+  });
+  started = performance.now();
+  await assert.rejects(
+    hangingBody.readCapabilities(),
+    (error) => error.code === "RELAY_CONTROL_TIMEOUT" && error.automaticReplay === false,
+  );
+  assert.ok(performance.now() - started < 750);
 });
