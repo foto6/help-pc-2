@@ -1,4 +1,18 @@
 export {
+  R29_QA_V1,
+  R29_READY,
+  R29_BLOCKED,
+  R29_RECONCILIATION_REQUIRED,
+  R29_PRODUCER_PIN,
+  validateR29VendoredProducerBlobs,
+  logicalRelayCount,
+  classifyR29HealthScenario,
+  assessR29WatchdogState,
+  inspectR29ProducerSafety,
+  evaluateR29RelayCutoverQa,
+} from "./r29-relay-cutover-qa.js";
+
+export {
   R28_HEALTH_V1,
   R28_FRESHNESS_GATE_V1,
   R28_PRODUCER_PIN,
