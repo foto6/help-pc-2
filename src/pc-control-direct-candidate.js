@@ -664,6 +664,59 @@ export function evaluateR31Readiness({
   };
 }
 
+export async function runReadOnlyCanary({
+  gateway,
+  tools = ["device.ping", "device.info"],
+  evidenceOrigin = "runtime_probe_unattested",
+} = {}) {
+  if (!gateway || typeof gateway.describe !== "function" || typeof gateway.callTool !== "function") {
+    throw new TypeError("gateway must provide describe() and callTool()");
+  }
+  if (!Array.isArray(tools) || tools.length === 0) {
+    throw new TypeError("tools must be a non-empty array");
+  }
+  const startedAtMs = Date.now();
+  const surface = await gateway.describe();
+  const toolMap = normalizedToolMap(surface);
+  const calls = [];
+  for (const name of tools) {
+    const tool = toolMap.get(name);
+    if (!tool) {
+      throw new PcControlDirectGatewayError("Canary tool is not advertised.", {
+        code: "CANARY_TOOL_NOT_FOUND",
+        category: "canary",
+        details: { tool: name },
+      });
+    }
+    if (tool.effect !== READ_ONLY) {
+      throw new PcControlDirectGatewayError("Canary tool must be read-only.", {
+        code: "CANARY_SIDE_EFFECT_FORBIDDEN",
+        category: "policy",
+        details: { tool: name },
+      });
+    }
+    const callStarted = performance.now();
+    const result = await gateway.callTool({ name, arguments: {} });
+    calls.push({
+      tool: name,
+      effect: READ_ONLY,
+      status: result.status,
+      latency_ms: Math.round((performance.now() - callStarted) * 1000) / 1000,
+      request_id_present: typeof result.request_id === "string" && result.request_id.length > 0,
+      result_digest: digestJson(result.result ?? null),
+    });
+  }
+  const completedAtMs = Date.now();
+  const evidence = buildCanaryEvidence({
+    evidenceOrigin,
+    surface,
+    calls,
+    startedAtMs,
+    completedAtMs,
+  });
+  return { surface, evidence };
+}
+
 export function buildCanaryEvidence({
   evidenceOrigin,
   surface,
