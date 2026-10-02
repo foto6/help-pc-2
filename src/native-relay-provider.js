@@ -267,6 +267,7 @@ export class NativeRelayExecutorProvider {
         removeAbort = () => signal.removeEventListener("abort", onAbort);
       }
     }
+    let payload = null;
     try {
       response = await this.#fetch(target, {
         method,
@@ -277,6 +278,12 @@ export class NativeRelayExecutorProvider {
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: controller.signal,
       });
+      try {
+        payload = await response.json();
+      } catch (error) {
+        if (timedOut || signal?.aborted) throw error;
+        payload = null;
+      }
     } catch (error) {
       if (signal?.aborted && !timedOut) throw cancelledBeforeDispatch();
       throw new NativeRelayProviderError(
@@ -293,13 +300,6 @@ export class NativeRelayExecutorProvider {
     } finally {
       clearTimeout(timer);
       removeAbort?.();
-    }
-
-    let payload = null;
-    try {
-      payload = await response.json();
-    } catch {
-      payload = null;
     }
     if (allowNotFound && response.status === 404) return null;
     if (!response.ok) throw errorFromRelay(response.status, payload);
