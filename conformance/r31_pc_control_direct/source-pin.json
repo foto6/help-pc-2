@@ -1,0 +1,24 @@
+{
+  "contract_version": "pc.control.r31.source_pin.v1",
+  "repository": "foto6/help-pc-2",
+  "branch": "agent/native-mcp-r30-direct-remote-lane-20261002",
+  "exact_sha": "29cefa62efcf3f3295dca32b0a202b21c5831969",
+  "exact_head_ci": {
+    "run_id": 36985223664,
+    "conclusion": "success"
+  },
+  "r30_contracts": {
+    "transport": "pc.native.direct_remote_mcp.v1",
+    "health": "pc.native.direct_remote_mcp.health.v1",
+    "native_protocol": "pc.native.control.v1"
+  },
+  "blobs": {
+    "src/direct-remote-mcp.js": "cb6d74888514d3262d206df4f3cbd13a1f8899e2",
+    "src/mcp-host.js": "8a9f3e8659a2bd0b76d2733ac2e991f880d374e8",
+    "src/mcp-runtime-config.js": "0f6f32313505cec82d304af63caaeeffebd04997",
+    "src/native-relay-provider.js": "cca28c281c5e540f1a6478fd063396fa4e55a987",
+    "bin/pc-native-mcp-remote.js": "ba636cc1f1f95dce7fa92bf7581b1924d386dfab",
+    "docs/NATIVE_R30_DIRECT_REMOTE_MCP.md": "a71b700068f7276df5e3c824502cde99cfbc9cb3",
+    "conformance/r30_direct_remote/readiness.template.json": "9cfaaab9fd4b561295bdc336842e1fc0ded41672"
+  }
+}
