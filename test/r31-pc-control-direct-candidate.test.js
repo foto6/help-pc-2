@@ -383,3 +383,56 @@ test("canary evidence contains hashes/status only and can never authorize replay
   assert.equal(evidence.replay_authorized, false);
   assert.equal(JSON.stringify(evidence).includes("must-not-appear"), false);
 });
+
+
+test("read-only candidate probe failure never breaks a successful GitHub-authority result", async () => {
+  const authoritySurface = surface();
+  const authority = {
+    describe: async () => authoritySurface,
+    callTool: async () => ({ lane: "github_relay", status: "completed", data: { ok: true } }),
+  };
+  const candidate = {
+    describe: async () => surface({ lane: "direct_mcp_candidate" }),
+    callTool: async () => {
+      throw new PcControlDirectGatewayError("offline", {
+        code: "DIRECT_LANE_UNAVAILABLE",
+        category: "transport",
+      });
+    },
+  };
+  const dual = new PcControlDualLaneGateway({ authority, candidate, mirrorReadOnly: true });
+  const result = await dual.callTool({ name: "device.ping", arguments: {} });
+  assert.equal(result.authority.lane, "github_relay");
+  assert.equal(result.authority.status, "completed");
+  assert.equal(result.candidate_read_only_probe.status, "blocked");
+  assert.equal(result.candidate_read_only_probe.error_code, "DIRECT_LANE_UNAVAILABLE");
+  assert.equal(result.side_effect_mirrored, false);
+});
+
+test("candidate transport loss after side-effect call begins becomes reconciliation_required without fallback", async () => {
+  const gateway = new PcControlDirectCandidateGateway({
+    endpoint: "http://127.0.0.1:12345/mcp",
+    token: TOKEN,
+    allowInsecureHttpForTests: true,
+    mode: "explicit_plugin_candidate",
+    clientFactory: async () => ({
+      listTools: async () => ({ tools: [fakeTool("file.write", "side_effect")] }),
+      callTool: async () => { throw new Error("connection lost after request write"); },
+      close: async () => {},
+    }),
+    fetchImpl: async () => new Response("{}", { status: 200 }),
+  });
+  const result = await gateway.callTool({
+    name: "file.write",
+    arguments: {
+      request_id: "r31-transport-unknown",
+      path: "C:\\tmp\\transport-unknown.txt",
+      text: "once",
+    },
+  });
+  assert.equal(result.status, "reconciliation_required");
+  assert.equal(result.request_id, "r31-transport-unknown");
+  assert.equal(result.automatic_replay, false);
+  assert.equal(result.fallback_authorized, false);
+  assert.equal(result.result.data.lookup_required, true);
+});
