@@ -174,11 +174,30 @@ function toolMapFromCandidate(surface) {
   }]));
 }
 
+function readOnlyCanaryProvesExecutorResponsive(evidence) {
+  const calls = Array.isArray(evidence?.calls) ? evidence.calls : [];
+  const required = new Set(["device.ping", "device.info"]);
+  return evidence?.status === "PASS"
+    && evidence?.side_effect_calls === 0
+    && evidence?.replay_authorized === false
+    && calls.length >= required.size
+    && calls.every((call) => call?.effect === "read_only" && call?.status === "completed")
+    && [...required].every((name) => calls.some((call) => call?.tool === name));
+}
+
 export function compareR32AuthorityCandidate(authoritySnapshot, candidateSurface, {
   maxHealthLatencyMs = 5_000,
+  candidateCanaryEvidence = null,
 } = {}) {
   const blockers = [];
   const fail = (code, detail = null) => blockers.push({ code, detail });
+  const canaryProvesExecutor = readOnlyCanaryProvesExecutorResponsive(candidateCanaryEvidence);
+  const candidatePreCanaryOnlyDegraded = canaryProvesExecutor
+    && authoritySnapshot?.live_health?.status === "HEALTHY"
+    && candidateSurface?.health?.status === "DEGRADED"
+    && candidateSurface?.health?.transport_connected === true
+    && candidateSurface?.health?.queue_progressing === true
+    && candidateSurface?.health?.executor_responsive === false;
   if (authoritySnapshot?.contract_version !== R32_AUTHORITY_SNAPSHOT_V1) {
     fail("AUTHORITY_SNAPSHOT_SCHEMA_MISMATCH");
   }
@@ -188,7 +207,8 @@ export function compareR32AuthorityCandidate(authoritySnapshot, candidateSurface
   if (authoritySnapshot?.safe_for_comparison !== true) {
     fail("AUTHORITY_SNAPSHOT_NOT_HEALTHY");
   }
-  if (candidateSurface?.health?.status !== authoritySnapshot?.live_health?.status) {
+  if (candidateSurface?.health?.status !== authoritySnapshot?.live_health?.status
+      && !candidatePreCanaryOnlyDegraded) {
     fail("HEALTH_STATUS_MISMATCH", {
       authority: authoritySnapshot?.live_health?.status ?? "UNKNOWN",
       candidate: candidateSurface?.health?.status ?? "UNKNOWN",
@@ -215,7 +235,7 @@ export function compareR32AuthorityCandidate(authoritySnapshot, candidateSurface
     fail("RECONCILIATION_SEMANTICS_MISMATCH");
   }
   if (candidateSurface?.health?.transport_connected !== true
-      || candidateSurface?.health?.executor_responsive !== true) {
+      || (candidateSurface?.health?.executor_responsive !== true && !canaryProvesExecutor)) {
     fail("CANDIDATE_TRANSPORT_NOT_READY");
   }
 
@@ -236,6 +256,7 @@ export function compareR32AuthorityCandidate(authoritySnapshot, candidateSurface
   return {
     compatible: blockers.length === 0,
     blockers,
+    executor_responsiveness_proven_by_read_only_canary: canaryProvesExecutor,
     authority_snapshot_digest: authoritySnapshot?.snapshot_digest ?? null,
     candidate_surface_digest: candidateSurface?.tool_surface_digest ?? null,
   };
@@ -276,7 +297,9 @@ export function buildR32CanaryEvidence({
   startedAtMs = null,
   completedAtMs = null,
 } = {}) {
-  const comparison = compareR32AuthorityCandidate(authoritySnapshot, candidateSurface);
+  const comparison = compareR32AuthorityCandidate(authoritySnapshot, candidateSurface, {
+    candidateCanaryEvidence,
+  });
   const liveOrigin = evidenceOrigin === "coordinator_live_read_only_canary"
     && actualCoordinatorRun === true;
   const isolated = candidateDescriptor?.contract_version === R32_CANDIDATE_DESCRIPTOR_V1

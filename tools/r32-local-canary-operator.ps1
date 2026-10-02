@@ -150,8 +150,26 @@ function Write-R32AuthoritySnapshot {
   foreach ($item in $observed) { $args += @("--observed-process", $item) }
 
   $sw = [Diagnostics.Stopwatch]::StartNew()
-  $output = & python @args 2>$null
-  $exit = $LASTEXITCODE
+  $output = $null
+  $exit = $null
+  $maxWatchdogAttempts = 5
+  for ($attempt = 1; $attempt -le $maxWatchdogAttempts; $attempt++) {
+    $candidateOutput = & python @args 2>$null
+    $candidateExit = $LASTEXITCODE
+    $candidateWatchdog = $null
+    if (-not [string]::IsNullOrWhiteSpace(($candidateOutput -join ""))) {
+      try {
+        $candidateWatchdog = ($candidateOutput -join [Environment]::NewLine) | ConvertFrom-Json
+      } catch {
+        $candidateWatchdog = $null
+      }
+    }
+    $output = $candidateOutput
+    $exit = $candidateExit
+    if (-not $candidateWatchdog -or $candidateWatchdog.state -eq "HEALTHY") { break }
+    if ($candidateWatchdog.state -ne "PROCESS_EXISTS") { break }
+    if ($attempt -lt $maxWatchdogAttempts) { Start-Sleep -Milliseconds 250 }
+  }
   $sw.Stop()
   if ([string]::IsNullOrWhiteSpace(($output -join ""))) {
     throw "GitHub relay watchdog produced no JSON"

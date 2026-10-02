@@ -154,8 +154,28 @@ if ($resolvedRelayRepo -and (Test-Path -LiteralPath (Join-Path $resolvedRelayRep
   }
 
   $sw = [Diagnostics.Stopwatch]::StartNew()
-  $watchdogOutput = & python @args 2>$null
-  $watchdogExit = $LASTEXITCODE
+  $watchdogOutput = $null
+  $watchdogExit = $null
+  $watchdog = $null
+  $maxWatchdogAttempts = 5
+  for ($attempt = 1; $attempt -le $maxWatchdogAttempts; $attempt++) {
+    $candidateOutput = & python @args 2>$null
+    $candidateExit = $LASTEXITCODE
+    $candidateWatchdog = $null
+    if (-not [string]::IsNullOrWhiteSpace(($candidateOutput -join ""))) {
+      try {
+        $candidateWatchdog = ($candidateOutput -join [Environment]::NewLine) | ConvertFrom-Json
+      } catch {
+        $candidateWatchdog = $null
+      }
+    }
+    $watchdogOutput = $candidateOutput
+    $watchdogExit = $candidateExit
+    $watchdog = $candidateWatchdog
+    if (-not $candidateWatchdog -or $candidateWatchdog.state -eq "HEALTHY") { break }
+    if ($candidateWatchdog.state -ne "PROCESS_EXISTS") { break }
+    if ($attempt -lt $maxWatchdogAttempts) { Start-Sleep -Milliseconds 250 }
+  }
   $sw.Stop()
   if (-not [string]::IsNullOrWhiteSpace(($watchdogOutput -join ""))) {
     [IO.File]::WriteAllText(
