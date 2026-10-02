@@ -116,6 +116,7 @@ export class NativeMcpRuntime {
     serverVersion = MCP_HOST_VERSION,
     maxToolResultBytes = 256 * 1024,
     healthSupervisor = null,
+    requireStableRequestIdForSideEffects = false,
   }) {
     this.facade = facade;
     this.desktopId = desktopId;
@@ -127,6 +128,7 @@ export class NativeMcpRuntime {
     this.serverVersion = serverVersion;
     this.maxToolResultBytes = maxToolResultBytes;
     this.healthSupervisor = healthSupervisor;
+    this.requireStableRequestIdForSideEffects = requireStableRequestIdForSideEffects === true;
   }
 
   static async create({
@@ -137,6 +139,7 @@ export class NativeMcpRuntime {
     maxToolResultBytes = 256 * 1024,
     compatibilitySurface = null,
     healthSupervisor = null,
+    requireStableRequestIdForSideEffects = false,
   }) {
     if (!facade) throw new TypeError("facade is required");
     const manifest = await facade.capabilities();
@@ -176,6 +179,7 @@ export class NativeMcpRuntime {
       serverVersion,
       maxToolResultBytes,
       healthSupervisor,
+      requireStableRequestIdForSideEffects,
     });
   }
 
@@ -296,6 +300,19 @@ export class NativeMcpRuntime {
   }
 
   async callNativeTool(tool, args, ctx) {
+    if (tool.effect === "side_effect" && this.requireStableRequestIdForSideEffects
+        && (typeof args?.request_id !== "string" || !args.request_id)) {
+      const error = new Error("Direct remote side effects require an explicit stable request_id.");
+      error.code = "REMOTE_STABLE_REQUEST_ID_REQUIRED";
+      error.category = "idempotency";
+      error.retryable = false;
+      const bounded = boundedResult(facadeErrorResult(error), this.maxToolResultBytes);
+      return {
+        content: [{ type: "text", text: safeJson(bounded) }],
+        structuredContent: bounded,
+        isError: true,
+      };
+    }
     const requestId = requestIdentity(tool.name, args, ctx);
     const { nativeArgs, page } = splitHostArguments(args);
     let response;
@@ -410,6 +427,19 @@ export class NativeMcpRuntime {
   }
 
   async callCompatibilityTool(tool, args, ctx) {
+    if (tool.effect === "side_effect" && this.requireStableRequestIdForSideEffects
+        && (typeof args?.request_id !== "string" || !args.request_id)) {
+      const error = new Error("Direct remote side effects require an explicit stable request_id.");
+      error.code = "REMOTE_STABLE_REQUEST_ID_REQUIRED";
+      error.category = "idempotency";
+      error.retryable = false;
+      const bounded = boundedResult(compatibilityErrorResult(error, { tool: tool.name }), this.maxToolResultBytes);
+      return {
+        content: [{ type: "text", text: safeJson(bounded) }],
+        structuredContent: bounded,
+        isError: true,
+      };
+    }
     const requestId = requestIdentity(tool.name, args, ctx);
     const { request_id: _requestId, ...compatibilityArguments } = args;
     let response;
@@ -479,6 +509,7 @@ export class NativeMcpRuntime {
             "pc.native/r23_health_status": health?.status ?? "UNAVAILABLE",
             "pc.native/r23_adapter_health": adapterHealth,
             "pc.native/mcp_era": ctx.era ?? null,
+            "pc.native/stable_request_id_required_for_side_effects": this.requireStableRequestIdForSideEffects,
           },
         },
         async (args, callCtx) => this.callNativeTool(tool, args, callCtx),
@@ -519,6 +550,7 @@ export class NativeMcpRuntime {
             "pc.desktop_commander/r23_health_status": health?.status ?? "UNAVAILABLE",
             "pc.desktop_commander/vendor_non_equivalents": compatibilityManifest.vendor_non_equivalents,
             "pc.desktop_commander/mcp_era": ctx.era ?? null,
+            "pc.desktop_commander/stable_request_id_required_for_side_effects": this.requireStableRequestIdForSideEffects,
           },
         },
         async (args, callCtx) => this.callCompatibilityTool(tool, args, callCtx),
