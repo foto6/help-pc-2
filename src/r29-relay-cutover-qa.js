@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,14 +16,6 @@ export const R29_PRODUCER_PIN = Object.freeze(
 
 function gate(id, ok, reason, evidence = null) {
   return { id, ok: Boolean(ok), state: ok ? "PASS" : "BLOCK", reason, evidence };
-}
-
-function gitBlobSha1(buffer) {
-  const raw = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-  return createHash("sha1")
-    .update(Buffer.from(`blob ${raw.length}\0`))
-    .update(raw)
-    .digest("hex");
 }
 
 function readVendored(name) {
@@ -51,11 +42,25 @@ function noForbiddenProcessControl(text) {
   return !/Stop-Process|taskkill|TerminateProcess|Restart-Service|Stop-Service/i.test(text);
 }
 
-export function validateR29VendoredProducerBlobs() {
+export function validateR29VendoredProducerBlobs(committedBlobIdentities) {
+  if (!committedBlobIdentities || typeof committedBlobIdentities !== "object"
+      || Array.isArray(committedBlobIdentities)) {
+    return {
+      ok: false,
+      failures: [{
+        name: "*",
+        code: "COMMITTED_BLOB_IDENTITIES_REQUIRED",
+        expected: "git rev-parse HEAD:<vendored_path>",
+        actual: null,
+      }],
+    };
+  }
   const failures = [];
   for (const [name, item] of Object.entries(R29_PRODUCER_PIN.source_blobs)) {
-    const actual = gitBlobSha1(readVendored(name));
-    if (actual !== item.git_blob_sha1) failures.push({ name, expected: item.git_blob_sha1, actual });
+    const actual = committedBlobIdentities[item.vendored_path] ?? null;
+    if (actual !== item.git_blob_sha1) {
+      failures.push({ name, expected: item.git_blob_sha1, actual });
+    }
   }
   return { ok: failures.length === 0, failures };
 }
@@ -146,7 +151,7 @@ export function assessR29WatchdogState(state) {
   };
 }
 
-export function inspectR29ProducerSafety() {
+export function inspectR29ProducerSafety({ committedBlobIdentities } = {}) {
   const manifest = readJson("candidate_manifest");
   const healthManifest = readJson("health_manifest");
   const healthPin = readJson("health_producer_pin");
@@ -169,7 +174,7 @@ export function inspectR29ProducerSafety() {
   const gates = [
     gate(
       "exact_vendored_producer_blobs",
-      validateR29VendoredProducerBlobs().ok,
+      validateR29VendoredProducerBlobs(committedBlobIdentities).ok,
       "every vendored file is byte-identical to its immutable producer Git blob",
     ),
     gate(
@@ -322,8 +327,8 @@ export function inspectR29ProducerSafety() {
   };
 }
 
-export function evaluateR29RelayCutoverQa() {
-  const safety = inspectR29ProducerSafety();
+export function evaluateR29RelayCutoverQa({ committedBlobIdentities } = {}) {
+  const safety = inspectR29ProducerSafety({ committedBlobIdentities });
   const blockers = safety.gates.filter((item) => !item.ok);
   const decision = blockers.length === 0 ? R29_READY : R29_BLOCKED;
 
