@@ -190,6 +190,13 @@ export {
   mcpCompatibilityToolDescription,
 } from "./mcp-tool-schemas.js";
 export { startNativeMcpHttpServer, isLoopbackHost as isMcpLoopbackHost } from "./mcp-http-host.js";
+export {
+  DIRECT_REMOTE_MCP_V1,
+  DIRECT_REMOTE_HEALTH_V1,
+  DirectRemoteMcpError,
+  assertCredentialSeparation,
+  startDirectRemoteMcpServer,
+} from "./direct-remote-mcp.js";
 export { createConfiguredNativeMcpRuntime, PRODUCTION_BRIDGE_CONTRACT } from "./mcp-runtime-config.js";
 
 export {
