@@ -289,6 +289,8 @@ function mapTransportError(error) {
 }
 
 export class PcControlDirectCandidateGateway {
+  #token;
+
   constructor({
     endpoint,
     token,
@@ -300,7 +302,7 @@ export class PcControlDirectCandidateGateway {
     mode = "read_only_canary",
   } = {}) {
     this.endpoint = normalizeEndpoint(endpoint, { allowInsecureHttpForTests });
-    this.token = normalizeToken(token);
+    this.#token = normalizeToken(token);
     if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl must be a function");
     if (clientFactory !== null && typeof clientFactory !== "function") {
       throw new TypeError("clientFactory must be a function or null");
@@ -326,7 +328,7 @@ export class PcControlDirectCandidateGateway {
         this.client = await withTimeout(
           () => this.clientFactory({
             endpoint: new URL(this.endpoint),
-            token: this.token,
+            token: this.#token,
           }),
           this.connectTimeoutMs,
           "DIRECT_CONNECT_TIMEOUT",
@@ -358,7 +360,7 @@ export class PcControlDirectCandidateGateway {
     try {
       const response = await withTimeout(
         (signal) => this.fetchImpl(target, {
-          headers: { authorization: `Bearer ${this.token}` },
+          headers: { authorization: `Bearer ${this.#token}` },
           signal,
         }),
         this.connectTimeoutMs,
