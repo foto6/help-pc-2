@@ -1,0 +1,32 @@
+{
+  "contract_version": "pc.control.r31.readiness_report.v1",
+  "source_state": "SOURCE_READY",
+  "read_only_canary_state": "NOT_EXECUTED_LIVE",
+  "plugin_candidate_state": "NOT_AUTHORIZED",
+  "actual_pc_control_cutover": false,
+  "current_authority": "github_relay",
+  "current_working_path_changed": false,
+  "direct_candidate": "r30_direct_remote_mcp",
+  "r30_source_sha": "29cefa62efcf3f3295dca32b0a202b21c5831969",
+  "r30_ci_run_id": 36985223664,
+  "candidate_version": "0.3.0-candidate",
+  "missing_live_authorities": [
+    "EXPLICIT_LIVE_READ_ONLY_DIRECT_CANARY",
+    "CURRENT_PRIVATE_PC_CONTROL_AUTHORITY_SNAPSHOT",
+    "EXPLICIT_PRIVATE_PLUGIN_CANDIDATE_UPDATE"
+  ],
+  "safety": {
+    "side_effect_mirroring": false,
+    "automatic_replay": false,
+    "github_relay_stopped": false,
+    "plugin_mutated": false,
+    "live_service_changed": false,
+    "firewall_or_tunnel_changed": false,
+    "credential_logging": false
+  },
+  "exact_head": null,
+  "ci_run_id": null,
+  "runner_os": null,
+  "generated_at": null,
+  "digest": null
+}
