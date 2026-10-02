@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { request as httpRequest } from "node:http";
 import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 
 import {
@@ -102,6 +103,28 @@ function structured(result) {
   return text ? JSON.parse(text) : null;
 }
 
+function rawGet(url, headers = {}) {
+  const target = new URL(url);
+  return new Promise((resolve, reject) => {
+    const req = httpRequest({
+      hostname: target.hostname,
+      port: Number(target.port),
+      path: target.pathname,
+      method: "GET",
+      headers,
+    }, (res) => {
+      const chunks = [];
+      res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => resolve({
+        status: res.statusCode,
+        body: Buffer.concat(chunks).toString("utf8"),
+      }));
+    });
+    req.once("error", reject);
+    req.end();
+  });
+}
+
 test("direct remote transport uses official MCP initialize/list and discovery does not claim desktop", async (t) => {
   const h = await harness(t);
   assert.equal(h.configured.facade.debugSnapshot().sessions.length, 0);
@@ -159,11 +182,9 @@ test("wrong token, Host confusion and Origin confusion fail closed", async (t) =
   });
   assert.equal(wrongToken.status, 401);
 
-  const wrongHost = await fetch(h.remote.health_url, {
-    headers: {
-      authorization: `Bearer ${CLIENT_TOKEN}`,
-      host: "evil.invalid",
-    },
+  const wrongHost = await rawGet(h.remote.health_url, {
+    authorization: `Bearer ${CLIENT_TOKEN}`,
+    host: "evil.invalid",
   });
   assert.equal(wrongHost.status, 421);
 
