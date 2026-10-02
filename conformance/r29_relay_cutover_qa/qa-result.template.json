@@ -1,0 +1,34 @@
+{
+  "contract_version": "pc.native.r29.relay_cutover_qa_result.v1",
+  "decision": "READY_FOR_EXPLICIT_CUTOVER_DECISION",
+  "producer": {
+    "repository": "foto6/help-pc-1",
+    "branch": "agent/pc-relay-watchdog-cutover-candidate-20261002",
+    "sha": "6f44216e7e5fbf9fe3ae635f302c3c33887e0930",
+    "exact_head_ci_run": 36967056910,
+    "exact_head_ci_conclusion": "SUCCESS"
+  },
+  "evidence_scope": "IMMUTABLE_COMMITTED_PRODUCER_BLOBS_AND_EXACT_HEAD_CI",
+  "validated_states": [
+    "HEALTHY",
+    "STALE",
+    "RECONCILIATION_REQUIRED",
+    "DUPLICATE_AMBIGUOUS",
+    "PROCESS_EXISTS"
+  ],
+  "safety": {
+    "pid_presence_is_health": false,
+    "automatic_side_effect_replay": false,
+    "py_wrapper_child_is_one_logical_relay": true,
+    "autostart_apply_executed": false,
+    "scheduled_task_created": false,
+    "service_created": false,
+    "process_killed_or_restarted": false,
+    "journal_preserved": true,
+    "bounded_log_rotation_required": true,
+    "startup_failure_or_degraded_health_blocks": true
+  },
+  "live_cutover_authorized": false,
+  "mutation_execution_authorized": false,
+  "release_gate": "NO_LIVE_CUTOVER"
+}
