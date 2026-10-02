@@ -1,0 +1,31 @@
+{
+  "contract_version": "pc.control.r32.readiness_report.v1",
+  "state": "SOURCE_READY",
+  "live_canary_artifact_present": false,
+  "read_only_canary_state": "NOT_EXECUTED_COORDINATOR_LIVE",
+  "actual_pc_control_cutover": false,
+  "current_authority": "github_relay",
+  "current_working_path_changed": false,
+  "isolated_candidate_started_by_ci": false,
+  "missing_live_authorities": [
+    "COORDINATOR_EXECUTED_R32_READ_ONLY_CANARY",
+    "LIVE_GITHUB_RELAY_AUTHORITY_SNAPSHOT",
+    "LIVE_ISOLATED_DIRECT_CANDIDATE_EVIDENCE"
+  ],
+  "safety": {
+    "side_effect_mirroring": false,
+    "side_effect_canary_calls": 0,
+    "automatic_replay": false,
+    "fallback_after_unknown": false,
+    "current_relay_stopped": false,
+    "current_bridge_restarted": false,
+    "service_or_task_registered": false,
+    "firewall_or_tunnel_changed": false,
+    "credential_logging": false
+  },
+  "exact_head": null,
+  "ci_run_id": null,
+  "runner_os": null,
+  "generated_at": null,
+  "digest": null
+}
