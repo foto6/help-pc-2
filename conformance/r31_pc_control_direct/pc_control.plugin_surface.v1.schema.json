@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pc.control.plugin_surface.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "source_lane",
+    "observed_at_ms",
+    "health",
+    "capabilities",
+    "tools",
+    "tool_surface_digest"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "pc.control.plugin_surface.v1"
+    },
+    "source_lane": {
+      "enum": [
+        "github_relay",
+        "direct_mcp_candidate"
+      ]
+    },
+    "observed_at_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "reason",
+        "latency_ms",
+        "transport_connected",
+        "queue_progressing",
+        "executor_responsive"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "HEALTHY",
+            "DEGRADED",
+            "BLOCKED",
+            "UNKNOWN"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latency_ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "transport_connected": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "queue_progressing": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "executor_responsive": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol_version",
+        "native_registry_digest",
+        "executor_digest",
+        "compatibility_registry_digest",
+        "protected_path_policy",
+        "explicit_side_effect_request_id_required",
+        "reconciliation_status",
+        "automatic_replay"
+      ],
+      "properties": {
+        "protocol_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "native_registry_digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "executor_digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "compatibility_registry_digest": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "protected_path_policy": {
+          "const": "pc.native.facade.protected_path_fail_closed.v1"
+        },
+        "explicit_side_effect_request_id_required": {
+          "const": true
+        },
+        "reconciliation_status": {
+          "const": "reconciliation_required"
+        },
+        "automatic_replay": {
+          "const": false
+        }
+      }
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "effect",
+          "available",
+          "input_schema_digest"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "effect": {
+            "enum": [
+              "read_only",
+              "side_effect"
+            ]
+          },
+          "available": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "input_schema_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "tool_surface_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}
