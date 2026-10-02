@@ -1,0 +1,16 @@
+{
+  "contract_version": "pc.control.r33.source_pin.v1",
+  "repository": "foto6/help-pc-2",
+  "exact_start_sha": "b235e319a2afe049a708d48329cc6d80d988256f",
+  "exact_start_ci": {
+    "run_id": 36993946760,
+    "conclusion": "success"
+  },
+  "inherited": {
+    "r32_contract": "pc.control.r32.local_canary_readiness.v1",
+    "current_authority": "github_relay",
+    "actual_live_canary_executed": false,
+    "actual_pc_control_cutover": false
+  },
+  "release_gate": "NO_LIVE_CUTOVER"
+}
