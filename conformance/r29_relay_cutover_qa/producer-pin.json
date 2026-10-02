@@ -1,0 +1,89 @@
+{
+  "contract_version": "pc.native.r29.relay_cutover_qa_pin.v1",
+  "producer": {
+    "repository": "foto6/help-pc-1",
+    "branch": "agent/pc-relay-watchdog-cutover-candidate-20261002",
+    "sha": "6f44216e7e5fbf9fe3ae635f302c3c33887e0930",
+    "exact_head_ci_run": 36967056910,
+    "exact_head_ci_conclusion": "SUCCESS"
+  },
+  "source_blobs": {
+    "candidate_manifest": {
+      "source_path": "conformance/pc_relay.cutover_candidate.v1/manifest.json",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/cutover-manifest.json",
+      "git_blob_sha1": "533131c58ec21ce64aa7081a7c3cf2edc96dfab6"
+    },
+    "health_manifest": {
+      "source_path": "conformance/pc_relay.health.v1/manifest.json",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/health-manifest.json",
+      "git_blob_sha1": "fa5d3c379b4d0911cee49b33795c1e2f60ed75c8"
+    },
+    "health_producer_pin": {
+      "source_path": "conformance/pc_relay.health.v1/producer-pin.r2.json",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/health-producer-pin.r2.json",
+      "git_blob_sha1": "069af1c28c81baa606d7fdcc76b4231eef085024"
+    },
+    "watchdog_manifest": {
+      "source_path": "conformance/pc_relay.watchdog_status.v1/manifest.json",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/watchdog-manifest.json",
+      "git_blob_sha1": "735c1db9e8a8a2b7d1becbdd75703ece78eb2ffe"
+    },
+    "health_schema": {
+      "source_path": "conformance/pc_relay.health.v1/schema.json",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/pc_relay.health.v1.schema.json",
+      "git_blob_sha1": "acd46bf45dd4b647bdebd0cc46cc5b89997a1fb5"
+    },
+    "watchdog_schema": {
+      "source_path": "conformance/pc_relay.watchdog_status.v1/schema.json",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/pc_relay.watchdog_status.v1.schema.json",
+      "git_blob_sha1": "a6e7b2bdd6e73e22e2d090932c03ce42cb1c6dac"
+    },
+    "cutover_schema": {
+      "source_path": "conformance/pc_relay.cutover_candidate.v1/schema.json",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/pc_relay.cutover_candidate.v1.schema.json",
+      "git_blob_sha1": "0c4ac8ece4b9cac3c21944641db4357deebffe3c"
+    },
+    "incident_fixture": {
+      "source_path": "tests/fixtures/pc_relay_cutover_candidate/incident_2026-10-01.json",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/incident_2026-10-01.json",
+      "git_blob_sha1": "a8d501e21d3c53f85cd16ffd0ff3cca52315347b"
+    },
+    "incident_document": {
+      "source_path": "docs/PC_RELAY_STALE_SYNC_INCIDENT_2026-10-01.md",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/PC_RELAY_STALE_SYNC_INCIDENT_2026-10-01.md",
+      "git_blob_sha1": "9c39b49c88a95c1192b22eb7613ba367fc28d97e"
+    },
+    "relay": {
+      "source_path": "tools/github_relay.py",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/github_relay.py",
+      "git_blob_sha1": "b87ef62c6e55eb071e6180780f56343deacd4cb0"
+    },
+    "launcher": {
+      "source_path": "tools/start_pc_control_relay.ps1",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/start_pc_control_relay.ps1",
+      "git_blob_sha1": "8a7b23c69c2083876d4212d8957df72ff19b59a4"
+    },
+    "autostart_installer": {
+      "source_path": "tools/install_pc_relay_autostart.ps1",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/install_pc_relay_autostart.ps1",
+      "git_blob_sha1": "02c090465fc56e6291583c1d4d003d2af18a31d2"
+    },
+    "autostart_uninstaller": {
+      "source_path": "tools/uninstall_pc_relay_autostart.ps1",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/uninstall_pc_relay_autostart.ps1",
+      "git_blob_sha1": "e98664a8eb2bce22bc1c5a3c187223db5d79e1bc"
+    },
+    "rollback": {
+      "source_path": "tools/rollback_pc_relay_cutover.ps1",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/rollback_pc_relay_cutover.ps1",
+      "git_blob_sha1": "cf17f053cc99a8ef6121937b929f225d77f7ee1e"
+    },
+    "producer_workflow": {
+      "source_path": ".github/workflows/watchdog-cutover-candidate.yml",
+      "vendored_path": "conformance/r29_relay_cutover_qa/producer/watchdog-cutover-candidate.yml",
+      "git_blob_sha1": "f043fee6718a9da44b27a92ad1d9780ab5de1841"
+    }
+  },
+  "release_gate": "NO_LIVE_CUTOVER",
+  "live_cutover_authorized": false
+}
