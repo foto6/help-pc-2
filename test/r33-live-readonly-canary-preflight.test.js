@@ -16,7 +16,7 @@ import {
   evaluateR33Preflight,
   loadR33SourcePin,
 } from "../src/r33-live-readonly-canary-preflight.js";
-import { relayDigestJson } from "../src/native-relay-protocol.js";
+import { digestJson as relayDigestJson } from "../src/native-relay-protocol.js";
 
 function healthyWatchdog(overrides={}) {
   const base={
