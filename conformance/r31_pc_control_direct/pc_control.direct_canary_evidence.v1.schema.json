@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pc.control.direct_canary_evidence.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "evidence_origin",
+    "status",
+    "started_at_ms",
+    "completed_at_ms",
+    "side_effect_calls",
+    "replay_authorized",
+    "surface_digest",
+    "capability_registry_digest",
+    "executor_digest",
+    "health_status",
+    "health_latency_ms",
+    "calls"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "pc.control.direct_canary_evidence.v1"
+    },
+    "evidence_origin": {
+      "enum": [
+        "source_fixture",
+        "synthetic_ci",
+        "runtime_probe_unattested",
+        "live_explicit_read_only_canary"
+      ]
+    },
+    "status": {
+      "enum": [
+        "PASS",
+        "BLOCKED"
+      ]
+    },
+    "started_at_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "completed_at_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "side_effect_calls": {
+      "const": 0
+    },
+    "replay_authorized": {
+      "const": false
+    },
+    "surface_digest": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "capability_registry_digest": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "executor_digest": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "health_status": {
+      "enum": [
+        "HEALTHY",
+        "DEGRADED",
+        "BLOCKED",
+        "UNKNOWN"
+      ]
+    },
+    "health_latency_ms": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "calls": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tool",
+          "effect",
+          "status",
+          "latency_ms",
+          "request_id_present",
+          "result_digest"
+        ],
+        "properties": {
+          "tool": {
+            "type": "string",
+            "minLength": 1
+          },
+          "effect": {
+            "const": "read_only"
+          },
+          "status": {
+            "type": "string",
+            "minLength": 1
+          },
+          "latency_ms": {
+            "type": "number",
+            "minimum": 0
+          },
+          "request_id_present": {
+            "type": "boolean"
+          },
+          "result_digest": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    }
+  }
+}
