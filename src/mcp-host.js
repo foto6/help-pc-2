@@ -183,11 +183,11 @@ export class NativeMcpRuntime {
     });
   }
 
-  async healthSnapshot({ refresh = false, canary = false } = {}) {
+  async healthSnapshot({ refresh = false, canary = false, signal = null } = {}) {
     if (!this.healthSupervisor) return null;
     if (refresh) {
-      await this.healthSupervisor.probeTransport();
-      await this.healthSupervisor.probeRelayProgress?.();
+      await this.healthSupervisor.probeTransport({ signal });
+      await this.healthSupervisor.probeRelayProgress?.({ signal });
     }
     if (canary && this.facadeSession) {
       const canaryAvailable = Array.isArray(this.initialManifest?.executor?.actions)
@@ -231,8 +231,8 @@ export class NativeMcpRuntime {
     return this.healthSupervisor.snapshot();
   }
 
-  async ensureCapabilities() {
-    const manifest = await this.facade.capabilities();
+  async ensureCapabilities({ signal = null } = {}) {
+    const manifest = await this.facade.capabilities({ signal });
     const expected = this.initialManifest;
     if (!expected ||
         manifest.protocol_version !== expected.protocol_version ||
