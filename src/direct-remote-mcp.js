@@ -73,7 +73,7 @@ function normalizeOrigin(value, { allowInsecureHttp = false } = {}) {
 
 function hostHeader(request) {
   const value = request.headers.get("host");
-  if (!value || /[s/]/.test(value)) return null;
+  if (!value || /[\s/]/.test(value)) return null;
   return value.toLowerCase();
 }
 
