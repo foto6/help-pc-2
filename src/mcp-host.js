@@ -252,8 +252,8 @@ export class NativeMcpRuntime {
     return this.healthSupervisor.snapshot();
   }
 
-  async ensureCapabilities({ signal = null } = {}) {
-    const manifest = await this.facade.capabilities({ signal });
+  async ensureCapabilities({ signal = null, allowEpochObservation = false } = {}) {
+    const manifest = await this.facade.capabilities({ signal, allowEpochObservation });
     const expected = this.initialManifest;
     if (!expected ||
         manifest.protocol_version !== expected.protocol_version ||
@@ -280,12 +280,14 @@ export class NativeMcpRuntime {
     return manifest;
   }
 
-  async ensureFacadeSession({ allowExpiredRenewal = false } = {}) {
+  async ensureFacadeSession({ allowExpiredRenewal = false, allowQuiescentDeviceRebind = false } = {}) {
     // Single-flight is necessary: two simultaneous first tools must not
     // negotiate two desktop ownership sessions before either has been cached.
     if (this.facadeSessionPending) return this.facadeSessionPending;
     const pending = (async () => {
-      const manifest = await this.ensureCapabilities();
+      const manifest = await this.ensureCapabilities({
+        allowEpochObservation: allowQuiescentDeviceRebind,
+      });
       const client = negotiationClient(manifest);
       if (!this.facadeSession) {
         this.facadeSession = await this.facade.openSession({ desktopId: this.desktopId, client });
@@ -295,6 +297,7 @@ export class NativeMcpRuntime {
             sessionId: this.facadeSession.session_id,
             resumeToken: this.facadeSession.resume_token,
             client,
+            allowQuiescentDeviceRebind,
           });
         } catch (error) {
           if (error?.code !== "STALE_SESSION" || !allowExpiredRenewal ||
@@ -338,7 +341,7 @@ export class NativeMcpRuntime {
     const { nativeArgs, page } = splitHostArguments(args);
     let response;
     try {
-      const manifest = await this.ensureCapabilities();
+      const manifest = await this.ensureCapabilities({ allowEpochObservation: true });
       const actions = Array.isArray(manifest.executor?.actions) ? manifest.executor.actions : [];
       if (!actions.includes(tool.executorAction)) {
         const error = new Error("Native tool is unavailable because the Executor does not advertise its action.");
@@ -390,7 +393,10 @@ export class NativeMcpRuntime {
           throw error;
         }
       }
-      await this.ensureFacadeSession({ allowExpiredRenewal: true });
+      await this.ensureFacadeSession({
+        allowExpiredRenewal: true,
+        allowQuiescentDeviceRebind: true,
+      });
       const request = {
         contract_version: NATIVE_CONTROL_PROTOCOL_V1,
         session_id: this.facadeSession.session_id,
@@ -465,7 +471,10 @@ export class NativeMcpRuntime {
     const { request_id: _requestId, ...compatibilityArguments } = args;
     let response;
     try {
-      await this.ensureFacadeSession({ allowExpiredRenewal: true });
+      await this.ensureFacadeSession({
+        allowExpiredRenewal: true,
+        allowQuiescentDeviceRebind: true,
+      });
       response = await this.compatibilitySurface.invoke({
         session_id: this.facadeSession.session_id,
         request_id: requestId,

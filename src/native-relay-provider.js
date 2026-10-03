@@ -314,7 +314,7 @@ export class NativeRelayExecutorProvider {
     return payload;
   }
 
-  async #deviceSnapshot({ signal = undefined, establish = true } = {}) {
+  async #deviceSnapshot({ signal = undefined, establish = true, observeEpochChange = false } = {}) {
     const payload = await this.#json("/v1/relay/devices", { signal });
     if (!Array.isArray(payload.devices)) {
       throw new NativeRelayProviderError("Relay device discovery is malformed.", {
@@ -370,9 +370,8 @@ export class NativeRelayExecutorProvider {
       executorDigest: executor.digest,
     };
     if (this.#binding) {
-      if (this.#binding.deviceId !== next.deviceId
-        || this.#binding.sessionEpoch !== next.sessionEpoch) {
-        throw new NativeRelayProviderError("Native device session epoch changed after provider binding.", {
+      if (this.#binding.deviceId !== next.deviceId) {
+        throw new NativeRelayProviderError("Native device identity changed after provider binding.", {
           code: "STALE_DEVICE_SESSION",
           category: "session",
           httpStatus: 409,
@@ -383,6 +382,13 @@ export class NativeRelayExecutorProvider {
         throw new NativeRelayProviderError("Native device capabilities changed after provider binding.", {
           code: "CAPABILITY_DRIFT",
           category: "capability_mismatch",
+          httpStatus: 409,
+        });
+      }
+      if (this.#binding.sessionEpoch !== next.sessionEpoch && !observeEpochChange) {
+        throw new NativeRelayProviderError("Native device session epoch changed after provider binding.", {
+          code: "STALE_DEVICE_SESSION",
+          category: "session",
           httpStatus: 409,
         });
       }
@@ -421,6 +427,7 @@ export class NativeRelayExecutorProvider {
     const { device, executor } = await this.#deviceSnapshot({
       signal: context.signal,
       establish: true,
+      observeEpochChange: context.allowEpochObservation === true,
     });
     return projectProducerExecutorActions(device.capabilities, executor);
   }
@@ -437,6 +444,85 @@ export class NativeRelayExecutorProvider {
       deviceId: binding.deviceId,
       sessionEpoch: binding.sessionEpoch,
       executorDigest: binding.executorDigest,
+    });
+  }
+
+  async observeDeviceIdentity(_request = {}, context = {}) {
+    if (context.signal?.aborted) throw cancelledBeforeDispatch();
+    const { binding } = await this.#deviceSnapshot({
+      signal: context.signal,
+      establish: false,
+      observeEpochChange: true,
+    });
+    return Object.freeze({
+      deviceId: binding.deviceId,
+      sessionEpoch: binding.sessionEpoch,
+      executorDigest: binding.executorDigest,
+    });
+  }
+
+  async rebindDeviceIdentity(request = {}, context = {}) {
+    if (context.signal?.aborted) throw cancelledBeforeDispatch();
+    const previous = request?.previous;
+    const current = request?.current;
+    if (!previous || !current ||
+        typeof previous.deviceId !== "string" ||
+        typeof previous.sessionEpoch !== "string" ||
+        typeof previous.executorDigest !== "string" ||
+        typeof current.deviceId !== "string" ||
+        typeof current.sessionEpoch !== "string" ||
+        typeof current.executorDigest !== "string") {
+      throw new NativeRelayProviderError("Explicit device rebind requires previous/current identity evidence.", {
+        code: "DEVICE_REBIND_EVIDENCE_INVALID",
+        category: "session",
+        httpStatus: 409,
+      });
+    }
+    const { binding: observed } = await this.#deviceSnapshot({
+      signal: context.signal,
+      establish: false,
+      observeEpochChange: true,
+    });
+    if (observed.deviceId !== current.deviceId ||
+        observed.sessionEpoch !== current.sessionEpoch ||
+        observed.executorDigest !== current.executorDigest) {
+      throw new NativeRelayProviderError("Observed device identity changed during explicit rebind.", {
+        code: "DEVICE_REBIND_RACE",
+        category: "session",
+        httpStatus: 409,
+      });
+    }
+    if (previous.deviceId !== current.deviceId ||
+        previous.executorDigest !== current.executorDigest ||
+        previous.sessionEpoch === current.sessionEpoch) {
+      throw new NativeRelayProviderError("Explicit rebind evidence does not describe one device across a new epoch.", {
+        code: "DEVICE_REBIND_EVIDENCE_INVALID",
+        category: "session",
+        httpStatus: 409,
+      });
+    }
+    if (this.#binding) {
+      const matchesPrevious =
+        this.#binding.deviceId === previous.deviceId &&
+        this.#binding.sessionEpoch === previous.sessionEpoch &&
+        this.#binding.executorDigest === previous.executorDigest;
+      const matchesCurrent =
+        this.#binding.deviceId === current.deviceId &&
+        this.#binding.sessionEpoch === current.sessionEpoch &&
+        this.#binding.executorDigest === current.executorDigest;
+      if (!matchesPrevious && !matchesCurrent) {
+        throw new NativeRelayProviderError("Provider binding changed before explicit rebind commit.", {
+          code: "DEVICE_REBIND_RACE",
+          category: "session",
+          httpStatus: 409,
+        });
+      }
+    }
+    this.#binding = observed;
+    return Object.freeze({
+      deviceId: observed.deviceId,
+      sessionEpoch: observed.sessionEpoch,
+      executorDigest: observed.executorDigest,
     });
   }
 
@@ -847,6 +933,8 @@ export function createNativeRelayExecutorBridge(options = {}) {
     invoke: provider.invoke,
     readCapabilities: provider.readCapabilities,
     readDeviceIdentity: provider.readDeviceIdentity.bind(provider),
+    observeDeviceIdentity: provider.observeDeviceIdentity.bind(provider),
+    rebindDeviceIdentity: provider.rebindDeviceIdentity.bind(provider),
     readEvidence: provider.readEvidence,
     readTransportHealth: provider.readTransportHealth,
     dryRun: false,

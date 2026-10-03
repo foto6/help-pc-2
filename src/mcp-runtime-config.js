@@ -172,13 +172,25 @@ export async function createConfiguredNativeMcpRuntime({
   const facade = new NativeControlFacade({
     controlPlane,
     store: new JsonFacadeStateStore(join(stateDir, "native-facade.json")),
-    capabilityProvider: async ({ signal = null } = {}) => capabilityPayload(await bridge.readCapabilities(
+    capabilityProvider: async ({ signal = null, allowEpochObservation = false } = {}) => capabilityPayload(await bridge.readCapabilities(
       { request_id: null, action: null },
-      { source: "pc-native-mcp-host", signal },
+      { source: "pc-native-mcp-host", signal, allowEpochObservation },
     )),
     deviceIdentityProvider: bridge.readDeviceIdentity
       ? async ({ signal = null } = {}) => bridge.readDeviceIdentity(
         { request_id: null, action: null },
+        { source: "pc-native-mcp-host", signal },
+      )
+      : null,
+    deviceIdentityObserver: bridge.observeDeviceIdentity
+      ? async ({ signal = null } = {}) => bridge.observeDeviceIdentity(
+        { request_id: null, action: null },
+        { source: "pc-native-mcp-host", signal },
+      )
+      : null,
+    deviceIdentityRebinder: bridge.rebindDeviceIdentity
+      ? async (request, { signal = null } = {}) => bridge.rebindDeviceIdentity(
+        request,
         { source: "pc-native-mcp-host", signal },
       )
       : null,

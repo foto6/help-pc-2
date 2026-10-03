@@ -154,6 +154,8 @@ export class NativeControlFacade {
     store = null,
     capabilityProvider = async () => null,
     deviceIdentityProvider = null,
+    deviceIdentityObserver = null,
+    deviceIdentityRebinder = null,
     idFactory = randomUUID,
     secretFactory = () => randomBytes(24).toString("base64url"),
     sessionTtlMs = 30 * 60 * 1000,
@@ -165,10 +167,18 @@ export class NativeControlFacade {
     if (deviceIdentityProvider !== null && typeof deviceIdentityProvider !== "function") {
       throw new TypeError("deviceIdentityProvider must be a function or null.");
     }
+    if (deviceIdentityObserver !== null && typeof deviceIdentityObserver !== "function") {
+      throw new TypeError("deviceIdentityObserver must be a function or null.");
+    }
+    if (deviceIdentityRebinder !== null && typeof deviceIdentityRebinder !== "function") {
+      throw new TypeError("deviceIdentityRebinder must be a function or null.");
+    }
     this.controlPlane = controlPlane;
     this.store = store;
     this.capabilityProvider = capabilityProvider;
     this.deviceIdentityProvider = deviceIdentityProvider;
+    this.deviceIdentityObserver = deviceIdentityObserver;
+    this.deviceIdentityRebinder = deviceIdentityRebinder;
     this.idFactory = idFactory;
     this.secretFactory = secretFactory;
     this.sessionTtlMs = sessionTtlMs;
@@ -179,9 +189,7 @@ export class NativeControlFacade {
 
   #persist() { this.store?.save(this.state); }
 
-  async #captureDeviceIdentity(executorDigest, signal = null) {
-    if (!this.deviceIdentityProvider) return null;
-    const identity = await this.deviceIdentityProvider({ signal });
+  #validatedDeviceIdentity(identity, executorDigest) {
     if (!identity || typeof identity.deviceId !== "string" || !identity.deviceId ||
         typeof identity.sessionEpoch !== "string" || !identity.sessionEpoch ||
         identity.executorDigest !== executorDigest) {
@@ -194,6 +202,23 @@ export class NativeControlFacade {
       sessionEpoch: identity.sessionEpoch,
       executorDigest: identity.executorDigest,
     };
+  }
+
+  async #captureDeviceIdentity(executorDigest, signal = null) {
+    if (!this.deviceIdentityProvider) return null;
+    return this.#validatedDeviceIdentity(
+      await this.deviceIdentityProvider({ signal }),
+      executorDigest,
+    );
+  }
+
+  async #observeDeviceIdentity(executorDigest, signal = null) {
+    const provider = this.deviceIdentityObserver ?? this.deviceIdentityProvider;
+    if (!provider) return null;
+    return this.#validatedDeviceIdentity(
+      await provider({ signal }),
+      executorDigest,
+    );
   }
 
   #assertDeviceIdentity(before, after) {
@@ -209,6 +234,58 @@ export class NativeControlFacade {
   #controlOwner(desktopId) {
     const snapshot = this.controlPlane.snapshot();
     return snapshot.desktopOwners.find(([name]) => name === desktopId)?.[1] ?? null;
+  }
+
+  async #rebindQuiescentDeviceIdentity(session, currentIdentity, signal = null) {
+    const previous = session.deviceIdentity;
+    if (!previous || !currentIdentity ||
+        previous.deviceId !== currentIdentity.deviceId ||
+        previous.executorDigest !== currentIdentity.executorDigest ||
+        previous.sessionEpoch === currentIdentity.sessionEpoch ||
+        !this.deviceIdentityObserver || !this.deviceIdentityRebinder) {
+      throw new NativeFacadeError("Device boot/session epoch cannot be safely rebound.", {
+        code: "STALE_DEVICE_SESSION", category: "session", httpStatus: 409,
+      });
+    }
+    const control = this.controlPlane.listSessions()
+      .find((entry) => entry.id === session.controlSessionId);
+    const unfinishedActions = this.controlPlane.listActions({ sessionId: session.controlSessionId })
+      .some((action) => !TERMINAL.has(action.status));
+    const unsettledRequests = this.state.requests.some((request) =>
+      request.sessionId === session.id &&
+      !["completed", "cancelled", "error"].includes(request.status));
+    if (control?.status !== "active" ||
+        this.#controlOwner(session.desktopId) !== session.controlSessionId ||
+        unfinishedActions || unsettledRequests) {
+      throw new NativeFacadeError("Device boot/session epoch changed while the session owns unsettled work.", {
+        code: "STALE_DEVICE_SESSION", category: "session", httpStatus: 409,
+      });
+    }
+    this.#synchronizeHandleJournal(session);
+    const openHandle = this.state.handles.some((record) =>
+      record.sessionId === session.id && record.status === "open");
+    if (openHandle) {
+      throw new NativeFacadeError("Device boot/session epoch changed while the session owns a live process handle.", {
+        code: "STALE_DEVICE_SESSION", category: "process_handle", httpStatus: 409,
+      });
+    }
+    let committed = currentIdentity;
+    if (this.deviceIdentityRebinder) {
+      committed = this.#validatedDeviceIdentity(
+        await this.deviceIdentityRebinder({ previous: clone(previous), current: clone(currentIdentity) }, { signal }),
+        currentIdentity.executorDigest,
+      );
+      this.#assertDeviceIdentity(currentIdentity, committed);
+    } else if (this.deviceIdentityObserver) {
+      throw new NativeFacadeError("Device identity can be observed but no explicit provider rebind hook is available.", {
+        code: "SESSION_DEVICE_REBIND_BLOCKED", category: "session", httpStatus: 409,
+      });
+    }
+    session.deviceIdentity = clone(committed);
+    session.deviceRebindCount = (session.deviceRebindCount ?? 0) + 1;
+    session.lastDeviceRebindAtMs = this.clock();
+    this.#persist();
+    return clone(committed);
   }
 
   // Rehydrate only known terminal Executor action results. Never query/replay
@@ -276,8 +353,8 @@ export class NativeControlFacade {
     this.#persist();
   }
 
-  async capabilities({ signal = null } = {}) {
-    const executorCapabilities = await this.capabilityProvider({ signal });
+  async capabilities({ signal = null, allowEpochObservation = false } = {}) {
+    const executorCapabilities = await this.capabilityProvider({ signal, allowEpochObservation });
     return nativeCapabilityManifestV1({
       executorCapabilities,
       limits: { ...DEFAULT_NATIVE_LIMITS, maxPageSize: this.maxPageSize },
@@ -298,8 +375,8 @@ export class NativeControlFacade {
     return session;
   }
 
-  async #negotiate(client, { signal = null } = {}) {
-    const manifest = await this.capabilities({ signal });
+  async #negotiate(client, { signal = null, allowEpochObservation = false } = {}) {
+    const manifest = await this.capabilities({ signal, allowEpochObservation });
     try { assertCapabilityNegotiation(client, manifest); }
     catch (error) {
       throw new NativeFacadeError(error.message, {
@@ -341,12 +418,14 @@ export class NativeControlFacade {
     };
   }
 
-  async reconnectSession({ sessionId, resumeToken, client }) {
+  async reconnectSession({ sessionId, resumeToken, client, allowQuiescentDeviceRebind = false }) {
     const session = this.#session(sessionId);
     if (typeof resumeToken !== "string" || resumeToken !== session.resumeToken) {
       throw new NativeFacadeError("Resume token is invalid.", { code: "SESSION_AUTH_FAILED", category: "auth", httpStatus: 401 });
     }
-    const manifest = await this.#negotiate(client);
+    const manifest = await this.#negotiate(client, {
+      allowEpochObservation: allowQuiescentDeviceRebind,
+    });
     if ((manifest.executor?.digest ?? null) !== session.executorDigest) {
       session.status = "stale";
       session.staleReason = "capability_drift";
@@ -354,8 +433,20 @@ export class NativeControlFacade {
       throw new NativeFacadeError("Executor capabilities drifted since session creation.", { code: "CAPABILITY_DRIFT", category: "capability_mismatch", httpStatus: 409 });
     }
     if (session.deviceIdentity) {
-      const currentIdentity = await this.#captureDeviceIdentity(manifest.executor?.digest ?? null);
-      this.#assertDeviceIdentity(session.deviceIdentity, currentIdentity);
+      let currentIdentity;
+      try {
+        currentIdentity = await this.#captureDeviceIdentity(manifest.executor?.digest ?? null);
+      } catch (error) {
+        if (!allowQuiescentDeviceRebind || error?.code !== "STALE_DEVICE_SESSION" ||
+            !this.deviceIdentityObserver) throw error;
+        currentIdentity = await this.#observeDeviceIdentity(manifest.executor?.digest ?? null);
+      }
+      try {
+        this.#assertDeviceIdentity(session.deviceIdentity, currentIdentity);
+      } catch (error) {
+        if (!allowQuiescentDeviceRebind || error?.code !== "STALE_DEVICE_SESSION") throw error;
+        await this.#rebindQuiescentDeviceIdentity(session, currentIdentity);
+      }
     } else if (this.deviceIdentityProvider) {
       await this.#bindLegacyQuiescentIdentity(session, manifest.executor?.digest ?? null);
     }
