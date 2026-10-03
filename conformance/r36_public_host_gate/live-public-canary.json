@@ -1,0 +1,37 @@
+{
+  "contract_version": "pc.control.r36.live_public_canary.v1",
+  "source_sha": "7f643b4f1f803b637e1b377ac4989bc79d03c4dd",
+  "environment": "authorized_windows_ephemeral_public_https_tunnel",
+  "transport": "streamable_http_over_https",
+  "public_host": "papers-wma-cities-recently.trycloudflare.com",
+  "surface": {
+    "contract_version": "pc.control.plugin_surface.v1",
+    "tool_count": 90,
+    "health_before": "DEGRADED",
+    "health_after": "DEGRADED"
+  },
+  "read_only": {
+    "ping": "completed",
+    "list_devices": "completed"
+  },
+  "side_effect": {
+    "request_id": "r35-public-remote-write-001",
+    "first_status": "completed",
+    "duplicate_status": "completed",
+    "automatic_replay": false,
+    "physical_duplicate_observed": false
+  },
+  "fixture_lines": [
+    "R35_REBOOT_ONCE",
+    "R35_AFTER_REBIND",
+    "R35_REMOTE_MCP_ONCE"
+  ],
+  "regression": {
+    "r30_r33_r35_r36_focused": "48/48 PASS"
+  },
+  "historical_r31_source_pin": "intentionally_detects_r30_blob_drift",
+  "external_chatgpt_registration_performed": false,
+  "current_authority_changed": false,
+  "production_cutover_performed": false,
+  "tunnel_scope": "ephemeral_validation_only"
+}

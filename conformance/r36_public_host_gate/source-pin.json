@@ -1,0 +1,28 @@
+{
+  "contract_version": "pc.control.r36.source_pin.v1",
+  "repository": "foto6/help-pc-2",
+  "branch": "agent/native-mcp-r36-public-host-gate-20261003",
+  "exact_code_sha": "7f643b4f1f803b637e1b377ac4989bc79d03c4dd",
+  "inherits": {
+    "r35_release_sha": "5ce23dcbe442633c2f3157d1c4d5d5fc03872672",
+    "current_authority": "github_relay",
+    "live_cutover_performed": false
+  },
+  "blobs": {
+    "src/direct-remote-mcp.js": "8df50ca3792091625d4de1143b4625ae2f970ecd",
+    "test/r36-public-host-gate.test.js": "aee33f518c5c3816a07f1aefa6e8f337633ae991"
+  },
+  "historical_pins": {
+    "r31_r30_pin_immutable": true,
+    "r31_source_drift_expected": true
+  },
+  "security_invariants": {
+    "host_header_required": true,
+    "host_must_equal_public_origin_host": true,
+    "whitespace_rejected": true,
+    "slash_rejected": true,
+    "origin_allowlist_preserved": true,
+    "bearer_auth_preserved": true,
+    "automatic_replay": false
+  }
+}
