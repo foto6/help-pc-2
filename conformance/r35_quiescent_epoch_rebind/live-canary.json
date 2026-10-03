@@ -1,0 +1,41 @@
+{
+  "contract_version": "pc.control.r35.live_reboot_canary.v1",
+  "source_sha": "f9b88d8bb4a5e0844ec8448d09fafa96f0aff7e9",
+  "producer_sha": "60ba0ce92bf2f3cdd89e3213dba40793c6a90d8b",
+  "environment": "authorized_windows_isolated_loopback",
+  "scenario": "side_effect_then_full_relay_device_mcp_restart_with_persistent_state",
+  "first_request": {
+    "request_id": "r35-live-reboot-001",
+    "status": "completed",
+    "automatic_replay": false
+  },
+  "post_restart_duplicate": {
+    "request_id": "r35-live-reboot-001",
+    "status": "completed",
+    "automatic_replay": false,
+    "physical_duplicate_observed": false
+  },
+  "post_rebind_new_request": {
+    "request_id": "r35-live-after-rebind-001",
+    "status": "completed",
+    "automatic_replay": false
+  },
+  "fixture_lines": [
+    "R35_REBOOT_ONCE",
+    "R35_AFTER_REBIND"
+  ],
+  "facade_state": {
+    "active_session": true,
+    "device_rebind_count": 1,
+    "old_request_status": "completed",
+    "new_request_status": "completed"
+  },
+  "regression": {
+    "focused_exact_head": "57/57 PASS",
+    "legacy_and_direct_safety_suite": "82/82 PASS before R35 test addition",
+    "historical_r31_source_pin": "intentionally_detects_r30_blob_drift"
+  },
+  "current_authority_changed": false,
+  "production_cutover_performed": false,
+  "side_effect_scope": "isolated_fixture_only"
+}

@@ -1,0 +1,28 @@
+{
+  "contract_version": "pc.control.r35.source_pin.v1",
+  "repository": "foto6/help-pc-2",
+  "branch": "agent/native-mcp-r35-quiescent-epoch-rebind-20261003",
+  "exact_code_sha": "f9b88d8bb4a5e0844ec8448d09fafa96f0aff7e9",
+  "inherits": {
+    "r34_code_sha": "68ceb22bec7726710c13e927acfd9020df0ff39f",
+    "current_authority": "github_relay",
+    "live_cutover_performed": false
+  },
+  "blobs": {
+    "src/mcp-host.js": "3026902f00adf1b453645a28689ecd72f4308ee4",
+    "src/mcp-runtime-config.js": "8c1933cfd6da6e7ea234630de72b1bc77d168cab",
+    "src/native-facade.js": "aa5e55cba97a94389ab2f8c51b9fea7d3b99d1c4",
+    "src/native-relay-provider.js": "7dc50fa87102f6bf21b1e612c3c8d283044a3fb4",
+    "test/r35-quiescent-epoch-rebind.test.js": "d2f239c36595fbf19b7560785306cd0c9e59d8da"
+  },
+  "safety_invariants": {
+    "automatic_replay": false,
+    "same_device_id_required": true,
+    "same_executor_digest_required": true,
+    "quiescent_control_owner_required": true,
+    "unfinished_actions_block_rebind": true,
+    "unsettled_facade_requests_block_rebind": true,
+    "open_process_handles_block_rebind": true,
+    "provider_rebind_is_explicit": true
+  }
+}
