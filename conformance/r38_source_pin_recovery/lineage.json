@@ -1,0 +1,94 @@
+{
+  "contract_version": "native_mcp.source_pin_recovery.r38.v1",
+  "classification": "LEGITIMATE_ACCEPTED_SUCCESSOR_STALE_CONSUMER_PIN",
+  "failing_ci": {
+    "run_id": 37398892815,
+    "head_sha": "b13243e687173a5342356361956a2fd5eec81138",
+    "failure_code": "R31_SOURCE_BLOB_DRIFT",
+    "failure_path": "src/direct-remote-mcp.js",
+    "expected_historical_blob": "cb6d74888514d3262d206df4f3cbd13a1f8899e2",
+    "actual_accepted_successor_blob": "8df50ca3792091625d4de1143b4625ae2f970ecd",
+    "failure_only_after_tests": "Generate exact-head R31 pc-control direct readiness"
+  },
+  "root_cause": {
+    "summary": "R31 readiness still enforced the immutable R30 snapshot after R35/R36/R37 intentionally advanced implementation bytes.",
+    "direct_remote_change": {
+      "commit": "7f643b4f1f803b637e1b377ac4989bc79d03c4dd",
+      "parent": "5ce23dcbe442633c2f3157d1c4d5d5fc03872672",
+      "old_expression": "/[s/]/.test(value)",
+      "new_expression": "/[\\s/]/.test(value)",
+      "old_blob": "cb6d74888514d3262d206df4f3cbd13a1f8899e2",
+      "new_blob": "8df50ca3792091625d4de1143b4625ae2f970ecd",
+      "test": "test/r36-public-host-gate.test.js",
+      "source_pin": "conformance/r36_public_host_gate/source-pin.json",
+      "live_evidence": "conformance/r36_public_host_gate/live-public-canary.json"
+    }
+  },
+  "lineage": [
+    {
+      "milestone": "R30",
+      "sha": "29cefa62efcf3f3295dca32b0a202b21c5831969",
+      "ci_run_id": 36985223664,
+      "ci_conclusion": "success",
+      "role": "historical predecessor"
+    },
+    {
+      "milestone": "R35",
+      "sha": "f9b88d8bb4a5e0844ec8448d09fafa96f0aff7e9",
+      "contract": "pc.control.r35.source_pin.v1",
+      "role": "quiescent epoch rebind successor"
+    },
+    {
+      "milestone": "R36",
+      "sha": "7f643b4f1f803b637e1b377ac4989bc79d03c4dd",
+      "contract": "pc.control.r36.source_pin.v1",
+      "role": "public Host parser successor"
+    },
+    {
+      "milestone": "R37",
+      "sha": "59090e82d1c20e8c6ffb40fbcf38e7a0e34405b5",
+      "contract": "native_mcp.operator_lifecycle.r37.v1",
+      "role": "operator lifecycle runtime integration"
+    }
+  ],
+  "active_blobs": {
+    "src/direct-remote-mcp.js": "8df50ca3792091625d4de1143b4625ae2f970ecd",
+    "src/mcp-host.js": "3026902f00adf1b453645a28689ecd72f4308ee4",
+    "src/mcp-runtime-config.js": "a6f09571e8ffe5cd10acfbcd8b489e9a07d5b600",
+    "src/native-relay-provider.js": "7dc50fa87102f6bf21b1e612c3c8d283044a3fb4",
+    "bin/pc-native-mcp-remote.js": "ba636cc1f1f95dce7fa92bf7581b1924d386dfab",
+    "docs/NATIVE_R30_DIRECT_REMOTE_MCP.md": "a71b700068f7276df5e3c824502cde99cfbc9cb3",
+    "conformance/r30_direct_remote/readiness.template.json": "9cfaaab9fd4b561295bdc336842e1fc0ded41672"
+  },
+  "operator_lifecycle": {
+    "contract": "native_mcp.operator_lifecycle.r37.v1",
+    "states": [
+      "RUNNING",
+      "PAUSED",
+      "DRAINING",
+      "RECONCILIATION_REQUIRED"
+    ],
+    "explicit_resume": true,
+    "idempotent_resume": true,
+    "automatic_side_effect_replay": false,
+    "status_command": "node tools/r37-operator-lifecycle.js status",
+    "status_components": [
+      "native_mcp_host",
+      "control_service",
+      "executor",
+      "github_relay_fallback",
+      "direct_lane"
+    ],
+    "status_includes": [
+      "reconciliation_required",
+      "authority"
+    ]
+  },
+  "safety": {
+    "current_authority": "github_relay",
+    "live_remote_registration": false,
+    "production_cutover": false,
+    "firewall_or_tunnel_mutation": false,
+    "credentials_in_evidence": false
+  }
+}
