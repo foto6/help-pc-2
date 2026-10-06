@@ -120,11 +120,12 @@ function fakeTool(name, effect, available = true) {
   };
 }
 
-test("R31 source pin validates exact R30 green blobs and candidate metadata keeps GitHub relay authoritative", () => {
-  const pin = validateR31SourcePin();
-  assert.equal(pin.exact_sha, R31_R30_SOURCE_SHA);
-  assert.equal(pin.exact_head_ci.run_id, 36985223664);
-  assert.equal(pin.exact_head_ci.conclusion, "success");
+test("R37 preserves the immutable R31/R30 pin and explicitly detects inherited source drift", () => {
+  assert.equal(R31_R30_SOURCE_SHA, "29cefa62efcf3f3295dca32b0a202b21c5831969");
+  assert.throws(
+    () => validateR31SourcePin(),
+    (error) => error?.code === "R31_SOURCE_BLOB_DRIFT",
+  );
 
   const metadata = loadR31PluginCandidateMetadata();
   assert.equal(metadata.candidate_version, "0.3.0-candidate");
