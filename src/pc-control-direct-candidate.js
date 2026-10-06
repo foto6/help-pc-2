@@ -79,10 +79,14 @@ export function validateR31SourcePin({
     sourcePinError("R38 recovery acceptance state is invalid.");
   }
   if (acceptance.status === "accepted"
-      && (!Number.isInteger(acceptance.ci_run_id)
-          || acceptance.ci_run_id < 1
-          || acceptance.conclusion !== "success")) {
-    sourcePinError("Accepted R38 source authority is missing successful CI evidence.");
+      && (acceptance.ci_run_id !== 37405176472
+          || acceptance.head_sha !== "5241858a029d293f7d200045c585adefc37dde5b"
+          || acceptance.conclusion !== "success"
+          || acceptance.ubuntu_job?.id !== 112081028344
+          || acceptance.ubuntu_job?.conclusion !== "success"
+          || acceptance.windows_job?.id !== 112081028474
+          || acceptance.windows_job?.conclusion !== "success")) {
+    sourcePinError("Accepted R38 source authority CI evidence is not the exact green acceptance run.");
   }
 
   const successors = new Map(
