@@ -44,7 +44,9 @@
     "report:r33-preflight": "node tools/r33-preflight-readiness-report.js",
     "test:r37-lifecycle": "node --test test/r37-operator-lifecycle.test.js",
     "r37:operator": "node tools/r37-operator-lifecycle.js",
-    "report:r37-lifecycle": "node tools/r37-operator-lifecycle-report.js"
+    "report:r37-lifecycle": "node tools/r37-operator-lifecycle-report.js",
+    "test:r38-source-pin": "node --test test/r38-source-pin-recovery.test.js test/r31-pc-control-direct-candidate.test.js test/r36-source-pin.test.js test/r37-operator-lifecycle.test.js",
+    "report:r38-source-pin": "node tools/r38-source-pin-recovery-report.js"
   },
   "engines": {
     "node": ">=20"
