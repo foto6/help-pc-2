@@ -28,8 +28,17 @@ const template = JSON.parse(readFileSync(
 
 const report = {
   ...template,
-  r30_source_sha: sourcePin.exact_sha,
-  r30_ci_run_id: sourcePin.exact_head_ci.run_id,
+  direct_source_authority_contract: sourcePin.contract_version,
+  direct_source_observed_head: sourcePin.lineage_observed_head,
+  historical_r30_source_sha: sourcePin.historical_predecessor.exact_sha,
+  historical_r30_ci_run_id: sourcePin.historical_predecessor.exact_head_ci.run_id,
+  accepted_successors: sourcePin.accepted_successors.map((item) => ({
+    milestone: item.milestone,
+    exact_code_sha: item.exact_code_sha,
+    contract_version: item.contract_version,
+  })),
+  active_source_blobs: sourcePin.active_blobs,
+  source_recovery_acceptance: sourcePin.recovery_acceptance,
   candidate_version: pluginCandidate.candidate_version,
   current_authority: pluginCandidate.current_authority,
   actual_pc_control_cutover: false,
