@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   PcControlDirectCandidateGateway,
@@ -8,7 +9,10 @@ import {
   PC_CONTROL_CANARY_EVIDENCE_V1,
   PC_CONTROL_PLUGIN_SURFACE_V1,
   PROTECTED_PATH_POLICY_ID,
+  R31_ACTIVE_SOURCE_AUTHORITY_CONTRACT,
+  R31_ACTIVE_SOURCE_OBSERVED_HEAD,
   R31_R30_SOURCE_SHA,
+  R31_R36_SOURCE_SHA,
   buildCanaryEvidence,
   comparePluginSurfaces,
   digestJson,
@@ -120,12 +124,16 @@ function fakeTool(name, effect, available = true) {
   };
 }
 
-test("R37 preserves the immutable R31/R30 pin and explicitly detects inherited source drift", () => {
+test("R38 active direct authority advances through accepted successors while preserving historical R30 evidence", () => {
   assert.equal(R31_R30_SOURCE_SHA, "29cefa62efcf3f3295dca32b0a202b21c5831969");
-  assert.throws(
-    () => validateR31SourcePin(),
-    (error) => error?.code === "R31_SOURCE_BLOB_DRIFT",
-  );
+  assert.equal(R31_R36_SOURCE_SHA, "7f643b4f1f803b637e1b377ac4989bc79d03c4dd");
+  assert.equal(R31_ACTIVE_SOURCE_OBSERVED_HEAD, "b13243e687173a5342356361956a2fd5eec81138");
+  const pin = validateR31SourcePin();
+  assert.equal(pin.contract_version, R31_ACTIVE_SOURCE_AUTHORITY_CONTRACT);
+  assert.equal(pin.historical_predecessor.exact_sha, R31_R30_SOURCE_SHA);
+  assert.equal(pin.historical_predecessor.exact_head_ci.run_id, 36985223664);
+  assert.equal(pin.active_blobs["src/direct-remote-mcp.js"], "8df50ca3792091625d4de1143b4625ae2f970ecd");
+  assert.equal(pin.safety_invariants.automatic_replay, false);
 
   const metadata = loadR31PluginCandidateMetadata();
   assert.equal(metadata.candidate_version, "0.3.0-candidate");
@@ -134,6 +142,29 @@ test("R37 preserves the immutable R31/R30 pin and explicitly detects inherited s
   assert.equal(metadata.migration.side_effect_authority, "github_relay");
   assert.equal(metadata.migration.side_effect_mirroring_allowed, false);
   assert.equal(metadata.request_semantics.automatic_replay, false);
+});
+
+test("R38 rejects wrong active blob bytes even when repo/head metadata and pin tuple are unchanged", () => {
+  const untouched = validateR31SourcePin();
+  const originalReader = (path) => readFileSync(
+    new URL(`../${path}`, import.meta.url),
+    "utf8",
+  );
+  assert.throws(
+    () => validateR31SourcePin({
+      pin: untouched,
+      readText: (path) => path === "src/direct-remote-mcp.js"
+        ? originalReader(path).replace(
+            "/[\\s/]/.test(value)",
+            "/[s/]/.test(value)",
+          )
+        : originalReader(path),
+    }),
+    (error) =>
+      error?.code === "R31_SOURCE_BLOB_DRIFT"
+      && error?.details?.path === "src/direct-remote-mcp.js"
+      && error?.details?.expected === "8df50ca3792091625d4de1143b4625ae2f970ecd",
+  );
 });
 
 test("gateway credentials are private and never serialize into plugin state", () => {
