@@ -7,8 +7,6 @@
   "current_authority": "github_relay",
   "current_working_path_changed": false,
   "direct_candidate": "r30_direct_remote_mcp",
-  "r30_source_sha": "29cefa62efcf3f3295dca32b0a202b21c5831969",
-  "r30_ci_run_id": 36985223664,
   "candidate_version": "0.3.0-candidate",
   "missing_live_authorities": [
     "EXPLICIT_LIVE_READ_ONLY_DIRECT_CANARY",
@@ -28,5 +26,10 @@
   "ci_run_id": null,
   "runner_os": null,
   "generated_at": null,
-  "digest": null
+  "digest": null,
+  "direct_source_authority_contract": "pc.control.direct_source_authority.v2",
+  "direct_source_observed_head": "b13243e687173a5342356361956a2fd5eec81138",
+  "historical_r30_source_sha": "29cefa62efcf3f3295dca32b0a202b21c5831969",
+  "historical_r30_ci_run_id": 36985223664,
+  "source_recovery_state": "R38_EXACT_HEAD_CI_REQUIRED"
 }
