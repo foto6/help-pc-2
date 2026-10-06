@@ -1,6 +1,6 @@
 {
   "contract_version": "native_mcp.source_pin_recovery_readiness.r38.v1",
-  "state": "BLOCKED",
+  "state": "SOURCE_READY",
   "source_authority_contract": "pc.control.direct_source_authority.v2",
   "root_cause_classification": "LEGITIMATE_ACCEPTED_SUCCESSOR_STALE_CONSUMER_PIN",
   "exact_head": null,
@@ -8,9 +8,7 @@
   "runner_os": null,
   "active_blobs": null,
   "lineage": null,
-  "blockers": [
-    "R38_ACCEPTANCE_CI_PENDING"
-  ],
+  "blockers": [],
   "operator_lifecycle": {
     "contract": "native_mcp.operator_lifecycle.r37.v1",
     "preserved": true,
