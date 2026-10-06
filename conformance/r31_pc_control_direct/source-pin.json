@@ -1,24 +1,87 @@
 {
-  "contract_version": "pc.control.r31.source_pin.v1",
+  "contract_version": "pc.control.direct_source_authority.v2",
   "repository": "foto6/help-pc-2",
-  "branch": "agent/native-mcp-r30-direct-remote-lane-20261002",
-  "exact_sha": "29cefa62efcf3f3295dca32b0a202b21c5831969",
-  "exact_head_ci": {
-    "run_id": 36985223664,
-    "conclusion": "success"
+  "authority_scope": "direct_remote_mcp_plus_operator_lifecycle",
+  "historical_predecessor": {
+    "contract_version": "pc.control.r31.source_pin.v1",
+    "branch": "agent/native-mcp-r30-direct-remote-lane-20261002",
+    "exact_sha": "29cefa62efcf3f3295dca32b0a202b21c5831969",
+    "exact_head_ci": {
+      "run_id": 36985223664,
+      "conclusion": "success"
+    },
+    "preserved_at": "conformance/r31_pc_control_direct/source-pin.r30-historical.json"
   },
-  "r30_contracts": {
-    "transport": "pc.native.direct_remote_mcp.v1",
-    "health": "pc.native.direct_remote_mcp.health.v1",
-    "native_protocol": "pc.native.control.v1"
-  },
-  "blobs": {
-    "src/direct-remote-mcp.js": "cb6d74888514d3262d206df4f3cbd13a1f8899e2",
-    "src/mcp-host.js": "8a9f3e8659a2bd0b76d2733ac2e991f880d374e8",
-    "src/mcp-runtime-config.js": "0f6f32313505cec82d304af63caaeeffebd04997",
-    "src/native-relay-provider.js": "cca28c281c5e540f1a6478fd063396fa4e55a987",
+  "accepted_successors": [
+    {
+      "milestone": "R35",
+      "exact_code_sha": "f9b88d8bb4a5e0844ec8448d09fafa96f0aff7e9",
+      "contract_version": "pc.control.r35.source_pin.v1",
+      "pin_path": "conformance/r35_quiescent_epoch_rebind/source-pin.json",
+      "pin_blob": "7a080e055815acc8467f13d66b4df2053bb1d308",
+      "rationale": "explicit quiescent device-epoch rebind preserving no-replay and stale-session fail-closed semantics"
+    },
+    {
+      "milestone": "R36",
+      "exact_code_sha": "7f643b4f1f803b637e1b377ac4989bc79d03c4dd",
+      "contract_version": "pc.control.r36.source_pin.v1",
+      "pin_path": "conformance/r36_public_host_gate/source-pin.json",
+      "pin_blob": "025d2be61d0ae074423b1197663b59d81b5adf32",
+      "rationale": "correct Host parser from literal-s rejection to whitespace/slash rejection with preserved auth/origin gates"
+    },
+    {
+      "milestone": "R37",
+      "exact_code_sha": "59090e82d1c20e8c6ffb40fbcf38e7a0e34405b5",
+      "contract_version": "native_mcp.operator_lifecycle.r37.v1",
+      "source_path": "src/r37-operator-lifecycle.js",
+      "source_blob": "dd47df2ea203fad47234520f246da1955558faac",
+      "rationale": "durable RUNNING/PAUSED/DRAINING/RECONCILIATION_REQUIRED operator lifecycle wired into runtime"
+    }
+  ],
+  "active_blobs": {
+    "src/direct-remote-mcp.js": "8df50ca3792091625d4de1143b4625ae2f970ecd",
+    "src/mcp-host.js": "3026902f00adf1b453645a28689ecd72f4308ee4",
+    "src/mcp-runtime-config.js": "a6f09571e8ffe5cd10acfbcd8b489e9a07d5b600",
+    "src/native-relay-provider.js": "7dc50fa87102f6bf21b1e612c3c8d283044a3fb4",
     "bin/pc-native-mcp-remote.js": "ba636cc1f1f95dce7fa92bf7581b1924d386dfab",
     "docs/NATIVE_R30_DIRECT_REMOTE_MCP.md": "a71b700068f7276df5e3c824502cde99cfbc9cb3",
     "conformance/r30_direct_remote/readiness.template.json": "9cfaaab9fd4b561295bdc336842e1fc0ded41672"
+  },
+  "contracts": {
+    "transport": "pc.native.direct_remote_mcp.v1",
+    "health": "pc.native.direct_remote_mcp.health.v1",
+    "native_protocol": "pc.native.control.v1",
+    "operator_lifecycle": "native_mcp.operator_lifecycle.r37.v1"
+  },
+  "regression_evidence": {
+    "r36_live_public_canary_contract": "pc.control.r36.live_public_canary.v1",
+    "r36_focused_regression": "48/48 PASS",
+    "r37_diagnostic_ci": {
+      "run_id": 37398892815,
+      "head_sha": "b13243e687173a5342356361956a2fd5eec81138",
+      "overall_conclusion": "failure",
+      "failure_only": "Generate exact-head R31 pc-control direct readiness",
+      "ubuntu_full_test_suite": "success",
+      "ubuntu_r29_relay_cutover_qa": "success",
+      "ubuntu_r30_direct_remote": "success",
+      "ubuntu_r31_direct_candidate": "success",
+      "ubuntu_r37_operator_lifecycle": "success",
+      "windows_r29_relay_cutover_qa": "success",
+      "windows_r30_direct_remote": "success",
+      "windows_r31_direct_candidate": "success",
+      "windows_r37_operator_lifecycle": "success"
+    }
+  },
+  "recovery_acceptance": {
+    "status": "pending_r38_exact_head_ci",
+    "ci_run_id": null,
+    "conclusion": null
+  },
+  "safety_invariants": {
+    "current_authority": "github_relay",
+    "automatic_replay": false,
+    "live_remote_registration": false,
+    "production_cutover": false,
+    "firewall_or_tunnel_mutation": false
   }
 }
