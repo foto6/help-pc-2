@@ -90,5 +90,18 @@
     "production_cutover": false,
     "firewall_or_tunnel_mutation": false,
     "credentials_in_evidence": false
+  },
+  "recovery_acceptance_ci": {
+    "run_id": 37405176472,
+    "head_sha": "5241858a029d293f7d200045c585adefc37dde5b",
+    "conclusion": "success",
+    "ubuntu_job": {
+      "id": 112081028344,
+      "conclusion": "success"
+    },
+    "windows_job": {
+      "id": 112081028474,
+      "conclusion": "success"
+    }
   }
 }
