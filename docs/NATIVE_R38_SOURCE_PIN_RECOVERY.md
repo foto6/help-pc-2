@@ -200,16 +200,18 @@ acceptance run.
 The active source authority has a separate
 `recovery_acceptance` field.
 
-R38 first validates the repaired lineage with exact-head CI. Only after that
-successful run is available is its run ID pinned and status advanced from:
+R38 first validated the repaired lineage with exact-head CI run
+`37405176472` at
+`5241858a029d293f7d200045c585adefc37dde5b`.
 
-`pending_r38_exact_head_ci`
+Acceptance jobs:
 
-to:
+- Ubuntu `112081028344`: SUCCESS
+- Windows `112081028474`: SUCCESS
 
-`accepted`.
-
-A final exact-head Windows + Ubuntu run then validates the accepted tuple.
+That exact run is now pinned and the active source authority status is
+`accepted`. A final exact-head Windows + Ubuntu run validates the accepted
+tuple rather than a pending candidate.
 
 ## Readiness artifact
 
