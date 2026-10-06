@@ -40,6 +40,11 @@ test("R38 active source authority validates exact accepted bytes", () => {
   assert.equal(pin.active_blobs["src/native-relay-provider.js"], "7dc50fa87102f6bf21b1e612c3c8d283044a3fb4");
   assert.equal(pin.safety_invariants.automatic_replay, false);
   assert.equal(pin.safety_invariants.current_authority, "github_relay");
+  assert.equal(pin.recovery_acceptance.status, "accepted");
+  assert.equal(pin.recovery_acceptance.ci_run_id, 37405176472);
+  assert.equal(pin.recovery_acceptance.head_sha, "5241858a029d293f7d200045c585adefc37dde5b");
+  assert.equal(pin.recovery_acceptance.ubuntu_job.conclusion, "success");
+  assert.equal(pin.recovery_acceptance.windows_job.conclusion, "success");
 });
 
 test("R38 same metadata with wrong checkout blob fails before readiness generation", () => {
