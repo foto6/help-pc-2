@@ -31,5 +31,5 @@
   "direct_source_observed_head": "b13243e687173a5342356361956a2fd5eec81138",
   "historical_r30_source_sha": "29cefa62efcf3f3295dca32b0a202b21c5831969",
   "historical_r30_ci_run_id": 36985223664,
-  "source_recovery_state": "R38_EXACT_HEAD_CI_REQUIRED"
+  "source_recovery_state": "ACCEPTED_R38_EXACT_HEAD_CI"
 }
