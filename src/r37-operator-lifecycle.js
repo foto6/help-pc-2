@@ -211,8 +211,8 @@ function probeFailure(error) {
 export class R37OperatorLifecycle {
   constructor({
     store = null,
-    authoritySha = null,
-    authorityVersion = null,
+    authoritySha = R37_PINNED_AUTHORITY_SHA,
+    authorityVersion = R37_PINNED_AUTHORITY_VERSION,
     probes = {},
     clock = Date.now,
   } = {}) {
