@@ -1,4 +1,20 @@
 export {
+  R37_OPERATOR_LIFECYCLE_V1,
+  R37_DIRECT_HOST_REHEARSAL_V1,
+  R37_CUTOVER_READINESS_V1,
+  R37_PINNED_AUTHORITY_SHA,
+  R37_PINNED_AUTHORITY_VERSION,
+  R37_STATES,
+  R37_COMPONENTS,
+  R37OperatorLifecycleError,
+  JsonR37OperatorLifecycleStore,
+  R37OperatorLifecycle,
+  r37Digest,
+  evaluateR37DirectHostRehearsal,
+  evaluateR37CutoverReadiness,
+} from "./r37-operator-lifecycle.js";
+
+export {
   R33_PREFLIGHT_V1,
   R33_DISCOVERY_V1,
   R33_NATIVE_RELAY_PROBE_V1,

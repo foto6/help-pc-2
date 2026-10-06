@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "native_mcp.direct_host_rehearsal.r37.v1.schema.json",
+  "title": "Native MCP R37 direct-host rehearsal evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "observed_at_utc",
+    "source_base_sha",
+    "actual_direct_host_run",
+    "relay_fallback_enabled",
+    "direct_host_available",
+    "read_only_status",
+    "reversible_operation_status",
+    "rollback_status",
+    "fixture_restored",
+    "automatic_replay",
+    "blocker_code",
+    "blocker_detail",
+    "current_authority",
+    "current_authority_changed",
+    "production_cutover_performed"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "native_mcp.direct_host_rehearsal.r37.v1"
+    },
+    "observed_at_utc": {
+      "type": "string"
+    },
+    "source_base_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "actual_direct_host_run": {
+      "type": "boolean"
+    },
+    "relay_fallback_enabled": {
+      "type": "boolean"
+    },
+    "direct_host_available": {
+      "type": "boolean"
+    },
+    "read_only_status": {
+      "type": "string"
+    },
+    "reversible_operation_status": {
+      "type": "string"
+    },
+    "rollback_status": {
+      "type": "string"
+    },
+    "fixture_restored": {
+      "type": "boolean"
+    },
+    "automatic_replay": {
+      "type": "boolean"
+    },
+    "blocker_code": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "blocker_detail": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "current_authority": {
+      "const": "github_relay"
+    },
+    "current_authority_changed": {
+      "const": false
+    },
+    "production_cutover_performed": {
+      "const": false
+    }
+  }
+}

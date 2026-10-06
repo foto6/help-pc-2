@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "native_mcp.operator_lifecycle.r37.v1.schema.json",
+  "title": "Native MCP R37 operator lifecycle status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "operator_state",
+    "persisted_operator_state",
+    "generation",
+    "observed_at_ms",
+    "components",
+    "direct_lane_available",
+    "reconciliation_required",
+    "reconciliation_request_ids",
+    "authority",
+    "automatic_side_effect_replay",
+    "live_pc_control_cutover",
+    "status_digest"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "native_mcp.operator_lifecycle.r37.v1"
+    },
+    "operator_state": {
+      "enum": [
+        "RUNNING",
+        "PAUSED",
+        "DRAINING",
+        "RECONCILIATION_REQUIRED"
+      ]
+    },
+    "persisted_operator_state": {
+      "enum": [
+        "RUNNING",
+        "PAUSED",
+        "DRAINING",
+        "RECONCILIATION_REQUIRED"
+      ]
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "observed_at_ms": {
+      "type": "number"
+    },
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "native_mcp_host",
+        "control_service",
+        "executor",
+        "github_relay_fallback",
+        "direct_lane"
+      ],
+      "properties": {
+        "native_mcp_host": {
+          "type": "object"
+        },
+        "control_service": {
+          "type": "object"
+        },
+        "executor": {
+          "type": "object"
+        },
+        "github_relay_fallback": {
+          "type": "object"
+        },
+        "direct_lane": {
+          "type": "object"
+        }
+      }
+    },
+    "direct_lane_available": {
+      "type": "boolean"
+    },
+    "reconciliation_required": {
+      "type": "boolean"
+    },
+    "reconciliation_request_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lane",
+        "sha",
+        "version",
+        "verified"
+      ],
+      "properties": {
+        "lane": {
+          "const": "github_relay"
+        },
+        "sha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verified": {
+          "type": "boolean"
+        }
+      }
+    },
+    "automatic_side_effect_replay": {
+      "const": false
+    },
+    "live_pc_control_cutover": {
+      "const": false
+    },
+    "status_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

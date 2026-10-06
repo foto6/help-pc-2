@@ -1,0 +1,18 @@
+{
+  "contract_version": "native_mcp.operator_lifecycle.r37.authority_pin.v1",
+  "current_authority": "github_relay",
+  "relay_producer_pin": {
+    "repository": "foto6/help-pc-1",
+    "branch": "agent/pc-relay-watchdog-cutover-candidate-20261002",
+    "sha": "6f44216e7e5fbf9fe3ae635f302c3c33887e0930",
+    "version": "pc.native.r29.relay_cutover_qa_pin.v1",
+    "exact_head_ci_run": 36967056910,
+    "exact_head_ci_conclusion": "SUCCESS"
+  },
+  "inherited_from": {
+    "r36_start_sha": "13b32fef54cc65503938d5f890c52ac6fcd6ea43",
+    "live_cutover_performed": false
+  },
+  "automatic_side_effect_replay": false,
+  "production_cutover_performed": false
+}

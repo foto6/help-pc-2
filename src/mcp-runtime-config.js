@@ -20,6 +20,12 @@ import {
   R26RelayProgressConsumer,
   validateVendoredR26Artifacts,
 } from "./r26-relay-progress-consumer.js";
+import {
+  JsonR37OperatorLifecycleStore,
+  R37OperatorLifecycle,
+  R37_PINNED_AUTHORITY_SHA,
+  R37_PINNED_AUTHORITY_VERSION,
+} from "./r37-operator-lifecycle.js";
 
 export const PRODUCTION_BRIDGE_CONTRACT = "pc.native.builtin_relay_provider.v1";
 
@@ -169,6 +175,62 @@ export async function createConfiguredNativeMcpRuntime({
     store: new JsonStateStore(join(stateDir, "control-plane.json")),
   });
 
+  const operatorLifecycle = new R37OperatorLifecycle({
+    store: new JsonR37OperatorLifecycleStore(
+      join(stateDir, "operator-lifecycle-r37.json"),
+    ),
+    authoritySha: process.env.PC_NATIVE_AUTHORITY_SHA ?? R37_PINNED_AUTHORITY_SHA,
+    authorityVersion: process.env.PC_NATIVE_AUTHORITY_VERSION ?? R37_PINNED_AUTHORITY_VERSION,
+    probes: {
+      nativeMcpHost: async () => ({
+        status: "RUNNING",
+        available: true,
+        version: "0.9.0",
+        detail: mode,
+      }),
+      controlService: async () => ({
+        status: "RUNNING",
+        available: true,
+        version: "pc-control-plane",
+      }),
+      executor: async () => {
+        try {
+          const capabilities = capabilityPayload(await bridge.readCapabilities(
+            { request_id: null, action: null },
+            { source: "pc-native-mcp-r37-status" },
+          ));
+          return {
+            status: "RUNNING",
+            available: true,
+            version: capabilities?.contract_version ?? null,
+            sha: capabilities?.source_sha ?? null,
+          };
+        } catch (error) {
+          return {
+            status: "DEGRADED",
+            available: false,
+            version: null,
+            detail: error?.code ?? "EXECUTOR_STATUS_UNAVAILABLE",
+          };
+        }
+      },
+      githubRelayFallback: async () => ({
+        status: moduleIdentity?.built_in === true ? "RUNNING" : "UNKNOWN",
+        available: moduleIdentity?.built_in === true,
+        version: moduleIdentity?.contract_version ?? null,
+      }),
+      directLane: async () => ({
+        status: mode === "direct-remote" ? "RUNNING" : "UNAVAILABLE",
+        available: mode === "direct-remote",
+        version: "pc.control.direct_remote_mcp.v1",
+      }),
+      reconciliation: async () => ({
+        required: controlPlane.listActions().some((action) =>
+          ["uncertain_outcome", "reconciliation_wait", "reconciling"].includes(action.status)),
+      }),
+    },
+  });
+
   const facade = new NativeControlFacade({
     controlPlane,
     store: new JsonFacadeStateStore(join(stateDir, "native-facade.json")),
@@ -194,6 +256,7 @@ export async function createConfiguredNativeMcpRuntime({
         { source: "pc-native-mcp-host", signal },
       )
       : null,
+    operatorLifecycle,
   });
 
   const healthSupervisor = new R23HealthSupervisor({
@@ -259,6 +322,7 @@ export async function createConfiguredNativeMcpRuntime({
     r24Artifacts,
     relayProgressConsumer,
     r26Artifacts,
+    operatorLifecycle,
     stateDir,
     moduleIdentity,
   };

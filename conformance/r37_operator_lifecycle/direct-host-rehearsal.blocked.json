@@ -1,0 +1,18 @@
+{
+  "contract_version": "native_mcp.direct_host_rehearsal.r37.v1",
+  "observed_at_utc": "2026-10-06T01:03:00Z",
+  "source_base_sha": "13b32fef54cc65503938d5f890c52ac6fcd6ea43",
+  "actual_direct_host_run": false,
+  "relay_fallback_enabled": false,
+  "direct_host_available": false,
+  "read_only_status": "not_run",
+  "reversible_operation_status": "not_run",
+  "rollback_status": "not_run",
+  "fixture_restored": false,
+  "automatic_replay": false,
+  "blocker_code": "DIRECT_HOST_MACHINE_OFFLINE",
+  "blocker_detail": "Authorized Windows host DESKTOP-64LCMQ8 was offline; native direct endpoint could not be established for the rehearsal.",
+  "current_authority": "github_relay",
+  "current_authority_changed": false,
+  "production_cutover_performed": false
+}

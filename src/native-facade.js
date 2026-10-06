@@ -156,6 +156,7 @@ export class NativeControlFacade {
     deviceIdentityProvider = null,
     deviceIdentityObserver = null,
     deviceIdentityRebinder = null,
+    operatorLifecycle = null,
     idFactory = randomUUID,
     secretFactory = () => randomBytes(24).toString("base64url"),
     sessionTtlMs = 30 * 60 * 1000,
@@ -173,12 +174,17 @@ export class NativeControlFacade {
     if (deviceIdentityRebinder !== null && typeof deviceIdentityRebinder !== "function") {
       throw new TypeError("deviceIdentityRebinder must be a function or null.");
     }
+    if (operatorLifecycle !== null &&
+        typeof operatorLifecycle.assertSideEffectAdmission !== "function") {
+      throw new TypeError("operatorLifecycle must expose assertSideEffectAdmission() or be null.");
+    }
     this.controlPlane = controlPlane;
     this.store = store;
     this.capabilityProvider = capabilityProvider;
     this.deviceIdentityProvider = deviceIdentityProvider;
     this.deviceIdentityObserver = deviceIdentityObserver;
     this.deviceIdentityRebinder = deviceIdentityRebinder;
+    this.operatorLifecycle = operatorLifecycle;
     this.idFactory = idFactory;
     this.secretFactory = secretFactory;
     this.sessionTtlMs = sessionTtlMs;
@@ -679,6 +685,29 @@ export class NativeControlFacade {
     if (existing) existing.status = "closed";
   }
 
+  #assertOperatorAdmission(tool, requestId = null) {
+    if (!this.operatorLifecycle || tool.effect === "read_only") return;
+    try {
+      this.operatorLifecycle.assertSideEffectAdmission({
+        effect: tool.effect,
+        requestId,
+      });
+    } catch (error) {
+      throw new NativeFacadeError(
+        error?.message ?? "Operator lifecycle blocked side-effect dispatch.",
+        {
+          code: error?.code ?? "R37_SIDE_EFFECT_DISPATCH_PAUSED",
+          category: "operator_lifecycle",
+          httpStatus: 409,
+          details: {
+            operator_state: error?.state ?? null,
+            automatic_replay: false,
+          },
+        },
+      );
+    }
+  }
+
   #request(sessionId, requestId) {
     return this.state.requests.find((item) => item.sessionId === sessionId && item.requestId === requestId) ?? null;
   }
@@ -1024,10 +1053,12 @@ export class NativeControlFacade {
     if (request) {
       if (request.fingerprint !== fingerprint) throw new NativeFacadeError("Duplicate request_id was reused with different input.", { code: "DUPLICATE_REQUEST_MISMATCH", category: "idempotency", httpStatus: 409 });
       if (request.status === "completed" || request.status === "cancelled" || request.status === "error") return clone(request.response);
+      this.#assertOperatorAdmission(tool, request.requestId);
       if (!request.actionId) this.#ensureDurableAction(session, request, tool, page);
       return this.#advanceWithCancellation(session, request, tool, signal, { healthCanary });
     }
 
+    this.#assertOperatorAdmission(tool, envelope.request_id);
     request = {
       sessionId: session.id,
       requestId: envelope.request_id,
