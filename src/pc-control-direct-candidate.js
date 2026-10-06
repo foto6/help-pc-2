@@ -16,6 +16,11 @@ export const R31_STATES = Object.freeze([
 ]);
 
 export const R31_R30_SOURCE_SHA = "29cefa62efcf3f3295dca32b0a202b21c5831969";
+export const R31_ACTIVE_SOURCE_AUTHORITY_CONTRACT = "pc.control.direct_source_authority.v2";
+export const R31_ACTIVE_SOURCE_OBSERVED_HEAD = "b13243e687173a5342356361956a2fd5eec81138";
+export const R31_R35_SOURCE_SHA = "f9b88d8bb4a5e0844ec8448d09fafa96f0aff7e9";
+export const R31_R36_SOURCE_SHA = "7f643b4f1f803b637e1b377ac4989bc79d03c4dd";
+export const R31_R37_SOURCE_SHA = "59090e82d1c20e8c6ffb40fbcf38e7a0e34405b5";
 export const PROTECTED_PATH_POLICY_ID = "pc.native.facade.protected_path_fail_closed.v1";
 
 const READ_ONLY = "read_only";
@@ -27,32 +32,134 @@ function gitBlobSha1(bytes) {
   return createHash("sha1").update(header).update(buffer).digest("hex");
 }
 
-export function validateR31SourcePin() {
-  const pin = JSON.parse(readFileSync(
-    new URL("../conformance/r31_pc_control_direct/source-pin.json", import.meta.url),
-    "utf8",
+function sourceText(path) {
+  return readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+}
+
+function canonicalTextBlob(text) {
+  return gitBlobSha1(Buffer.from(String(text).replace(/\r\n/g, "\n"), "utf8"));
+}
+
+function sourcePinError(message, code = "R31_SOURCE_PIN_INVALID", details = null) {
+  throw new PcControlDirectGatewayError(message, {
+    code,
+    category: "source_pin",
+    details,
+  });
+}
+
+export function validateR31SourcePin({
+  pin: suppliedPin = null,
+  readText = sourceText,
+} = {}) {
+  const pin = suppliedPin ?? JSON.parse(readText(
+    "conformance/r31_pc_control_direct/source-pin.json",
   ));
-  if (pin.contract_version !== "pc.control.r31.source_pin.v1"
+  if (pin.contract_version !== R31_ACTIVE_SOURCE_AUTHORITY_CONTRACT
       || pin.repository !== "foto6/help-pc-2"
-      || pin.exact_sha !== R31_R30_SOURCE_SHA
-      || pin.exact_head_ci?.run_id !== 36985223664
-      || pin.exact_head_ci?.conclusion !== "success") {
-    throw new PcControlDirectGatewayError("R31 R30 source authority pin is invalid.", {
-      code: "R31_SOURCE_PIN_INVALID",
-      category: "source_pin",
-    });
+      || pin.lineage_observed_head !== R31_ACTIVE_SOURCE_OBSERVED_HEAD
+      || pin.historical_predecessor?.contract_version !== "pc.control.r31.source_pin.v1"
+      || pin.historical_predecessor?.exact_sha !== R31_R30_SOURCE_SHA
+      || pin.historical_predecessor?.exact_head_ci?.run_id !== 36985223664
+      || pin.historical_predecessor?.exact_head_ci?.conclusion !== "success"
+      || pin.contracts?.transport !== "pc.native.direct_remote_mcp.v1"
+      || pin.contracts?.health !== "pc.native.direct_remote_mcp.health.v1"
+      || pin.contracts?.native_protocol !== "pc.native.control.v1"
+      || pin.contracts?.operator_lifecycle !== "native_mcp.operator_lifecycle.r37.v1"
+      || pin.safety_invariants?.current_authority !== "github_relay"
+      || pin.safety_invariants?.automatic_replay !== false
+      || pin.safety_invariants?.live_remote_registration !== false
+      || pin.safety_invariants?.production_cutover !== false
+      || pin.safety_invariants?.firewall_or_tunnel_mutation !== false) {
+    sourcePinError("Active direct source authority metadata is invalid.");
   }
-  for (const [path, expected] of Object.entries(pin.blobs ?? {})) {
-    // GitHub Windows runners may materialize repository text as CRLF while the
-    // canonical Git blob remains LF. These pinned authority paths are all text;
-    // normalize only checkout line endings before reconstructing the Git blob.
-    const checkoutText = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-    const actual = gitBlobSha1(Buffer.from(checkoutText.replace(/\r\n/g, "\n"), "utf8"));
+
+  const acceptance = pin.recovery_acceptance ?? {};
+  if (!["pending_r38_exact_head_ci", "accepted"].includes(acceptance.status)) {
+    sourcePinError("R38 recovery acceptance state is invalid.");
+  }
+  if (acceptance.status === "accepted"
+      && (!Number.isInteger(acceptance.ci_run_id)
+          || acceptance.ci_run_id < 1
+          || acceptance.conclusion !== "success")) {
+    sourcePinError("Accepted R38 source authority is missing successful CI evidence.");
+  }
+
+  const successors = new Map(
+    (Array.isArray(pin.accepted_successors) ? pin.accepted_successors : [])
+      .map((item) => [item.milestone, item]),
+  );
+  const r35 = successors.get("R35");
+  const r36 = successors.get("R36");
+  const r37 = successors.get("R37");
+  if (successors.size !== 3
+      || r35?.exact_code_sha !== R31_R35_SOURCE_SHA
+      || r35?.contract_version !== "pc.control.r35.source_pin.v1"
+      || r35?.pin_path !== "conformance/r35_quiescent_epoch_rebind/source-pin.json"
+      || r35?.pin_blob !== "7a080e055815acc8467f13d66b4df2053bb1d308"
+      || r36?.exact_code_sha !== R31_R36_SOURCE_SHA
+      || r36?.contract_version !== "pc.control.r36.source_pin.v1"
+      || r36?.pin_path !== "conformance/r36_public_host_gate/source-pin.json"
+      || r36?.pin_blob !== "025d2be61d0ae074423b1197663b59d81b5adf32"
+      || r37?.exact_code_sha !== R31_R37_SOURCE_SHA
+      || r37?.contract_version !== "native_mcp.operator_lifecycle.r37.v1"
+      || r37?.source_path !== "src/r37-operator-lifecycle.js"
+      || r37?.source_blob !== "dd47df2ea203fad47234520f246da1955558faac") {
+    sourcePinError("Accepted direct source successor lineage is invalid.", "R31_SOURCE_LINEAGE_INVALID");
+  }
+
+  const historical = JSON.parse(readText(
+    "conformance/r31_pc_control_direct/source-pin.r30-historical.json",
+  ));
+  if (historical.contract_version !== "pc.control.r31.source_pin.v1"
+      || historical.exact_sha !== R31_R30_SOURCE_SHA
+      || historical.exact_head_ci?.run_id !== 36985223664
+      || historical.exact_head_ci?.conclusion !== "success") {
+    sourcePinError("Historical R30 predecessor pin was mutated.", "R31_SOURCE_LINEAGE_INVALID");
+  }
+
+  const r35Text = readText(r35.pin_path);
+  const r36Text = readText(r36.pin_path);
+  if (canonicalTextBlob(r35Text) !== r35.pin_blob
+      || canonicalTextBlob(r36Text) !== r36.pin_blob
+      || canonicalTextBlob(readText(r37.source_path)) !== r37.source_blob) {
+    sourcePinError("Accepted successor evidence bytes drifted.", "R31_SOURCE_LINEAGE_INVALID");
+  }
+  const r35Pin = JSON.parse(r35Text);
+  const r36Pin = JSON.parse(r36Text);
+  if (r35Pin.exact_code_sha !== R31_R35_SOURCE_SHA
+      || r35Pin.blobs?.["src/mcp-host.js"] !== pin.active_blobs?.["src/mcp-host.js"]
+      || r35Pin.blobs?.["src/native-relay-provider.js"] !== pin.active_blobs?.["src/native-relay-provider.js"]
+      || r36Pin.exact_code_sha !== R31_R36_SOURCE_SHA
+      || r36Pin.blobs?.["src/direct-remote-mcp.js"] !== pin.active_blobs?.["src/direct-remote-mcp.js"]) {
+    sourcePinError("Active blobs are not justified by accepted successor pins.", "R31_SOURCE_LINEAGE_INVALID");
+  }
+
+  const diagnostic = pin.regression_evidence?.r37_diagnostic_ci;
+  if (pin.regression_evidence?.r36_live_public_canary_contract !== "pc.control.r36.live_public_canary.v1"
+      || pin.regression_evidence?.r36_focused_regression !== "48/48 PASS"
+      || diagnostic?.run_id !== 37398892815
+      || diagnostic?.head_sha !== R31_ACTIVE_SOURCE_OBSERVED_HEAD
+      || diagnostic?.failure_only !== "Generate exact-head R31 pc-control direct readiness"
+      || diagnostic?.ubuntu_full_test_suite !== "success"
+      || diagnostic?.ubuntu_r29_relay_cutover_qa !== "success"
+      || diagnostic?.ubuntu_r30_direct_remote !== "success"
+      || diagnostic?.ubuntu_r31_direct_candidate !== "success"
+      || diagnostic?.ubuntu_r37_operator_lifecycle !== "success"
+      || diagnostic?.windows_r29_relay_cutover_qa !== "success"
+      || diagnostic?.windows_r30_direct_remote !== "success"
+      || diagnostic?.windows_r31_direct_candidate !== "success"
+      || diagnostic?.windows_r37_operator_lifecycle !== "success") {
+    sourcePinError("Successor regression/diagnostic CI evidence is incomplete.", "R31_SOURCE_LINEAGE_INVALID");
+  }
+
+  for (const [path, expected] of Object.entries(pin.active_blobs ?? {})) {
+    const actual = canonicalTextBlob(readText(path));
     if (actual !== expected) {
-      throw new PcControlDirectGatewayError("Pinned R30 source blob drifted.", {
-        code: "R31_SOURCE_BLOB_DRIFT",
-        category: "source_pin",
-        details: { path, expected, actual },
+      sourcePinError("Pinned active source blob drifted.", "R31_SOURCE_BLOB_DRIFT", {
+        path,
+        expected,
+        actual,
       });
     }
   }
