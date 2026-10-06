@@ -1,0 +1,27 @@
+{
+  "contract_version": "native_mcp.source_pin_recovery_readiness.r38.v1",
+  "state": "BLOCKED",
+  "source_authority_contract": "pc.control.direct_source_authority.v2",
+  "root_cause_classification": "LEGITIMATE_ACCEPTED_SUCCESSOR_STALE_CONSUMER_PIN",
+  "exact_head": null,
+  "ci_run_id": null,
+  "runner_os": null,
+  "active_blobs": null,
+  "lineage": null,
+  "blockers": [
+    "R38_ACCEPTANCE_CI_PENDING"
+  ],
+  "operator_lifecycle": {
+    "contract": "native_mcp.operator_lifecycle.r37.v1",
+    "preserved": true,
+    "automatic_side_effect_replay": false,
+    "status_command": "node tools/r37-operator-lifecycle.js status"
+  },
+  "current_authority": "github_relay",
+  "live_remote_registration": false,
+  "production_cutover": false,
+  "firewall_or_tunnel_mutation": false,
+  "credentials_in_evidence": false,
+  "generated_at": null,
+  "digest": null
+}
