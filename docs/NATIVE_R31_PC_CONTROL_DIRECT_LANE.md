@@ -17,15 +17,17 @@ During R31 and any dual-lane canary:
 - automatic replay: forbidden;
 - `ACTUAL_PC_CONTROL_CUTOVER=false`.
 
-The source authority is pinned in
-`conformance/r31_pc_control_direct/source-pin.json` to:
+The original R31/R30 source authority remains preserved at
+`conformance/r31_pc_control_direct/source-pin.r30-historical.json`.
 
-- R30 SHA `29cefa62efcf3f3295dca32b0a202b21c5831969`;
-- exact-head CI `36985223664` SUCCESS;
-- critical R30 Git blob identities.
-
-`validateR31SourcePin()` verifies those bytes before an R31 readiness report
-can be generated.
+The active readiness consumer now uses
+`conformance/r31_pc_control_direct/source-pin.json`, contract
+`pc.control.direct_source_authority.v2`. That active authority binds the
+historical R30 SHA/CI plus accepted R35 quiescent-epoch, R36 public-Host, and
+R37 operator-lifecycle successor bytes. `validateR31SourcePin()` verifies the
+successor pin evidence and every active Git blob before an R31 readiness report
+can be generated. The historical R30 tuple is not rewritten or treated as the
+current implementation after those accepted successors.
 
 ## Plugin-facing gateway contract
 
