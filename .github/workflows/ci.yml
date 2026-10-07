@@ -23,6 +23,7 @@ on:
       - agent/native-mcp-r33-live-readonly-canary-preflight-20261002
       - agent/native-mcp-r37-operator-lifecycle-20261006
       - agent/native-mcp-r38-source-pin-recovery-20261006
+      - agent/native-mcp-r39-local-canary-20261006
   pull_request:
 
 permissions:
@@ -126,6 +127,23 @@ jobs:
         run: npm run test:r37-lifecycle
       - name: R38 source-pin recovery and lifecycle closeout
         run: npm run test:r38-source-pin
+      - name: R39 staged local canary and operator readiness
+        run: npm run test:r39-local-canary
+      - name: R39 PowerShell operator syntax
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'tools/r39-local-canary.ps1'),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
       - name: R37 PowerShell operator syntax
         if: matrix.os == 'windows-latest'
         shell: pwsh
@@ -214,5 +232,14 @@ jobs:
         with:
           name: r38-source-pin-recovery-readiness-${{ matrix.os }}
           path: r38-source-pin-recovery-readiness-${{ matrix.os }}.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Generate exact-head R39 local canary readiness
+        run: node tools/r39-local-canary-readiness-report.js --out r39-local-canary-readiness-${{ matrix.os }}.json
+      - name: Upload exact-head R39 local canary readiness
+        uses: actions/upload-artifact@v4
+        with:
+          name: r39-local-canary-readiness-${{ matrix.os }}
+          path: r39-local-canary-readiness-${{ matrix.os }}.json
           if-no-files-found: error
           retention-days: 14
