@@ -1,0 +1,25 @@
+{
+  "contract_version": "native_mcp.local_canary_source_pin.r39.v1",
+  "repository": "foto6/help-pc-2",
+  "branch": "agent/native-mcp-r39-local-canary-20261006",
+  "exact_task_head": "d8c7661d52670fe50e58bc68d50f59a624253e44",
+  "accepted_parent": {
+    "sha": "a0d8438f0e4fa93e6be50402efb6783f92c3412b",
+    "ci_run_id": 37406258361,
+    "conclusion": "success"
+  },
+  "inherited": {
+    "r32_contract": "pc.control.r32.local_canary_readiness.v1",
+    "r33_contract": "pc.control.r33.live_readonly_canary_preflight.v1",
+    "r37_contract": "native_mcp.operator_lifecycle.r37.v1",
+    "r38_contract": "native_mcp.source_pin_recovery.r38.v1",
+    "r38_acceptance_ci": 37405176472,
+    "current_authority": "github_relay",
+    "automatic_side_effect_replay": false
+  },
+  "milestone_contract": "native_mcp.local_canary.r39.v1",
+  "release_gate": "NO_PRODUCTION_CUTOVER",
+  "live_remote_registration": false,
+  "production_relay_replacement": false,
+  "firewall_or_tunnel_mutation": false
+}
