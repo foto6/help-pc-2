@@ -1,0 +1,23 @@
+{
+  "contract_version": "native_mcp.local_canary_readiness.r39.v1",
+  "state": "SOURCE_READY",
+  "exact_head": null,
+  "ci_run_id": null,
+  "runner_os": null,
+  "source_lineage": null,
+  "staged_canary_state": "NOT_EXECUTED_COORDINATOR_LIVE",
+  "cutover_plan_state": "PLAN_NOT_GENERATED_LIVE",
+  "reboot_autostart_state": "STAGED_NOT_INSTALLED",
+  "blockers": [],
+  "current_authority": "github_relay",
+  "github_relay_fallback_enabled": true,
+  "actual_local_canary_executed": false,
+  "automatic_side_effect_replay": false,
+  "live_remote_registration": false,
+  "production_cutover": false,
+  "service_or_task_registration": false,
+  "firewall_or_tunnel_mutation": false,
+  "deterministic_artifact": true,
+  "generated_at": null,
+  "digest": null
+}
