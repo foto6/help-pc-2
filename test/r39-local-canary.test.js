@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import {
   R33_PREFLIGHT_V1,
@@ -320,7 +321,7 @@ test("one R39 status command reports all required lifecycle components, reconcil
   try{
     const stateFile=join(dir,"lifecycle.json");
     const result=spawnSync(process.execPath,[
-      new URL("../tools/r39-local-canary.js",import.meta.url).pathname,
+      fileURLToPath(new URL("../tools/r39-local-canary.js",import.meta.url)),
       "status","--state-file",stateFile,
     ],{encoding:"utf8"});
     assert.equal(result.status,0,result.stderr);
