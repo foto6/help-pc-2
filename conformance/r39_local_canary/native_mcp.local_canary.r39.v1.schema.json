@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "native_mcp.local_canary.r39.v1.schema.json",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "contract_version",
+    "state",
+    "blockers",
+    "current_authority",
+    "github_relay_fallback_enabled",
+    "automatic_side_effect_replay",
+    "actual_pc_control_cutover",
+    "production_relay_replaced"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "native_mcp.local_canary.r39.v1"
+    },
+    "state": {
+      "enum": [
+        "SOURCE_READY",
+        "READY_FOR_STAGED_LOCAL_CANARY",
+        "BLOCKED"
+      ]
+    },
+    "current_authority": {
+      "const": "github_relay"
+    },
+    "github_relay_fallback_enabled": {
+      "const": true
+    },
+    "side_effect_mirroring": {
+      "const": false
+    },
+    "automatic_side_effect_replay": {
+      "const": false
+    },
+    "actual_pc_control_cutover": {
+      "const": false
+    },
+    "production_relay_replaced": {
+      "const": false
+    }
+  }
+}
