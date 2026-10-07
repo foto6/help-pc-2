@@ -46,7 +46,10 @@
     "r37:operator": "node tools/r37-operator-lifecycle.js",
     "report:r37-lifecycle": "node tools/r37-operator-lifecycle-report.js",
     "test:r38-source-pin": "node --test test/r38-source-pin-recovery.test.js test/r31-pc-control-direct-candidate.test.js test/r36-source-pin.test.js test/r37-operator-lifecycle.test.js",
-    "report:r38-source-pin": "node tools/r38-source-pin-recovery-report.js"
+    "report:r38-source-pin": "node tools/r38-source-pin-recovery-report.js",
+    "test:r39-local-canary": "node --test test/r39-local-canary.test.js test/r38-source-pin-recovery.test.js test/r37-operator-lifecycle.test.js test/r33-live-readonly-canary-preflight.test.js test/r32-local-canary-operator.test.js",
+    "r39:local-canary": "node tools/r39-local-canary.js",
+    "report:r39-local-canary": "node tools/r39-local-canary-readiness-report.js"
   },
   "engines": {
     "node": ">=20"
