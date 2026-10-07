@@ -44,12 +44,15 @@ function lifecycleProbes(){
 
 const command=process.argv[2]??"status";
 const stateFile=resolve(arg("--state-file",".r39-canary/operator-lifecycle-r37.json"));
-const lifecycle=new R37OperatorLifecycle({
-  store:new JsonR37OperatorLifecycleStore(stateFile),
-  probes:lifecycleProbes(),
-});
+function makeLifecycle(){
+  return new R37OperatorLifecycle({
+    store:new JsonR37OperatorLifecycleStore(stateFile),
+    probes:lifecycleProbes(),
+  });
+}
 
 if(command==="lifecycle-rehearsal"){
+  const lifecycle=makeLifecycle();
   const out=requireArg("--out");
   const states=[lifecycle.snapshot().operator_state];
   states.push(lifecycle.pause("r39_rehearsal").operator_state);
@@ -76,9 +79,11 @@ if(command==="lifecycle-rehearsal"){
   writeJson(out,evidence);
   process.stdout.write(JSON.stringify(evidence)+"\n");
 }else if(command==="status"){
+  const lifecycle=makeLifecycle();
   const status=await lifecycle.status();
   process.stdout.write(JSON.stringify(status,null,2)+"\n");
 }else if(command==="resume"){
+  const lifecycle=makeLifecycle();
   const resumed=lifecycle.resume();
   process.stdout.write(JSON.stringify(resumed,null,2)+"\n");
 }else if(command==="identity"){
