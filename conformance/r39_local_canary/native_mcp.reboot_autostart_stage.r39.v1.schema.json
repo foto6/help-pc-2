@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "native_mcp.reboot_autostart_stage.r39.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "state",
+    "canary_identity_digest",
+    "persisted_lifecycle_state_file",
+    "service_identity",
+    "loopback_bind_host",
+    "requested_port",
+    "startup_command",
+    "status_command",
+    "explicit_resume_command",
+    "registration",
+    "reboot_semantics",
+    "rollback",
+    "current_authority",
+    "production_cutover_performed",
+    "stage_digest"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "native_mcp.reboot_autostart_stage.r39.v1"
+    },
+    "state": {
+      "const": "STAGED_NOT_INSTALLED"
+    },
+    "loopback_bind_host": {
+      "const": "127.0.0.1"
+    },
+    "current_authority": {
+      "const": "github_relay"
+    },
+    "production_cutover_performed": {
+      "const": false
+    }
+  }
+}
