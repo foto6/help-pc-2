@@ -1,4 +1,22 @@
 export {
+  R39_LOCAL_CANARY_V1,
+  R39_READINESS_V1,
+  R39_CUTOVER_PLAN_V1,
+  R39_REBOOT_AUTOSTART_V1,
+  R39_ISOLATED_IDENTITY_V1,
+  R39_LIFECYCLE_REHEARSAL_V1,
+  R39_STATES,
+  r39Digest,
+  validateR39SourceLineage,
+  buildR39IsolatedCanaryIdentity,
+  validateR39LifecycleRehearsal,
+  evaluateR39StagedCanary,
+  buildR39CutoverPlan,
+  buildR39RebootAutostartStage,
+  evaluateR39Readiness,
+} from "./r39-local-canary.js";
+
+export {
   R37_OPERATOR_LIFECYCLE_V1,
   R37_DIRECT_HOST_REHEARSAL_V1,
   R37_CUTOVER_READINESS_V1,
