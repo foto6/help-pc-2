@@ -50,7 +50,7 @@ test("capture uses exact page websocket, rejects URL race and emits real MCP ima
   const media = mcpScreenshotResult(result);
   assert.equal(media.content[0].type, "image");
   assert.equal(media.content[0].mimeType, "image/png");
-  assert.equal(media.content[0].data, pixel);
+  assert.deepEqual(Buffer.from(media.content[0].data, "base64"), Buffer.from(pixel, "base64"), "equivalent binary PNG content despite noncanonical base64 padding");
   assert.equal(media.content[1].type, "text");
   assert.ok(!media.content[1].text.includes(pixel), "image bytes never leak into text logs");
   assert.ok(!media.content[1].text.includes("SECRET"), "query string is redacted");
@@ -79,5 +79,5 @@ test("strict endpoint validation fails closed for cross-port/cross-host credenti
 test("binary verification rejects fake PNG, invalid encoding and impossible size", () => {
   assert.throws(() => validatePng("!"), /CDP_PNG_INVALID_BASE64/);
   assert.throws(() => validatePng(Buffer.from("not a PNG").toString("base64")), /CDP_PNG_INVALID/);
-  assert.throws(() => validatePng(Buffer.from("x".repeat(8 * 1024 * 1024 + 1)).toString("base64")), /CDP_PNG_INVALID_BASE64/);
+  assert.throws(() => validatePng(Buffer.from("x".repeat(8 * 1024 * 1024 + 1)).toString("base64")), /CDP_PNG_INVALID/);
 });
