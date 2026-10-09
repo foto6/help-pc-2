@@ -1,5 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { randomUUID } from "node:crypto";
+import * as z from "zod/v4";
+import { listChromeTabs, captureChromeTab, mcpScreenshotResult, allowedCdpPorts } from "./browser-tab-capture.js";
 import {
   NATIVE_CONTROL_PROTOCOL_V1,
   NATIVE_RESPONSE_V1,
@@ -544,6 +546,63 @@ export class NativeMcpRuntime {
         },
         async (args, callCtx) => this.callNativeTool(tool, args, callCtx),
       );
+    }
+
+    // Explicitly opted-in native-only read-only Chrome media. No executor
+    // side-effect dispatch, no GitHub relay screenshot bytes and no tab focus.
+    // Public/native MCP session authorization still applies at the host layer.
+    if (process.env.PC_CONTROL_ENABLE_BROWSER_TAB_CAPTURE === "1") {
+      // Validate allowlist at registration time, fail closed on bad config.
+      allowedCdpPorts();
+      const browserMeta = {
+        "pc.browser/source": "local_chrome_cdp",
+        "pc.browser/effect": "read_only",
+        "pc.browser/focus_change": false,
+        "pc.browser/pixels_to_github": false,
+        "pc.native/mcp_era": ctx.era ?? null,
+      };
+      const annotations = {
+        readOnlyHint: true, destructiveHint: false,
+        idempotentHint: true, openWorldHint: false,
+      };
+      const browserFailure = error => ({
+        content: [{ type: "text", text: JSON.stringify({
+          ok: false,
+          code: /^CDP_[A-Z_]+$/.test(String(error?.message))
+            ? error.message : "BROWSER_CAPTURE_FAILED",
+        }) }],
+        isError: true,
+      });
+      server.registerTool("browser.tab.list", {
+        description: "List exact Chrome page target IDs and sanitized URLs from an operator-allowlisted local CDP port. Never activates a browser window.",
+        inputSchema: z.object({
+          port: z.number().int().min(1024).max(65535),
+        }).strict(),
+        annotations, _meta: browserMeta,
+      }, async ({ port }) => {
+        try {
+          return {
+            content: [{ type: "text", text: JSON.stringify({
+              ok: true, tabs: await listChromeTabs(port),
+            }) }],
+          };
+        } catch (error) { return browserFailure(error); }
+      });
+      server.registerTool("browser.tab.capture", {
+        description: "Read-only background Chrome screenshot by exact target ID. Returns real image/png media without activating tab, changing window focus or sending PNG to GitHub. The user must authorize viewing the selected tab.",
+        inputSchema: z.object({
+          port: z.number().int().min(1024).max(65535),
+          target_id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+          expected_url: z.string().min(1).max(2048).optional(),
+        }).strict(),
+        annotations, _meta: browserMeta,
+      }, async ({ port, target_id, expected_url }) => {
+        try {
+          return mcpScreenshotResult(await captureChromeTab({
+            port, target_id, expected_url: expected_url ?? null,
+          }));
+        } catch (error) { return browserFailure(error); }
+      });
     }
 
     const nativeNames = new Set(TOOL_REGISTRY_LIST.map((tool) => tool.name));
