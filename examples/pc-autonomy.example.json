@@ -10,7 +10,7 @@
   "maxSendsPerHour": 12,
   "minSpacingMs": 90000,
   "bridge": {"url":"http://127.0.0.1:17448"},
-  "relay": {"healthFile":"E:\\PCControlAutonomy\\relay-authority-health.json"},
+  "relay": {"healthFile":"E:\\pc-github-relay\\.pc-relay\\health.json"},
   "r45": {
     "sha": "28e4accf59e37e767c37585b85cdacbdbac62120",
     "runner": "E:\\WebAIBridge\\app\\data\\operator-tools\\r45-durable-autonomy\\releases\\28e4accf59e37e767c37585b85cdacbdbac62120\\autonomy-r45-runner.js",
