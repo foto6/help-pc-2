@@ -92,7 +92,7 @@ export function admission({config,bridge={},cutover={},operator={},relay={},now=
 }
 export function budgetCheck(state,now,max=12,minSpacingMs=90000){const history=(Array.isArray(state?.sends)?state.sends:[]).filter(x=>now-x<3600000&&x<=now);return {allowed:history.length<max && (!history.length || now-history.at(-1)>=minSpacingMs),history};}
 export function cooldownFor(result,now){if(result?.status==='RECONCILIATION_REQUIRED' || result?.status==='CHAT_INSPECTION_FAILED'||result?.status==='DISPATCH_UNKNOWN')return now+300000;if(result?.status==='CUTOVER_BLOCKED'||result?.status==='BRIDGE_UNHEALTHY')return now+120000;if(/429|RATE_LIMIT/i.test(JSON.stringify(result||{})))return now+1800000;return 0;}
-function normalizeStore(x){const s=asObject(x);return {contract:CONTRACT,revision:(s.revision||0),sends:Array.isArray(s.sends)?s.sends:[],lastCycle:s.lastCycle||null,lastDecision:s.lastDecision||null,cooldownUntil:Number(s.cooldownUntil||0),pendingUnknown:Array.isArray(s.pendingUnknown)?s.pendingUnknown:[]};}
+function normalizeStore(x){const s=asObject(x);return {contract:CONTRACT,revision:(s.revision||0),sends:Array.isArray(s.sends)?s.sends:[],lastCycle:s.lastCycle||null,lastDecision:s.lastDecision||null,cooldownUntil:Number(s.cooldownUntil||0),pendingUnknown:Array.isArray(s.pendingUnknown)?s.pendingUnknown:[],pendingDispatch:s.pendingDispatch??null};}
 export class PcAutonomySupervisor{
   constructor({config,statePath,probes,runner,clock=Date.now}){this.config=assertConfig(config);this.statePath=statePath;this.probes=probes;this.runner=runner;this.clock=clock;}
   async cycle({dispatch=false,brain=false}={}){
@@ -104,11 +104,24 @@ export class PcAutonomySupervisor{
       const policy=admission({config:this.config,bridge:probes.bridge,cutover:probes.cutover,operator:probes.operator,relay:probes.relay,now});
       if(probes.error)policy.blocks.push('probe_failed_'+probes.error);
       if(s.pendingUnknown.length)policy.blocks.push('unknown_effect_reconciliation_required');
+      // A crash while R45 was being called is not evidence of a failed Send.
+      // Retain the original transaction until exact assignment evidence is reconciled.
+      if(s.pendingDispatch!==null)policy.blocks.push('unresolved_dispatch_intent');
       if(s.cooldownUntil>now)policy.blocks.push('cooldown_active');
       const budget=budgetCheck(s,now,this.config.maxSendsPerHour||12,this.config.minSpacingMs||90000);
       if(!budget.allowed)policy.blocks.push('send_rate_budget');
       policy.ready=policy.blocks.length===0;
       const authorizedDispatch=dispatch===true&&policy.ready;
+      if(authorizedDispatch){
+        // Write-ahead reservation BEFORE invoking R45 and any provider-side effect.
+        // A hard process crash can no longer lose the inter-Send rate budget or
+        // accidentally re-admit another dispatch on restart.
+        s.sends=[...budget.history,now].slice(-60);
+        s.pendingDispatch={at:new Date(now).toISOString(),token:randomUUID(),status:'AWAITING_R45_RESULT'};
+        atomicWrite(this.statePath,s);
+      }else{
+        s.sends=budget.history;
+      }
       let result;
       // Local-only Ollama proposals may advance while provider Send is held.
       // They cannot open a ChatGPT tab or override the PC Control gates.
@@ -116,13 +129,25 @@ export class PcAutonomySupervisor{
       try{result=await this.runner({dispatch:authorizedDispatch,brain:localBrain});}
       catch(e){result={status:authorizedDispatch?'DISPATCH_UNKNOWN':'COORDINATOR_ERROR',code:errorCode(e),dispatched:[]};}
       const emitted=Array.isArray(result?.dispatched)?result.dispatched:[];
-      s.sends=budget.history.concat(authorizedDispatch?emitted.map(()=>now):[]).slice(-60);
-      if(result?.status==='RECONCILIATION_REQUIRED'||result?.status==='DISPATCH_UNKNOWN')s.pendingUnknown.push('r45_original_dispatch_journal');
+      const unresolvedR45=Array.isArray(result?.reconciliationRequired)
+        && result.reconciliationRequired.length>0;
+      const uncertain=authorizedDispatch && (
+        !result||typeof result.status!=='string'
+        || result.status==='DISPATCH_UNKNOWN'
+        || result.status==='RECONCILIATION_REQUIRED'
+        || unresolvedR45 || emitted.length>1
+      );
+      if(uncertain){
+        s.pendingUnknown.push('r45_original_dispatch_journal');
+        // Preserve original token: never try to replay a timed-out request.
+      }else if(authorizedDispatch){
+        s.pendingDispatch=null;
+      }
       s.pendingUnknown=[...new Set(s.pendingUnknown)];
       s.cooldownUntil=Math.max(s.cooldownUntil,cooldownFor(result,now));
       s.revision++;
       s.lastCycle=new Date(now).toISOString();
-      s.lastDecision={admitted:authorizedDispatch,blocks:policy.blocks,status:String(result?.status||'UNKNOWN'),dispatched:emitted.length,probeError:probes.error||null};
+      s.lastDecision={admitted:authorizedDispatch,blocks:policy.blocks,status:String(result?.status||'UNKNOWN'),dispatched:emitted.length,probeError:probes.error||null,uncertainEffect:uncertain};
       atomicWrite(this.statePath,s);
       return {contract:CONTRACT,revision:s.revision,at:s.lastCycle,dispatchEnabled:authorizedDispatch,decision:s.lastDecision,cooldownUntil:s.cooldownUntil,unknownEffects:s.pendingUnknown.length,taskCounts:result?.counts||{},bridgeHealth:String(probes.bridge?.health?.state||'UNKNOWN')};
     } finally{unlock();}
