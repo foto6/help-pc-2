@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, rmSync, readFileSync, mkdirSync, writeFileSync} from 'node:fs';
+import {mkdtempSync, rmSync, readFileSync, mkdirSync, writeFileSync, readdirSync, existsSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {verifyR45Release,readRelayProbe} from '../bin/pc-autonomy-daemon.js';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {CONTRACT, admission, PcAutonomySupervisor, atomicWrite, localRead, budgetCheck, createLock, assertConfig, httpJson} from '../src/pc-autonomy-supervisor.js';
+import {CONTRACT, admission, PcAutonomySupervisor, atomicWrite, localRead, budgetCheck, createLock, LOCK_STALE_GRACE_MS, assertConfig, httpJson} from '../src/pc-autonomy-supervisor.js';
 const now=Date.parse('2026-10-13T03:00:00Z');
 function cfg(mode='armed'){return {contract:CONTRACT,mode,operatorApproved:mode==='armed',bridge:{url:'http://127.0.0.1:17448'},r45:{runner:'E:/WebAIBridge/app/data/operator-tools/r45-durable-autonomy/releases/xxx/autonomy-r45-runner.js',plan:'E:/plan.json',state:'E:/state.json'},maxSendsPerHour:3,minSpacingMs:90000,pollIntervalMs:60000};}
 function probes(){return {bridge:{health:{state:'OK',reasons:[]}},cutover:{cutoverState:{holdActive:false}},operator:{mode:'RUNNING_MANAGED',queuePaused:false,allowAutonomousSend:true,reconciliationRequired:false},relay:{status:'HEALTHY',observedAt:new Date(now-3000).toISOString()}};}
@@ -72,5 +72,59 @@ test('offline local Ollama proposal is allowed under R42 HOLD but cannot Send',a
     assert.deepEqual(params,{dispatch:false,brain:true});
     assert.equal(r.dispatchEnabled,false);
     assert.ok(r.decision.blocks.includes('r42_cutover_hold'));
+  }finally{t.cleanup();}
+});
+
+test('verified-dead old PID can be reclaimed after grace and preserves orphan evidence',()=>{
+  const t=tmp();
+  try{
+    const dir=t.file+'.lock';mkdirSync(dir);
+    writeFileSync(join(dir,'owner.json'),JSON.stringify({pid:88888888,nonce:'old-owner',at:'2020-01-01T00:00:00Z'}));
+    const release=createLock(t.file,{now:now,dead:pid=>pid===88888888});
+    assert.equal(JSON.parse(readFileSync(join(dir,'owner.json'),'utf8')).pid,process.pid);
+    assert.equal(readdirSync(join(t.file,'..')).some(x=>x.includes('.orphan.')),true);
+    release();
+    assert.equal(existsSync(dir),false);
+  }finally{t.cleanup();}
+});
+test('live, fresh, missing, or suspicious lock owners cannot be taken over',()=>{
+  const t=tmp();
+  try{
+    const dir=t.file+'.lock';mkdirSync(dir);
+    const owner={pid:88888888,nonce:'old',at:'2020-01-01T00:00:00Z'};
+    writeFileSync(join(dir,'owner.json'),JSON.stringify(owner));
+    assert.throws(()=>createLock(t.file,{now,dead:()=>false}),/BUSY_OR_UNVERIFIED/);
+    writeFileSync(join(dir,'owner.json'),JSON.stringify({...owner,at:new Date(now).toISOString()}));
+    assert.throws(()=>createLock(t.file,{now,dead:()=>true}),/BUSY_OR_UNVERIFIED/);
+    writeFileSync(join(dir,'owner.json'),'{"broken":true}');
+    assert.throws(()=>createLock(t.file,{now,dead:()=>true}),/BUSY_OR_UNVERIFIED/);
+    assert.equal(existsSync(dir),true);
+    assert.equal(LOCK_STALE_GRACE_MS,120000);
+  }finally{t.cleanup();}
+});
+test('restarted stale owner cannot delete successor lock on release',()=>{
+  const t=tmp();
+  try{
+    const release=createLock(t.file);
+    const file=join(t.file+'.lock','owner.json');
+    const owner=JSON.parse(readFileSync(file,'utf8'));
+    writeFileSync(file,JSON.stringify({...owner,nonce:'new-owner-generation'}));
+    release();
+    assert.equal(existsSync(t.file+'.lock'),true);
+  }finally{t.cleanup();}
+});
+test('lock takeover race is fenced by exact owner nonce and recheck',()=>{
+  const t=tmp();
+  try{
+    const dir=t.file+'.lock';mkdirSync(dir);
+    const file=join(dir,'owner.json');
+    writeFileSync(file,JSON.stringify({pid:88888888,nonce:'generation-1',at:'2020-01-01T00:00:00Z'}));
+    let calls=0;
+    assert.throws(()=>createLock(t.file,{now,dead:()=>{
+      if(++calls===1)writeFileSync(file,JSON.stringify({pid:88888888,nonce:'generation-2',at:'2020-01-01T00:00:00Z'}));
+      return true;
+    }}),/LOCK_CHANGED_DURING_RECOVERY/);
+    assert.equal(existsSync(dir),true);
+    assert.equal(existsSync(dir+'.takeover'),false);
   }finally{t.cleanup();}
 });
