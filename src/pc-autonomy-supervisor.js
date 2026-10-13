@@ -21,8 +21,58 @@ export function assertConfig(c){
 }
 export function localRead(file,fallback=null){if(!existsSync(file))return structuredClone(fallback);return JSON.parse(readFileSync(file,'utf8'));}
 export function atomicWrite(file,body){mkdirSync(dirname(file),{recursive:true});const t=file+'.tmp-'+process.pid+'-'+randomUUID();const fd=openSync(t,'wx',0o600);try{writeFileSync(fd,JSON.stringify(body,null,2)+'\n');}finally{closeSync(fd);}renameSync(t,file);}
-export function createLock(file){const dir=file+'.lock';mkdirSync(dirname(dir),{recursive:true});mkdirSync(dir);let released=false;const nonce=randomUUID();try{writeFileSync(dir+'/owner.json',JSON.stringify({pid:process.pid,nonce,at:new Date().toISOString()}),{flag:'wx'});}catch(e){rmSync(dir,{recursive:true,force:true});throw e;}
-  return ()=>{if(released)return;released=true;try{const own=JSON.parse(readFileSync(dir+'/owner.json','utf8'));if(own.pid===process.pid&&own.nonce===nonce)rmSync(dir,{recursive:true,force:true});}catch{}};
+export const LOCK_STALE_GRACE_MS=120000;
+export function ownerProcessIsDead(pid){
+  if(!Number.isSafeInteger(pid)||pid<1)return false;
+  try{process.kill(pid,0);return false;}
+  catch(e){return e?.code==='ESRCH';}
+}
+function readLockOwner(dir){
+  try{
+    const x=JSON.parse(readFileSync(dir+'/owner.json','utf8'));
+    if(!Number.isSafeInteger(x?.pid)||x.pid<1||typeof x.nonce!=='string'||!x.nonce
+      ||!Number.isFinite(Date.parse(x.at)))return null;
+    return x;
+  }catch{return null;}
+}
+export function createLock(file,{now=Date.now(),dead=ownerProcessIsDead}={}){
+  const dir=file+'.lock';
+  mkdirSync(dirname(dir),{recursive:true});
+  const allocate=()=>{
+    mkdirSync(dir);
+    const owner={pid:process.pid,nonce:randomUUID(),at:new Date().toISOString()};
+    try{writeFileSync(dir+'/owner.json',JSON.stringify(owner),{flag:'wx',mode:0o600});}
+    catch(e){rmSync(dir,{recursive:true,force:true});throw e;}
+    return owner;
+  };
+  let owner;
+  try{owner=allocate();}
+  catch(e){
+    if(e.code!=='EEXIST')throw e;
+    const gate=dir+'.takeover';
+    mkdirSync(gate); // Single-winner stale recovery; never steal if another owner is active.
+    try{
+      const a=readLockOwner(dir);
+      const eligible=x=>x && x.pid!==process.pid &&
+        now-Date.parse(x.at)>=LOCK_STALE_GRACE_MS &&
+        now>=Date.parse(x.at)&&dead(x.pid)===true;
+      if(!eligible(a))throw new Error('AUTONOMY_LOCK_BUSY_OR_UNVERIFIED');
+      const b=readLockOwner(dir);
+      if(!eligible(b)||a.pid!==b.pid||a.nonce!==b.nonce||a.at!==b.at)
+        throw new Error('AUTONOMY_LOCK_CHANGED_DURING_RECOVERY');
+      // Retain old owner file as an immutable investigation breadcrumb.
+      renameSync(dir,dir+'.orphan.'+randomUUID());
+      owner=allocate();
+    }finally{rmSync(gate,{recursive:true,force:true});}
+  }
+  let released=false;
+  return ()=>{
+    if(released)return;
+    released=true;
+    const current=readLockOwner(dir);
+    if(current?.pid===owner.pid && current.nonce===owner.nonce && current.at===owner.at)
+      rmSync(dir,{recursive:true,force:true});
+  };
 }
 function isFresh(row,now,ageMs=120000){const stamp=Date.parse(String(row?.observedAt||row?.updatedAt||''));return Number.isFinite(stamp)&&stamp<=now&&now-stamp<=ageMs;}
 export function admission({config,bridge={},cutover={},operator={},relay={},now=Date.now()}){
