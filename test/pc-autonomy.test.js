@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync, readFileSync, mkdirSync, writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {verifyR45Release} from '../bin/pc-autonomy-daemon.js';
+import {verifyR45Release,readRelayProbe} from '../bin/pc-autonomy-daemon.js';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {CONTRACT, admission, PcAutonomySupervisor, atomicWrite, localRead, budgetCheck, createLock, assertConfig, httpJson} from '../src/pc-autonomy-supervisor.js';
@@ -39,4 +39,38 @@ test('pinned R45 guarded shadow manifest loads and detects any source tamper',()
     writeFileSync(runner,'module.exports={}');
     assert.throws(()=>verifyR45Release({r45:{runner,sha:exactSha}}),/R45_BLOB_DRIFT/);
   }finally{rmSync(d,{recursive:true,force:true});}
+});
+
+test('existing PC relay health.json is trusted only if live, synced and free of unknown effects',()=>{
+  const t=tmp();
+  try{
+    const record={status:'healthy',phase:'execute_request',live:true,
+      reconciliation_required:false,local_head:'a'.repeat(40),
+      remote_head:'a'.repeat(40),backlog_count:0,updated_at_unix:now/1000};
+    writeFileSync(t.file,JSON.stringify(record));
+    assert.equal(readRelayProbe({relay:{healthFile:t.file}}).status,'HEALTHY');
+    assert.equal(readRelayProbe({relay:{healthFile:t.file}}).observedAt,new Date(now).toISOString());
+    record.reconciliation_required=true;
+    writeFileSync(t.file,JSON.stringify(record));
+    assert.equal(readRelayProbe({relay:{healthFile:t.file}}).status,'UNKNOWN');
+    record.reconciliation_required=false;record.remote_head='b'.repeat(40);
+    writeFileSync(t.file,JSON.stringify(record));
+    assert.equal(readRelayProbe({relay:{healthFile:t.file}}).status,'UNKNOWN');
+    record.remote_head=record.local_head;record.backlog_count=1;
+    writeFileSync(t.file,JSON.stringify(record));
+    assert.equal(readRelayProbe({relay:{healthFile:t.file}}).status,'UNKNOWN');
+  }finally{t.cleanup();}
+});
+test('offline local Ollama proposal is allowed under R42 HOLD but cannot Send',async()=>{
+  const t=tmp(),conf={...cfg('observe'),enableBrain:true};
+  let params;
+  try{
+    const p=probes();p.cutover.cutoverState.holdActive=true;
+    const b=new PcAutonomySupervisor({config:conf,statePath:t.file,clock:()=>now,
+      probes:async()=>p,runner:async o=>{params=o;return {status:'READ_ONLY',dispatched:[]};}});
+    const r=await b.cycle({dispatch:true,brain:true});
+    assert.deepEqual(params,{dispatch:false,brain:true});
+    assert.equal(r.dispatchEnabled,false);
+    assert.ok(r.decision.blocks.includes('r42_cutover_hold'));
+  }finally{t.cleanup();}
 });
