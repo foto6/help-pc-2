@@ -47,7 +47,7 @@ export async function runCli(argv=process.argv.slice(2),{probes,runner,clock}={}
   const engine=runner || require(source).tick;
   const poll=probes|| (async()=>{
     let snap;
-    try{snap=await probeBridge(cfg);}catch(e){snap={bridge:{health:{state:'UNKNOWN'}},cutover:{},operator:{},probeFailure:String(e?.code||'ERROR')}};}
+    try{snap=await probeBridge(cfg);}catch(e){snap={bridge:{health:{state:'UNKNOWN'}},cutover:{},operator:{},probeFailure:String(e?.code||'ERROR')};}
     snap.relay=readRelayProbe(cfg);
     if(snap.probeFailure)throw new Error(snap.probeFailure);
     if(cfg.native?.url){try{snap.native=await httpJson(cfg.native.url,'/v1/health',{token:process.env.PC_NATIVE_TOKEN});}catch{snap.native={status:'UNAVAILABLE'};}}
