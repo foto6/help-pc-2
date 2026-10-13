@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+import {createRequire} from 'node:module';
+import {resolve, dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
+import {readFileSync, existsSync} from 'node:fs';
+import {setTimeout as sleep} from 'node:timers/promises';
+import {PcAutonomySupervisor, httpJson, probeBridge, assertConfig, createLock, MIN_INTERVAL_MS} from '../src/pc-autonomy-supervisor.js';
+
+const configFlag=(args,key)=>{const i=args.indexOf(key);return i<0?null:args[i+1];};
+function absoluteConfig(argv){const name=configFlag(argv,'--config');if(!name)throw new Error('REQUIRED_--config');const p=resolve(name);const cfg=JSON.parse(readFileSync(p,'utf8'));assertConfig(cfg);return {cfg,path:p};}
+export function readRelayProbe(cfg){
+  if(!cfg.relay?.healthFile)return {status:'UNKNOWN',observedAt:''};
+  try{
+    const raw=JSON.parse(readFileSync(resolve(cfg.relay.healthFile),'utf8'));
+    // Owner-provided relay producer snapshot only, not a string supplied by AI.
+    const state=String(raw.status||raw.state||'UNKNOWN').toUpperCase();
+    const reconciliation=raw.reconciliation_required??raw.reconciliationRequired;
+    const unix=Number(raw.updated_at_unix);
+    const observedAt=Number.isFinite(unix)&&unix>0
+      ?new Date(unix*1000).toISOString()
+      :String(raw.observedAt||raw.updatedAt||'');
+    const synced=typeof raw.local_head==='string'&&raw.local_head.length===40
+      &&raw.local_head===raw.remote_head;
+    const healthy=state==='HEALTHY' && reconciliation===false && raw.live===true
+      && synced && raw.backlog_count===0;
+    return {status:healthy?'HEALTHY':'UNKNOWN',observedAt};
+  }catch{return {status:'UNKNOWN',observedAt:''};}
+}
+export function verifyR45Release(cfg){
+  const runner=resolve(cfg.r45.runner), manifest=resolve(dirname(runner),'MANIFEST.json');
+  if(!existsSync(manifest))throw new Error('R45_VERIFIED_MANIFEST_REQUIRED');
+  const m=JSON.parse(readFileSync(manifest,'utf8'));
+  const shadowOnly=m?.deployment==='SHADOW_ONLY' || (m?.schema==='r45.isolated.release.v1' && m?.dispatchEnabled===false && m?.running===false && m?.productionModified===false);
+  if(!shadowOnly||!/^[a-f0-9]{40}$/i.test(m?.exactSha||'')||
+    !m.files||typeof m.files!=='object'||!m.files['autonomy-r45-runner.js'])
+    throw new Error('R45_UNVERIFIED_RELEASE');
+  if(cfg.r45.sha && cfg.r45.sha!==m.exactSha)throw new Error('R45_SHA_DRIFT');
+  for(const [file,sha] of Object.entries(m.files)){
+    if(!/^[\w.-]{1,100}$/.test(file)||!/^[a-f0-9]{40}$/i.test(sha))throw new Error('R45_MANIFEST_INVALID');
+    const body=readFileSync(resolve(dirname(runner),file));
+    const hash=createHash('sha1').update('blob '+body.length+'\0').update(body).digest('hex');
+    if(hash!==sha)throw new Error('R45_BLOB_DRIFT_'+file);
+  }
+  return runner;
+}
+export async function runCli(argv=process.argv.slice(2),{probes,runner,clock,stopSignal=null}={}){
+  const {cfg}=absoluteConfig(argv);
+  const isWatch=argv.includes('--watch');
+  if(isWatch && argv.includes('--once'))throw new Error('SELECT_ONCE_OR_WATCH');
+  const dispatch=argv.includes('--dispatch');
+  if(dispatch && cfg.mode!=='armed')throw new Error('DISPATCH_REQUIRES_ARMED_CONFIG');
+  if(dispatch && !argv.includes('--i-accept-real-send'))throw new Error('REAL_SEND_REQUIRES_EXPLICIT_FLAG');
+  const source=verifyR45Release(cfg);
+  const require=createRequire(import.meta.url);
+  const nativeR45=require(source);
+  const engine=runner || nativeR45.tick;
+  const poll=probes|| (async()=>{
+    let snap;
+    try{snap=await probeBridge(cfg);}catch(e){snap={bridge:{health:{state:'UNKNOWN'}},cutover:{},operator:{},probeFailure:String(e?.code||'ERROR')};}
+    snap.relay=readRelayProbe(cfg);
+    if(snap.probeFailure)throw new Error(snap.probeFailure);
+    if(cfg.native?.url){try{snap.native=await httpJson(cfg.native.url,'/v1/health',{token:process.env.PC_NATIVE_TOKEN});}catch{snap.native={status:'UNAVAILABLE'};}}
+    return snap;
+  });
+  const supervisor=new PcAutonomySupervisor({config:cfg,statePath:resolve(cfg.state),probes:poll,clock,runner:async({dispatch:go,brain})=>{
+    const plan=JSON.parse(readFileSync(resolve(cfg.r45.plan),'utf8'));
+    // One new side effect per coordinator cycle; never dispatch an entire wave
+    // before its independently verified task-by-task budget is evaluated.
+    const safePlan={...plan,maxParallel:1};
+    const observe=async base=>{
+      // Reuse R45's already-proven large-assignment observation transport;
+      // avoid truncating the real 69-assignment registry.
+      const snapshot=await nativeR45.observe(base);
+      const health=snapshot.health||{};
+      const clean=health.state==='OK'&&!(health.reasons||[]).length&&!(health.blockers||[]).length;
+      return {...snapshot,health:clean?{...health,state:'HEALTHY'}:health};
+    };
+    return engine({plan:safePlan,stateFile:resolve(cfg.r45.state),base:cfg.bridge.url,dispatch:go,brain,hooks:{observe}});
+  }});
+  const once=async()=>{const res=await supervisor.cycle({dispatch,brain:cfg.enableBrain===true});process.stdout.write(JSON.stringify(res)+'\n');return res;};
+  if(!isWatch)return once();
+  const ms=cfg.pollIntervalMs??60000;if(ms<MIN_INTERVAL_MS)throw new Error('INTERVAL_TOO_SHORT');
+  // Hold an independent exclusive process lease for the ENTIRE watcher lifetime.
+  // Per-tick locks alone cannot prevent two agents alternating turns forever.
+  const unlockWatcher=createLock(resolve(cfg.state)+'.watcher');
+  let stopping=false;
+  const stop=()=>{stopping=true;};
+  process.once('SIGINT',stop);process.once('SIGTERM',stop);
+  stopSignal?.addEventListener('abort',stop,{once:true});
+  try{
+    while(!stopping){try{await once();}catch(e){process.stderr.write('pc-autonomy: '+String(e?.code||e?.message||'ERROR').slice(0,160)+'\n');}if(!stopping)await sleep(ms);}
+  }finally{
+    process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);
+    stopSignal?.removeEventListener('abort',stop);
+    unlockWatcher();
+  }
+}
+if(process.argv[1] && resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url)))runCli().catch(e=>{process.stderr.write(String(e?.message||e)+'\n');process.exitCode=1;});
