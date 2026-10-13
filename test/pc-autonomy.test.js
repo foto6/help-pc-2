@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, rmSync, readFileSync} from 'node:fs';
+import {mkdtempSync, rmSync, readFileSync, mkdirSync, writeFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {verifyR45Release} from '../bin/pc-autonomy-daemon.js';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {CONTRACT, admission, PcAutonomySupervisor, atomicWrite, localRead, budgetCheck, createLock, assertConfig, httpJson} from '../src/pc-autonomy-supervisor.js';
@@ -21,3 +23,20 @@ test('corrupted journal fails closed instead of resetting',async()=>{const t=tmp
 test('disallow chat opens, rate-limit bypass, insecure origins, fast polling and unapproved arming',()=>{for(const bad of [{allowNewChat:true},{allowProviderRateBypass:true},{pollIntervalMs:1000},{operatorApproved:false}])assert.throws(()=>assertConfig({...cfg(),...bad}),/AUTONOMY_/);assert.throws(()=>assertConfig({...cfg(),bridge:{url:'http://1.2.3.4:17448'}}),/AUTONOMY_LOOPBACK/);});
 test('reject non-loopback URL even for read-only probes',async()=>{await assert.rejects(()=>httpJson('http://example.com','/api/health'),/LOCAL_ONLY/);});
 test('budget one hour window prunes old sends without replay',()=>{assert.equal(budgetCheck({sends:[now-3700000,now-120000,now-91000]},now,3,90000).allowed,true);assert.equal(budgetCheck({sends:[now-120000,now-91000,now-10000]},now,3,90000).allowed,false);});
+
+test('pinned R45 guarded shadow manifest loads and detects any source tamper',()=>{
+  const d=mkdtempSync(join(tmpdir(),'r45-durable-autonomy-'));
+  try {
+    const dir=join(d,'releases','28e4-test');mkdirSync(dir,{recursive:true});
+    const runner=join(dir,'autonomy-r45-runner.js');
+    const body=Buffer.from('module.exports={tick:()=>({status:"READ_ONLY"})};');
+    writeFileSync(runner,body);
+    const sha=createHash('sha1').update('blob '+body.length+'\0').update(body).digest('hex');
+    const exactSha='a'.repeat(40);
+    writeFileSync(join(dir,'MANIFEST.json'),JSON.stringify({schema:'r45.isolated.release.v1',exactSha,
+      dispatchEnabled:false,running:false,productionModified:false,files:{'autonomy-r45-runner.js':sha}}));
+    assert.equal(verifyR45Release({r45:{runner,sha:exactSha}}),runner);
+    writeFileSync(runner,'module.exports={}');
+    assert.throws(()=>verifyR45Release({r45:{runner,sha:exactSha}}),/R45_BLOB_DRIFT/);
+  }finally{rmSync(d,{recursive:true,force:true});}
+});
