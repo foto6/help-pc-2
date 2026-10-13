@@ -48,3 +48,21 @@ Run focused checks with \`node --test test/pc-autonomy.test.js\`. No tool-safety
 
 
 Local-only Ollama task proposals can be prepared while R42 HOLD is active, provided the approved finite R45 plan allows bounded planning. This does not enable browser Send; dispatch still requires every PC Control and R42 gate.
+
+
+## Verified Windows always-on observer and crash recovery — 2026-10-13
+
+**Exact tested code release:** \`d5c2ac399b3dc71cb9f83f28c2fc86ed942878bd\`. This release introduces a **lifetime watcher lease** alongside the pre-existing per-cycle transaction lock. A second \`--watch\` process aborts with \`AUTONOMY_LOCK_BUSY_OR_UNVERIFIED\`; a crash-abandoned lease can only be recovered after a two-minute grace period and independent proof that the recorded PID is dead, with immutable orphan evidence retained. A running or ambiguous PID is never stolen. Windows+Ubuntu focused regressions: [GitHub Actions 38344447668](https://github.com/foto6/help-pc-2/actions/runs/38344447668), full CI additionally [38344447719](https://github.com/foto6/help-pc-2/actions/runs/38344447719). The exact seven local source blobs and Node tests were also verified before controlled installation.
+
+Operator-PC production remains separated:
+- R41 isolated root: \`E:\PCControlAutonomyR41\`
+- User observer source: \`E:\PCControlAutonomyR41\releases\d5c2ac399b3dc71cb9f83f28c2fc86ed942878bd\`
+- Current-user startup target: \`E:\PCControlAutonomyR41\START_R41_OBSERVER.cmd\`
+- Current-user shutdown: \`E:\PCControlAutonomyR41\STOP_R41_USER_OBSERVER.cmd\`
+- Separate structured state: \`E:\PCControlAutonomyR41\data\pc-control-supervisor.json\`
+- Current observer PID at verification: 8276. Lifetime lock is owned by the same exact PID, read-only \`--watch\`. Running a second watcher returned code 1 before any cycle.
+- Automatic retry on next Windows user login: Startup cmd restarts a failed Node observer after a bounded 75-second delay, subject to the lifetime lock. A user STOP sets the explicit \`data\STOP_R41_OBSERVER.flag\` to prevent respawn, then terminates only the exact R41 Node process and removes the owned startup entry.
+- All updates save backups under \`E:\PCControlAutonomyR41\backups\`; previous source releases remain unchanged.
+- This user-level login startup **does not provide machine-level Windows service uptime when no user is logged in**. The scheduler ONLOGON attempt was denied by Windows and was not forced through elevation.
+
+**Authority caveat:** R49 WebAIBridge continues at \`5da11c6b...\` with \`CUTOVER_HOLD_PREPARED\`, deliberate \`holdActive:true\`, watchdog \`enabled:false\` and \`allowAutonomousSend:false\`. The browser profile on debug port 17410 was directly observed with \`workerConnected:true\` on 2026-10-13; older \`profile_offline\` managed-chat entries are cached, not proof of current offline state. No automatic ChatGPT Send was enabled. See [independent Boss evidence](https://github.com/foto6/boss/pull/9).
