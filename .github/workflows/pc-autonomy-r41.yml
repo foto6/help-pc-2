@@ -1,0 +1,24 @@
+name: R41 PC Control Autonomy Safety
+on:
+  push:
+    branches: ['agent/pc-autonomy-r41-native-supervisor-20261013']
+    paths: ['src/pc-autonomy-supervisor.js','bin/pc-autonomy-daemon.js','test/pc-autonomy.test.js','.github/workflows/pc-autonomy-r41.yml']
+  pull_request:
+    paths: ['src/pc-autonomy-supervisor.js','bin/pc-autonomy-daemon.js','test/pc-autonomy.test.js','.github/workflows/pc-autonomy-r41.yml']
+jobs:
+  safe-no-send:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Source syntax and deterministic fail-closed regressions
+        run: |
+          node --check src/pc-autonomy-supervisor.js
+          node --check bin/pc-autonomy-daemon.js
+          node --test test/pc-autonomy.test.js
