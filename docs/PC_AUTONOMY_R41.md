@@ -45,3 +45,6 @@ Missing or stale gates fail closed. A 429 or unknown side effect induces cooldow
 **As of 2026-10-13**, production WebAIBridge R49 is BLOCKED, R42 HOLD remains active, and an unsent Telegram Curator assignment is queued. No safe basis exists to unpause or dispatch yet. The R41 code may be run **only as an isolated observer** while those issues remain.
 
 Run focused checks with \`node --test test/pc-autonomy.test.js\`. No tool-safety disabling, social publishing, repo resets, Chrome restarts, or access to \`E:\manhwa\` is part of this implementation.
+
+
+Local-only Ollama task proposals can be prepared while R42 HOLD is active, provided the approved finite R45 plan allows bounded planning. This does not enable browser Send; dispatch still requires every PC Control and R42 gate.
