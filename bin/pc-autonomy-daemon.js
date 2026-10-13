@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
 import {readFileSync, existsSync} from 'node:fs';
 import {setTimeout as sleep} from 'node:timers/promises';
-import {PcAutonomySupervisor, httpJson, probeBridge, assertConfig, MIN_INTERVAL_MS} from '../src/pc-autonomy-supervisor.js';
+import {PcAutonomySupervisor, httpJson, probeBridge, assertConfig, createLock, MIN_INTERVAL_MS} from '../src/pc-autonomy-supervisor.js';
 
 const configFlag=(args,key)=>{const i=args.indexOf(key);return i<0?null:args[i+1];};
 function absoluteConfig(argv){const name=configFlag(argv,'--config');if(!name)throw new Error('REQUIRED_--config');const p=resolve(name);const cfg=JSON.parse(readFileSync(p,'utf8'));assertConfig(cfg);return {cfg,path:p};}
@@ -44,7 +44,7 @@ export function verifyR45Release(cfg){
   }
   return runner;
 }
-export async function runCli(argv=process.argv.slice(2),{probes,runner,clock}={}){
+export async function runCli(argv=process.argv.slice(2),{probes,runner,clock,stopSignal=null}={}){
   const {cfg}=absoluteConfig(argv);
   const isWatch=argv.includes('--watch');
   if(isWatch && argv.includes('--once'))throw new Error('SELECT_ONCE_OR_WATCH');
@@ -81,7 +81,19 @@ export async function runCli(argv=process.argv.slice(2),{probes,runner,clock}={}
   const once=async()=>{const res=await supervisor.cycle({dispatch,brain:cfg.enableBrain===true});process.stdout.write(JSON.stringify(res)+'\n');return res;};
   if(!isWatch)return once();
   const ms=cfg.pollIntervalMs??60000;if(ms<MIN_INTERVAL_MS)throw new Error('INTERVAL_TOO_SHORT');
-  let stopping=false;process.once('SIGINT',()=>{stopping=true;});process.once('SIGTERM',()=>{stopping=true;});
-  while(!stopping){try{await once();}catch(e){process.stderr.write('pc-autonomy: '+String(e?.code||e?.message||'ERROR').slice(0,160)+'\n');}if(!stopping)await sleep(ms);}
+  // Hold an independent exclusive process lease for the ENTIRE watcher lifetime.
+  // Per-tick locks alone cannot prevent two agents alternating turns forever.
+  const unlockWatcher=createLock(resolve(cfg.state)+'.watcher');
+  let stopping=false;
+  const stop=()=>{stopping=true;};
+  process.once('SIGINT',stop);process.once('SIGTERM',stop);
+  stopSignal?.addEventListener('abort',stop,{once:true});
+  try{
+    while(!stopping){try{await once();}catch(e){process.stderr.write('pc-autonomy: '+String(e?.code||e?.message||'ERROR').slice(0,160)+'\n');}if(!stopping)await sleep(ms);}
+  }finally{
+    process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);
+    stopSignal?.removeEventListener('abort',stop);
+    unlockWatcher();
+  }
 }
 if(process.argv[1] && resolve(process.argv[1])===resolve(fileURLToPath(import.meta.url)))runCli().catch(e=>{process.stderr.write(String(e?.message||e)+'\n');process.exitCode=1;});
