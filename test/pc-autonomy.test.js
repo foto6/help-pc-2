@@ -196,7 +196,7 @@ test('R49 ledger forbids ambiguous queued retry, running Send, missing IDs and m
   {id:'unknown',state:'mystery'},
   {id:'blockedUncertain',state:'blocked',dispatchSubmitAttempted:true,dispatchCount:1},
   {id:'noConfirmedUnsent',state:'queued',dispatchCount:0},
-  {id:'already',state:'queued',dispatchSubmitAttempted:false,dispatchCount:0},
+  {id:'curator',state:'queued',dispatchSubmitAttempted:false,dispatchCount:0},
   {id:'activeEvidence',state:'awaiting_evidence',dispatchCount:1},
  ]) {
   const candidate={assignments:[...base.assignments,bad]};
