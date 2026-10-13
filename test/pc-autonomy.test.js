@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync, readFileSync, mkdirSync, writeFileSync, readdirSync, existsSync} from 'node:fs';
 import {createHash} from 'node:crypto';
-import {verifyR45Release,readRelayProbe} from '../bin/pc-autonomy-daemon.js';
+import {verifyR45Release,readRelayProbe,runCli} from '../bin/pc-autonomy-daemon.js';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {CONTRACT, admission, PcAutonomySupervisor, atomicWrite, localRead, budgetCheck, createLock, LOCK_STALE_GRACE_MS, assertConfig, httpJson} from '../src/pc-autonomy-supervisor.js';
@@ -127,4 +127,48 @@ test('lock takeover race is fenced by exact owner nonce and recheck',()=>{
     assert.equal(existsSync(dir),true);
     assert.equal(existsSync(dir+'.takeover'),false);
   }finally{t.cleanup();}
+});
+
+test('two long-lived coordinators cannot alternate turns or duplicate watcher ownership',async()=>{
+  const home=mkdtempSync(join(tmpdir(),'pc-native-single-watch-'));
+  try{
+    const release=join(home,'r45-durable-autonomy','releases','test-source');
+    mkdirSync(release,{recursive:true});
+    const source=join(release,'autonomy-r45-runner.js');
+    const bytes=Buffer.from('module.exports={tick:()=>({status:"READ_ONLY"}),observe:async()=>({})};');
+    writeFileSync(source,bytes);
+    const gitBlob=createHash('sha1').update('blob '+bytes.length+'\0').update(bytes).digest('hex');
+    const fixedSha='a'.repeat(40);
+    writeFileSync(join(release,'MANIFEST.json'),JSON.stringify({
+      schema:'r45.isolated.release.v1',exactSha:fixedSha,
+      dispatchEnabled:false,running:false,productionModified:false,
+      files:{'autonomy-r45-runner.js':gitBlob},
+    }));
+    const planFile=join(home,'plan.json');
+    writeFileSync(planFile,JSON.stringify({allowDispatch:false,tasks:[]}));
+    const stateFile=join(home,'supervisor-state.json');
+    const cfgFile=join(home,'config.json');
+    writeFileSync(cfgFile,JSON.stringify({
+      ...cfg('observe'),r45:{runner:source,plan:planFile,state:join(home,'r45-state.json'),sha:fixedSha},
+      state:stateFile,
+    }));
+    let enter;
+    const entered=new Promise(done=>{enter=done;});
+    let resume;
+    const held=new Promise(done=>{resume=done;});
+    const stopper=new AbortController();
+    const read=async()=>probes();
+    const runner=async()=>{enter();await held;return {status:'READ_ONLY',dispatched:[]};};
+    const first=runCli(['--config',cfgFile,'--watch'],{probes:read,runner,stopSignal:stopper.signal,clock:()=>now});
+    await entered;
+    assert.equal(existsSync(stateFile+'.watcher.lock'),true);
+    await assert.rejects(()=>runCli(['--config',cfgFile,'--watch'],{
+      probes:read,runner:async()=>{throw Error('NEVER_EXECUTE_SECOND_WATCHER');},clock:()=>now,
+      stopSignal:new AbortController().signal,
+    }),/AUTONOMY_LOCK_BUSY_OR_UNVERIFIED/);
+    stopper.abort();resume();
+    await first;
+    assert.equal(existsSync(stateFile+'.watcher.lock'),false);
+    assert.equal(JSON.parse(readFileSync(stateFile,'utf8')).revision,1);
+  }finally{rmSync(home,{force:true,recursive:true});}
 });
