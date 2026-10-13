@@ -207,3 +207,103 @@ test('R49 ledger forbids ambiguous queued retry, running Send, missing IDs and m
  assert.equal(assignmentLedgerSafety({assignments:null}).safe,false);
  assert.equal(assignmentLedgerSafety({}).safe,false);
 });
+
+
+test('write-ahead budget and original dispatch intent exist before asynchronous provider work starts',async()=>{
+  const t=tmp();let entered,finish;
+  const seen=new Promise(r=>entered=r);
+  const pending=new Promise(r=>finish=r);
+  try{
+    const worker=new PcAutonomySupervisor({
+      config:cfg(),statePath:t.file,clock:()=>now,
+      probes:async()=>probes(),
+      runner:async ({dispatch})=>{
+        assert.equal(dispatch,true);entered();return await pending;
+      },
+    });
+    const work=worker.cycle({dispatch:true});
+    await seen;
+    const during=localRead(t.file);
+    assert.equal(during.pendingDispatch.status,'AWAITING_R45_RESULT');
+    assert.equal(typeof during.pendingDispatch.token,'string');
+    assert.equal(during.sends.length,1);
+    assert.equal(during.sends[0],now);
+    finish({status:'CYCLE_COMPLETE',dispatched:[{assignmentId:'exact-1'}],reconciliationRequired:[]});
+    const after=await work;
+    assert.equal(after.decision.dispatched,1);
+    assert.equal(localRead(t.file).pendingDispatch,null);
+    assert.equal(localRead(t.file).sends.length,1);
+  }finally{t.cleanup();}
+});
+test('ambiguous R45 partial completion preserves original token and prevents future dispatch',async()=>{
+  const t=tmp(),p=probes();
+  let calls=0;
+  try{
+    const worker=new PcAutonomySupervisor({
+      config:cfg(),statePath:t.file,clock:()=>now,probes:async()=>p,
+      runner:async ({dispatch})=>{
+        if(dispatch)calls++;
+        return dispatch?{
+          status:'PARTIAL',dispatched:[],
+          reconciliationRequired:['task-awaiting-proof'],
+        }:{status:'READ_ONLY',dispatched:[]};
+      },
+    });
+    const first=await worker.cycle({dispatch:true});
+    assert.equal(first.unknownEffects,1);
+    assert.equal(first.decision.uncertainEffect,true);
+    const saved=localRead(t.file);
+    assert.equal(saved.pendingDispatch.status,'AWAITING_R45_RESULT');
+    assert.equal(saved.pendingUnknown.length,1);
+    const token=saved.pendingDispatch.token;
+    const newWorker=new PcAutonomySupervisor({
+      config:cfg(),statePath:t.file,clock:()=>now+200000,
+      probes:async()=>({...p,relay:{status:'HEALTHY',observedAt:new Date(now+200000).toISOString()}}),
+      runner:async ({dispatch})=>{
+        if(dispatch)calls++;
+        return {status:'READ_ONLY',dispatched:[]};
+      },
+    });
+    const second=await newWorker.cycle({dispatch:true});
+    assert.equal(second.dispatchEnabled,false);
+    assert.ok(second.decision.blocks.includes('unresolved_dispatch_intent'));
+    assert.equal(localRead(t.file).pendingDispatch.token,token);
+    assert.equal(calls,1);
+  }finally{t.cleanup();}
+});
+test('restarted process refuses a prior uncompleted transaction even after send budget has expired',async()=>{
+  const t=tmp();let actuallyDispatched=0;
+  try{
+    atomicWrite(t.file,{
+      contract:CONTRACT,revision:8,sends:[now-3700000],
+      pendingUnknown:[],
+      pendingDispatch:{at:new Date(now-3700000).toISOString(),token:'pre-crash-original-request',status:'AWAITING_R45_RESULT'},
+    });
+    const b=new PcAutonomySupervisor({
+      config:cfg(),statePath:t.file,clock:()=>now,
+      probes:async()=>probes(),
+      runner:async ({dispatch})=>{
+        if(dispatch)actuallyDispatched++;
+        return {status:'READ_ONLY',dispatched:[]};
+      },
+    });
+    const result=await b.cycle({dispatch:true});
+    assert.equal(result.dispatchEnabled,false);
+    assert.equal(actuallyDispatched,0);
+    assert.ok(result.decision.blocks.includes('unresolved_dispatch_intent'));
+    assert.equal(localRead(t.file).pendingDispatch.token,'pre-crash-original-request');
+  }finally{t.cleanup();}
+});
+test('budget reservation stays conservative even if authorized R45 finds no pending work',async()=>{
+  const t=tmp();
+  try{
+    const b=new PcAutonomySupervisor({
+      config:cfg(),statePath:t.file,clock:()=>now,probes:async()=>probes(),
+      runner:async()=>({status:'NO_PENDING_TASKS',dispatched:[],reconciliationRequired:[]}),
+    });
+    await b.cycle({dispatch:true});
+    const saved=localRead(t.file);
+    assert.equal(saved.sends.length,1);
+    assert.equal(saved.pendingDispatch,null);
+  }finally{t.cleanup();}
+});
