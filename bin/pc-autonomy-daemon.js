@@ -9,14 +9,22 @@ import {PcAutonomySupervisor, httpJson, probeBridge, assertConfig, MIN_INTERVAL_
 
 const configFlag=(args,key)=>{const i=args.indexOf(key);return i<0?null:args[i+1];};
 function absoluteConfig(argv){const name=configFlag(argv,'--config');if(!name)throw new Error('REQUIRED_--config');const p=resolve(name);const cfg=JSON.parse(readFileSync(p,'utf8'));assertConfig(cfg);return {cfg,path:p};}
-function readRelayProbe(cfg){
+export function readRelayProbe(cfg){
   if(!cfg.relay?.healthFile)return {status:'UNKNOWN',observedAt:''};
   try{
     const raw=JSON.parse(readFileSync(resolve(cfg.relay.healthFile),'utf8'));
     // Owner-provided relay producer snapshot only, not a string supplied by AI.
     const state=String(raw.status||raw.state||'UNKNOWN').toUpperCase();
-    const healthy=state==='HEALTHY' && raw.reconciliationRequired===false;
-    return {status:healthy?'HEALTHY':'UNKNOWN',observedAt:String(raw.observedAt||raw.updatedAt||'')};
+    const reconciliation=raw.reconciliation_required??raw.reconciliationRequired;
+    const unix=Number(raw.updated_at_unix);
+    const observedAt=Number.isFinite(unix)&&unix>0
+      ?new Date(unix*1000).toISOString()
+      :String(raw.observedAt||raw.updatedAt||'');
+    const synced=typeof raw.local_head==='string'&&raw.local_head.length===40
+      &&raw.local_head===raw.remote_head;
+    const healthy=state==='HEALTHY' && reconciliation===false && raw.live===true
+      && synced && raw.backlog_count===0;
+    return {status:healthy?'HEALTHY':'UNKNOWN',observedAt};
   }catch{return {status:'UNKNOWN',observedAt:''};}
 }
 export function verifyR45Release(cfg){
