@@ -45,7 +45,8 @@ export async function runCli(argv=process.argv.slice(2),{probes,runner,clock}={}
   if(dispatch && !argv.includes('--i-accept-real-send'))throw new Error('REAL_SEND_REQUIRES_EXPLICIT_FLAG');
   const source=verifyR45Release(cfg);
   const require=createRequire(import.meta.url);
-  const engine=runner || require(source).tick;
+  const nativeR45=require(source);
+  const engine=runner || nativeR45.tick;
   const poll=probes|| (async()=>{
     let snap;
     try{snap=await probeBridge(cfg);}catch(e){snap={bridge:{health:{state:'UNKNOWN'}},cutover:{},operator:{},probeFailure:String(e?.code||'ERROR')};}
@@ -60,13 +61,12 @@ export async function runCli(argv=process.argv.slice(2),{probes,runner,clock}={}
     // before its independently verified task-by-task budget is evaluated.
     const safePlan={...plan,maxParallel:1};
     const observe=async base=>{
-      const [health,list,status]=await Promise.all([
-        httpJson(base,'/api/health'),
-        httpJson(base,'/api/supervisor-watchdog/agent-assignments'),
-        httpJson(base,'/api/status'),
-      ]);
+      // Reuse R45's already-proven large-assignment observation transport;
+      // avoid truncating the real 69-assignment registry.
+      const snapshot=await nativeR45.observe(base);
+      const health=snapshot.health||{};
       const clean=health.state==='OK'&&!(health.reasons||[]).length&&!(health.blockers||[]).length;
-      return {health:clean?{...health,state:'HEALTHY'}:health,assignments:list.assignments||[],status};
+      return {...snapshot,health:clean?{...health,state:'HEALTHY'}:health};
     };
     return engine({plan:safePlan,stateFile:resolve(cfg.r45.state),base:cfg.bridge.url,dispatch:go,brain,hooks:{observe}});
   }});
