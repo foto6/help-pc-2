@@ -80,7 +80,9 @@ function scenario({planId,unknownPost=false}){
         if(unknownPost){evidence.unknownPostAttempts++;throw Error('SYNTHETIC_TIMEOUT_UNKNOWN_EFFECT');}
         if(rows.length)throw Error('OFFLINE_DUPLICATE_POST_REJECTED');
         rows.push({id:'synthetic-assignment-'+planId,state:'queued',idempotencyKey,
-          targetChatId:'virtual-offline-chat',dispatchSubmitAttempted:false,dispatchCount:0});
+          targetChatId:'virtual-offline-chat',repository:p.agents[0].repository,
+          branch:p.agents[0].branch,expectedHead:p.tasks[0].expectedHead,
+          dispatchSubmitAttempted:false,dispatchCount:0});
         evidence.assignmentsEnqueued++;
         return {id:rows[0].id};
       }
