@@ -60,7 +60,10 @@ export class PcAutonomySupervisor{
       policy.ready=policy.blocks.length===0;
       const authorizedDispatch=dispatch===true&&policy.ready;
       let result;
-      try{result=await this.runner({dispatch:authorizedDispatch,brain:brain===true&&this.config.enableBrain===true&&policy.ready});}
+      // Local-only Ollama proposals may advance while provider Send is held.
+      // They cannot open a ChatGPT tab or override the PC Control gates.
+      const localBrain=brain===true&&this.config.enableBrain===true&&s.pendingUnknown.length===0;
+      try{result=await this.runner({dispatch:authorizedDispatch,brain:localBrain});}
       catch(e){result={status:authorizedDispatch?'DISPATCH_UNKNOWN':'COORDINATOR_ERROR',code:errorCode(e),dispatched:[]};}
       const emitted=Array.isArray(result?.dispatched)?result.dispatched:[];
       s.sends=budget.history.concat(authorizedDispatch?emitted.map(()=>now):[]).slice(-60);
