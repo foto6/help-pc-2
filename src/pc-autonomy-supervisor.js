@@ -128,6 +128,54 @@ export class PcAutonomySupervisor{
     } finally{unlock();}
   }
 }
-export async function httpJson(origin,route,{timeoutMs=5000,token}={}){const u=new URL(origin);if(u.protocol!=='http:'||!['127.0.0.1','localhost'].includes(u.hostname)||u.username||u.password||u.pathname!=='/'||u.search)throw new Error('LOCAL_ONLY');const r=await fetch(u.origin+route,{redirect:'error',signal:AbortSignal.timeout(timeoutMs),headers:{Accept:'application/json',...(token?{Authorization:'Bearer '+token}:{})}});if(!r.ok)throw Object.assign(new Error('HTTP_'+r.status),{code:'HTTP_'+r.status});const text=await r.text();if(text.length>500000)throw new Error('OVERSIZED_RESPONSE');return JSON.parse(text);}
-export async function probeBridge(config){const u=config.bridge.url;const [health,cutover,operator,supervisor]=await Promise.all([
-  httpJson(u,'/api/health'),httpJson(u,'/api/projects/control-plane/cutover-r42/status'),httpJson(u,'/api/operator-lifecycle'),httpJson(u,'/api/supervisor-watchdog?detect=0')]);const p=asObject(operator);return {bridge:{health},cutover,operator:{mode:p.mode||null,queuePaused:p.queuePaused,allowAutonomousSend:supervisor?.config?.allowAutonomousSend===true,reconciliationRequired:p.reconciliationRequired===false?false:null}};}
+export function assignmentLedgerSafety(payload) {
+  const rows=payload?.assignments;
+  if(!Array.isArray(rows))return {safe:false,reason:'missing_assignment_ledger',unknownCount:1};
+  const seen=new Set();
+  let historicFailed=0,active=0,unknown=0,queued=0;
+  for(const row of rows) {
+    if(!row||typeof row.id!=='string'||!row.id||seen.has(row.id)) {
+      unknown++;continue;
+    }
+    seen.add(row.id);
+    const state=String(row.state||'');
+    if(state==='queued'){
+      queued++;
+      if(row.dispatchSubmitAttempted!==false
+        || Number(row.dispatchCount||0)!==0)unknown++;
+    }else if(['dispatching','running','awaiting_evidence'].includes(state)){
+      active++;unknown++;
+    }else if(['completed','cancelled','blocked','failed'].includes(state)){
+      if(['blocked','failed'].includes(state))historicFailed++;
+      if(row.dispatchSubmitAttempted===true
+         && !row.dispatchFingerprint)unknown++;
+    }else unknown++;
+  }
+  return {safe:unknown===0,reason:unknown?'unreconciled_assignments':'ledger_reconciled',
+    unknownCount:unknown,queued,active,historicFailed,total:rows.length};
+}
+export async function httpJson(origin,route,{timeoutMs=5000,token,maxChars=500000}={}){const u=new URL(origin);if(u.protocol!=='http:'||!['127.0.0.1','localhost'].includes(u.hostname)||u.username||u.password||u.pathname!=='/'||u.search)throw new Error('LOCAL_ONLY');const r=await fetch(u.origin+route,{redirect:'error',signal:AbortSignal.timeout(timeoutMs),headers:{Accept:'application/json',...(token?{Authorization:'Bearer '+token}:{})}});if(!r.ok)throw Object.assign(new Error('HTTP_'+r.status),{code:'HTTP_'+r.status});const text=await r.text();if(text.length>maxChars)throw new Error('OVERSIZED_RESPONSE');return JSON.parse(text);}
+export async function probeBridge(config){
+  const u=config.bridge.url;
+  const [health,cutover,operator,supervisor,assignments]=await Promise.all([
+    httpJson(u,'/api/health'),
+    httpJson(u,'/api/projects/control-plane/cutover-r42/status'),
+    httpJson(u,'/api/operator-lifecycle'),
+    httpJson(u,'/api/supervisor-watchdog?detect=0'),
+    httpJson(u,'/api/supervisor-watchdog/agent-assignments',{timeoutMs:7000,maxChars:2000000}),
+  ]);
+  const p=asObject(operator),ledger=assignmentLedgerSafety(assignments);
+  return {
+    bridge:{health,ledger:{safe:ledger.safe,reason:ledger.reason,unknownCount:ledger.unknownCount,
+      queued:ledger.queued,active:ledger.active,historicFailed:ledger.historicFailed}},
+    cutover,
+    operator:{
+      mode:p.mode||null,
+      queuePaused:p.queuePaused,
+      allowAutonomousSend:supervisor?.config?.allowAutonomousSend===true,
+      // R49 operator lifecycle has no reconciliationRequired field.
+      // Never assume absent === false; use the exact independent assignment ledger.
+      reconciliationRequired:p.reconciliationRequired===true || ledger.safe!==true,
+    },
+  };
+}
