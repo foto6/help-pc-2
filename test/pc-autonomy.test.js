@@ -5,7 +5,7 @@ import {createHash} from 'node:crypto';
 import {verifyR45Release,readRelayProbe,runCli} from '../bin/pc-autonomy-daemon.js';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {CONTRACT, admission, PcAutonomySupervisor, atomicWrite, localRead, budgetCheck, createLock, LOCK_STALE_GRACE_MS, assertConfig, httpJson} from '../src/pc-autonomy-supervisor.js';
+import {CONTRACT, admission, PcAutonomySupervisor, atomicWrite, localRead, budgetCheck, createLock, LOCK_STALE_GRACE_MS, assertConfig, httpJson, assignmentLedgerSafety} from '../src/pc-autonomy-supervisor.js';
 const now=Date.parse('2026-10-13T03:00:00Z');
 function cfg(mode='armed'){return {contract:CONTRACT,mode,operatorApproved:mode==='armed',bridge:{url:'http://127.0.0.1:17448'},r45:{runner:'E:/WebAIBridge/app/data/operator-tools/r45-durable-autonomy/releases/xxx/autonomy-r45-runner.js',plan:'E:/plan.json',state:'E:/state.json'},maxSendsPerHour:3,minSpacingMs:90000,pollIntervalMs:60000};}
 function probes(){return {bridge:{health:{state:'OK',reasons:[]}},cutover:{cutoverState:{holdActive:false}},operator:{mode:'RUNNING_MANAGED',queuePaused:false,allowAutonomousSend:true,reconciliationRequired:false},relay:{status:'HEALTHY',observedAt:new Date(now-3000).toISOString()}};}
@@ -171,4 +171,39 @@ test('two long-lived coordinators cannot alternate turns or duplicate watcher ow
     assert.equal(existsSync(stateFile+'.watcher.lock'),false);
     assert.equal(JSON.parse(readFileSync(stateFile,'utf8')).revision,1);
   }finally{rmSync(home,{force:true,recursive:true});}
+});
+
+test('R49 assignment journal allows future work despite historical terminal CI/evidence failures',()=>{
+  const source={assignments:[
+    {id:'curator',state:'queued',dispatchSubmitAttempted:false,dispatchCount:0},
+    {id:'prior-timeout',state:'blocked',dispatchSubmitAttempted:true,
+      dispatchFingerprint:'specific-fingerprint',dispatchCount:1,dispatchFailureCode:'evidence_timeout'},
+    {id:'prior-ci',state:'failed',dispatchSubmitAttempted:true,
+      dispatchFingerprint:'specific-fingerprint-2',dispatchCount:1,dispatchFailureCode:'ci_failed'},
+    {id:'completed',state:'completed',dispatchCount:1,dispatchSubmitAttempted:true,
+      dispatchFingerprint:'confirmed'},
+  ]};
+  assert.deepEqual(assignmentLedgerSafety(source),{
+    safe:true,reason:'ledger_reconciled',unknownCount:0,queued:1,
+    active:0,historicFailed:2,total:4,
+  });
+});
+test('R49 ledger forbids ambiguous queued retry, running Send, missing IDs and missing fingerprints',()=>{
+ const base={assignments:[{id:'curator',state:'queued',dispatchSubmitAttempted:false,dispatchCount:0}]};
+ for(const bad of [
+  {id:'queuedAttempt',state:'queued',dispatchSubmitAttempted:true,dispatchCount:1},
+  {id:'running',state:'running',dispatchSubmitAttempted:true,dispatchCount:1},
+  {id:'unknown',state:'mystery'},
+  {id:'blockedUncertain',state:'blocked',dispatchSubmitAttempted:true,dispatchCount:1},
+  {id:'noConfirmedUnsent',state:'queued',dispatchCount:0},
+  {id:'already',state:'queued',dispatchSubmitAttempted:false,dispatchCount:0},
+  {id:'activeEvidence',state:'awaiting_evidence',dispatchCount:1},
+ ]) {
+  const candidate={assignments:[...base.assignments,bad]};
+  const decision=assignmentLedgerSafety(candidate);
+  assert.equal(decision.safe,false,'must reject '+bad.id);
+  assert.ok(decision.unknownCount>=1);
+ }
+ assert.equal(assignmentLedgerSafety({assignments:null}).safe,false);
+ assert.equal(assignmentLedgerSafety({}).safe,false);
 });
