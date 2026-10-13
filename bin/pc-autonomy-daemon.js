@@ -19,11 +19,12 @@ function readRelayProbe(cfg){
     return {status:healthy?'HEALTHY':'UNKNOWN',observedAt:String(raw.observedAt||raw.updatedAt||'')};
   }catch{return {status:'UNKNOWN',observedAt:''};}
 }
-function verifyR45Release(cfg){
+export function verifyR45Release(cfg){
   const runner=resolve(cfg.r45.runner), manifest=resolve(dirname(runner),'MANIFEST.json');
   if(!existsSync(manifest))throw new Error('R45_VERIFIED_MANIFEST_REQUIRED');
   const m=JSON.parse(readFileSync(manifest,'utf8'));
-  if(m?.deployment!=='SHADOW_ONLY'||!/^[a-f0-9]{40}$/i.test(m?.exactSha||'')||
+  const shadowOnly=m?.deployment==='SHADOW_ONLY' || (m?.schema==='r45.isolated.release.v1' && m?.dispatchEnabled===false && m?.running===false && m?.productionModified===false);
+  if(!shadowOnly||!/^[a-f0-9]{40}$/i.test(m?.exactSha||'')||
     !m.files||typeof m.files!=='object'||!m.files['autonomy-r45-runner.js'])
     throw new Error('R45_UNVERIFIED_RELEASE');
   if(cfg.r45.sha && cfg.r45.sha!==m.exactSha)throw new Error('R45_SHA_DRIFT');
